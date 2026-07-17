@@ -1,11 +1,11 @@
 {
   "expo": {
-    "name": "PoiPoi",
-    "slug": "poipoi-mobile",
-    "version": "1.0.0",
+    "name": "PoiPoi Beta",
+    "slug": "poipoi-beta",
+    "version": "0.1.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
-    "userInterfaceStyle": "light",
+    "userInterfaceStyle": "auto",
     "splash": {
       "image": "./assets/splash.png",
       "resizeMode": "contain",
@@ -49,8 +49,15 @@
       ]
     ],
     "extra": {
-      "apiBaseUrl": "http://localhost:3000",
-      "apiTimeout": 30000
+      "apiBaseUrl": "https://3000-iocr6xxkalzfajqrgw1vp-917fb80f.sg1.manus.computer",
+      "apiTimeout": 30000,
+      "buildNumber": "1",
+      "releaseChannel": "beta"
+    },
+    "updates": {
+      "enabled": true,
+      "checkAutomatically": "ON_LOAD",
+      "fallbackToCacheTimeout": 30000
     }
   }
 }
