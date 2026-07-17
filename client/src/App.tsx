@@ -21,6 +21,8 @@ import CodeGeneratorPage from './pages/CodeGeneratorPage';
 import PoiPoiDashboard from './pages/PoiPoiDashboard';
 import PoiPoiBetaChat from './pages/PoiPoiBetaChat';
 import AIProviderSelector from './pages/AIProviderSelector';
+import FileProcessing from './pages/FileProcessing';
+import ManufacturingAIDashboard from './pages/ManufacturingAIDashboard';
 import Login from "./pages/Login";
 import NotFound from "./pages/NotFound";
 
@@ -49,6 +51,8 @@ function Router() {
       <Route path="/dashboard" component={PoiPoiDashboard} />
       <Route path="/beta-chat" component={PoiPoiBetaChat} />
       <Route path="/ai-providers" component={AIProviderSelector} />
+      <Route path="/file-processing" component={FileProcessing} />
+      <Route path="/manufacturing-ai" component={ManufacturingAIDashboard} />
       <Route path="/404" component={NotFound} />
       {/* Final fallback route */}
       <Route component={NotFound} />
