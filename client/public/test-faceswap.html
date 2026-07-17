@@ -1,0 +1,113 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Face Swap Test</title>
+  <style>
+    body { font-family: Arial; margin: 20px; }
+    .test-section { margin: 20px 0; padding: 20px; border: 1px solid #ccc; }
+    button { padding: 10px 20px; background: #0066cc; color: white; border: none; cursor: pointer; }
+    button:hover { background: #0052a3; }
+    #result { margin-top: 20px; padding: 20px; background: #f0f0f0; border-radius: 5px; }
+    .loading { color: #0066cc; }
+    .error { color: #cc0000; }
+    .success { color: #00cc00; }
+    img { max-width: 300px; margin-top: 10px; }
+  </style>
+</head>
+<body>
+  <h1>顔入れ替え機能テスト</h1>
+  
+  <div class="test-section">
+    <h2>テスト実行</h2>
+    <button onclick="testFaceSwap()">顔入れ替えテストを実行</button>
+    <div id="result"></div>
+  </div>
+
+  <script>
+    async function testFaceSwap() {
+      const resultDiv = document.getElementById('result');
+      resultDiv.innerHTML = '<p class="loading">テスト中...</p>';
+      
+      try {
+        // Fetch image files
+        const sourceRes = await fetch('/upload/1000020705.jpg');
+        const targetRes = await fetch('/upload/1000020693.jpg');
+        
+        if (!sourceRes.ok || !targetRes.ok) {
+          throw new Error('ファイルの読み込みに失敗しました');
+        }
+        
+        const sourceBlob = await sourceRes.blob();
+        const targetBlob = await targetRes.blob();
+        
+        // Convert to base64
+        const sourceBase64 = await blobToBase64(sourceBlob);
+        const targetBase64 = await blobToBase64(targetBlob);
+        
+        resultDiv.innerHTML = '<p class="loading">API を呼び出し中...</p>';
+        
+        // Call the API using fetch with proper tRPC format
+        const response = await fetch('/api/trpc/fileUpload.swap', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            "0": {
+              "json": {
+                "sourceImage": sourceBase64,
+                "targetImage": targetBase64,
+                "quality": "medium"
+              }
+            }
+          })
+        });
+        
+        const data = await response.json();
+        
+        if (response.ok && data.result && data.result[0] && data.result[0].data) {
+          const result = data.result[0].data;
+          
+          if (result.success) {
+            resultDiv.innerHTML = `
+              <p class="success">✅ テスト成功!</p>
+              <p>処理時間: ${result.processingTime}ms</p>
+              <p>結果画像サイズ: ${(result.resultImage.length / 1024).toFixed(2)}KB</p>
+              <img src="data:image/jpeg;base64,${result.resultImage}" alt="Result">
+            `;
+          } else {
+            resultDiv.innerHTML = `
+              <p class="error">❌ テスト失敗</p>
+              <p>エラー: ${result.message}</p>
+              <p>詳細: ${result.error}</p>
+            `;
+          }
+        } else {
+          resultDiv.innerHTML = `
+            <p class="error">❌ API エラー</p>
+            <p>ステータス: ${response.status}</p>
+            <pre>${JSON.stringify(data, null, 2)}</pre>
+          `;
+        }
+      } catch (error) {
+        resultDiv.innerHTML = `
+          <p class="error">❌ エラーが発生しました</p>
+          <p>${error.message}</p>
+        `;
+      }
+    }
+    
+    function blobToBase64(blob) {
+      return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onloadend = () => {
+          const base64 = reader.result.split(',')[1];
+          resolve(base64);
+        };
+        reader.onerror = reject;
+        reader.readAsDataURL(blob);
+      });
+    }
+  </script>
+</body>
+</html>

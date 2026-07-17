@@ -1,0 +1,84 @@
+{
+  "projectName": "PoiPoi",
+  "packageName": "com.poipoi.app",
+  "versionCode": 1,
+  "versionName": "1.0.0",
+  "buildTypes": {
+    "debug": {
+      "enabled": true,
+      "debuggable": true,
+      "minifyEnabled": false,
+      "signingConfig": "debug"
+    },
+    "release": {
+      "enabled": true,
+      "debuggable": false,
+      "minifyEnabled": true,
+      "signingConfig": "release",
+      "proguardRules": "proguard-rules.pro"
+    }
+  },
+  "compileSdkVersion": 34,
+  "targetSdkVersion": 34,
+  "minSdkVersion": 21,
+  "buildToolsVersion": "34.0.0",
+  "javaVersion": "21",
+  "gradleVersion": "8.7",
+  "androidGradlePluginVersion": "8.3.0",
+  "dependencies": {
+    "androidx": {
+      "appcompat": "1.6.1",
+      "constraintlayout": "2.1.4",
+      "material": "1.11.0"
+    },
+    "react": {
+      "react-native": "0.73.0",
+      "expo": "50.0.0"
+    }
+  },
+  "permissions": [
+    "android.permission.INTERNET",
+    "android.permission.CAMERA",
+    "android.permission.RECORD_AUDIO",
+    "android.permission.READ_EXTERNAL_STORAGE",
+    "android.permission.WRITE_EXTERNAL_STORAGE",
+    "android.permission.POST_NOTIFICATIONS"
+  ],
+  "features": [
+    {
+      "name": "android.hardware.camera",
+      "required": false
+    },
+    {
+      "name": "android.hardware.microphone",
+      "required": false
+    }
+  ],
+  "signing": {
+    "keystore": {
+      "path": ".android/poipoi.keystore",
+      "alias": "poipoi-key",
+      "storePassword": "PLACEHOLDER_STORE_PASSWORD",
+      "keyPassword": "PLACEHOLDER_KEY_PASSWORD"
+    }
+  },
+  "buildOutput": {
+    "debugApk": "build/outputs/apk/debug/app-debug.apk",
+    "releaseApk": "build/outputs/apk/release/app-release.apk",
+    "aab": "build/outputs/bundle/release/app-release.aab",
+    "mapping": "build/outputs/mapping/release/mapping.txt"
+  },
+  "optimization": {
+    "proguard": {
+      "enabled": true,
+      "obfuscate": true,
+      "optimize": true,
+      "shrink": true
+    },
+    "resources": {
+      "enabled": true,
+      "removeUnused": true,
+      "compress": true
+    }
+  }
+}
