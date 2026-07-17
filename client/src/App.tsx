@@ -19,6 +19,8 @@ import FaceFusionHybridPage from './pages/FaceFusionHybrid';
 import UnifiedChat from './pages/UnifiedChat';
 import CodeGeneratorPage from './pages/CodeGeneratorPage';
 import PoiPoiDashboard from './pages/PoiPoiDashboard';
+import PoiPoiBetaChat from './pages/PoiPoiBetaChat';
+import AIProviderSelector from './pages/AIProviderSelector';
 import Login from "./pages/Login";
 import NotFound from "./pages/NotFound";
 
@@ -45,6 +47,8 @@ function Router() {
       <Route path="/unified-chat" component={UnifiedChat} />
       <Route path="/code-generator" component={CodeGeneratorPage} />
       <Route path="/dashboard" component={PoiPoiDashboard} />
+      <Route path="/beta-chat" component={PoiPoiBetaChat} />
+      <Route path="/ai-providers" component={AIProviderSelector} />
       <Route path="/404" component={NotFound} />
       {/* Final fallback route */}
       <Route component={NotFound} />
