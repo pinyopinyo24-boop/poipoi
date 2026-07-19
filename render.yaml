@@ -1,0 +1,56 @@
+services:
+  - type: web
+    name: poipoi-api
+    runtime: docker
+    plan: standard
+    region: singapore
+    
+    # Build configuration
+    dockerfilePath: ./Dockerfile
+    dockerContext: ./
+    
+    # Environment variables
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: 3000
+      - key: DATABASE_URL
+        fromDatabase:
+          name: poipoi-db
+          property: connectionString
+      - key: JWT_SECRET
+        generateValue: true
+      - key: BUILT_IN_FORGE_API_URL
+        value: https://forge.manus.ai
+      - key: BUILT_IN_FORGE_API_KEY
+        sync: false
+      - key: VITE_APP_ID
+        sync: false
+      - key: VITE_FRONTEND_FORGE_API_KEY
+        sync: false
+      - key: VITE_FRONTEND_FORGE_API_URL
+        value: https://forge.manus.ai
+    
+    # Health check
+    healthCheckPath: /health
+    
+    # Build and deploy hooks
+    buildCommand: npm run build
+    startCommand: npm start
+    
+    # Auto-deploy on git push
+    autoDeploy: true
+    
+    # Disk configuration
+    disk:
+      name: poipoi-disk
+      mountPath: /app/uploads
+      sizeGB: 10
+
+databases:
+  - name: poipoi-db
+    plan: standard
+    region: singapore
+    databaseName: poipoi
+    postgresMajorVersion: "15"

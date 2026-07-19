@@ -1,0 +1,16 @@
+{
+  "$schema": "https://railway.app/railway.schema.json",
+  "build": {
+    "builder": "dockerfile"
+  },
+  "deploy": {
+    "startCommand": "npm start",
+    "restartPolicyMaxRetries": 5,
+    "restartPolicyWindowMs": 60000
+  },
+  "variables": {
+    "NODE_ENV": "production",
+    "PORT": "3000",
+    "BUILT_IN_FORGE_API_URL": "https://forge.manus.ai"
+  }
+}
