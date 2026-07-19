@@ -3,6 +3,22 @@
  * Manus プラットフォームの組み込みLLM APIを使用
  */
 
+// [LLM KEY CHECK] Startup verification
+if (typeof process !== 'undefined' && process.env) {
+  const apiUrl = process.env.BUILT_IN_FORGE_API_URL;
+  const apiKey = process.env.BUILT_IN_FORGE_API_KEY;
+  if (!apiKey) {
+    console.warn('[LLM KEY CHECK] WARNING: BUILT_IN_FORGE_API_KEY is not set');
+  } else {
+    console.log('[LLM KEY CHECK] BUILT_IN_FORGE_API_KEY is configured');
+  }
+  if (!apiUrl) {
+    console.warn('[LLM KEY CHECK] WARNING: BUILT_IN_FORGE_API_URL is not set');
+  } else {
+    console.log('[LLM KEY CHECK] BUILT_IN_FORGE_API_URL is configured:', apiUrl);
+  }
+}
+
 export type Role = "system" | "user" | "assistant" | "tool" | "function";
 
 export type TextContent = {
@@ -125,6 +141,13 @@ export async function invokeLLM(request: LLMRequest): Promise<LLMResponse> {
   try {
     const model = request.model || DEFAULT_MODEL;
     
+    // [LLM REQUEST] Log request
+    console.log('[LLM REQUEST]', {
+      model,
+      messageCount: request.messages.length,
+      timestamp: new Date().toISOString(),
+    });
+    
     // メッセージをOpenAI形式に変換
     const messages = request.messages.map(msg => {
       let content: any = "";
@@ -173,10 +196,20 @@ export async function invokeLLM(request: LLMRequest): Promise<LLMResponse> {
 
     if (!response.ok) {
       const errorData = await response.text();
-      throw new Error(`Manus LLM API error: ${response.statusText} - ${errorData}`);
+      const errorMsg = `Manus LLM API error: ${response.statusText} - ${errorData}`;
+      console.error('[LLM ERROR]', errorMsg);
+      throw new Error(errorMsg);
     }
 
     const data = await response.json() as any;
+    
+    // [LLM RESPONSE] Log response
+    console.log('[LLM RESPONSE]', {
+      id: data.id,
+      model: data.model,
+      tokensUsed: data.usage?.total_tokens,
+      timestamp: new Date().toISOString(),
+    });
 
     return {
       id: data.id || `manus-${Date.now()}`,
@@ -200,7 +233,8 @@ export async function invokeLLM(request: LLMRequest): Promise<LLMResponse> {
       },
     };
   } catch (error) {
-    console.error("[LLM] Manus LLM call failed:", error);
+    const errorMsg = error instanceof Error ? error.message : String(error);
+    console.error("[LLM ERROR] Manus LLM call failed:", errorMsg);
     // フォールバック: ダミー応答を返す
     return {
       id: `manus-${Date.now()}`,

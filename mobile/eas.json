@@ -22,13 +22,5 @@
         "buildType": "aab"
       }
     }
-  },
-  "submit": {
-    "production": {
-      "android": {
-        "serviceAccount": "~/.android/service-account.json",
-        "track": "internal"
-      }
-    }
   }
 }
