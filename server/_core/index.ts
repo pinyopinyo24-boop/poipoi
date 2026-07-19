@@ -3,6 +3,7 @@ import express from "express";
 import { createServer } from "http";
 import net from "net";
 import { createReadStream, existsSync } from "fs";
+import cors from "cors";
 import { createExpressMiddleware } from "@trpc/server/adapters/express";
 import { registerOAuthRoutes } from "./oauth";
 import { registerStorageProxy } from "./storageProxy";
@@ -36,6 +37,14 @@ async function startServer() {
   // Set socket timeout to 10 minutes for long-running requests
   server.setTimeout(600000); // 10 minutes
   
+  // CORS configuration for mobile and cross-origin requests
+  app.use(cors({
+    origin: '*', // Allow all origins for mobile app
+    methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+    allowedHeaders: ['Content-Type', 'Authorization'],
+    credentials: false,
+  }));
+  
   // Configure body parser with larger size limit for file uploads (500MB for video processing)
   app.use(express.json({ limit: "500mb" }));
   app.use(express.urlencoded({ limit: "500mb", extended: true }));
@@ -54,6 +63,11 @@ async function startServer() {
   
   // Serve upload directory for testing
   app.use('/upload', express.static('/home/ubuntu/upload'));
+  
+  // Health check endpoint
+  app.get('/health', (req: any, res: any) => {
+    res.json({ status: 'ok', timestamp: new Date().toISOString() });
+  });
   
   // Serve test HTML files
   app.use(express.static('/home/ubuntu/poipoi/client/public'));
