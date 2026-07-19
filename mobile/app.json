@@ -48,7 +48,7 @@
       ]
     ],
     "extra": {
-      "apiBaseUrl": "https://3000-icjj73lbyhjqxckppm49v-ef296818.sg1.manus.computer",
+      "apiBaseUrl": "https://poipoi-api.onrender.com",
       "apiTimeout": 30000,
       "buildNumber": "1",
       "releaseChannel": "beta"
