@@ -1,0 +1,69 @@
+{
+  "version": "7",
+  "dialect": "mysql",
+  "entries": [
+    {
+      "idx": 0,
+      "version": "5",
+      "when": 1783089962572,
+      "tag": "0000_unknown_triathlon",
+      "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "5",
+      "when": 1783090997708,
+      "tag": "0001_early_wolfpack",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "5",
+      "when": 1783109650699,
+      "tag": "0002_overrated_vanisher",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "5",
+      "when": 1783111464459,
+      "tag": "0003_lyrical_the_spike",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "5",
+      "when": 1783140586617,
+      "tag": "0004_great_wolf_cub",
+      "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "5",
+      "when": 1783141827285,
+      "tag": "0005_sparkling_thing",
+      "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "5",
+      "when": 1783142316422,
+      "tag": "0006_volatile_marvel_boy",
+      "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "5",
+      "when": 1783181414049,
+      "tag": "0007_opposite_oracle",
+      "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "5",
+      "when": 1783206907377,
+      "tag": "0008_nappy_post",
+      "breakpoints": true
+    }
+  ]
+}
