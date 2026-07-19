@@ -3,7 +3,7 @@
  * ChatCore v1.0とのtRPC統合
  */
 
-import { router, protectedProcedure } from './_core/trpc';
+import { router, protectedProcedure, publicProcedure } from './_core/trpc';
 import { z } from 'zod';
 import { ChatCoreManager } from './core/ChatCoreManager';
 
@@ -65,8 +65,9 @@ function getChatCoreManager(): ChatCoreManager {
 export const chatRouter = router({
   /**
    * メッセージを処理
+   * publicProcedure: ログインなしでも使用可能 (モバイルアプリ対応)
    */
-  processMessage: protectedProcedure
+  processMessage: publicProcedure
     .input(
       z.object({
         userId: z.string(),

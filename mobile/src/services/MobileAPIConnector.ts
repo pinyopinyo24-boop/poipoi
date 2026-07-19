@@ -156,20 +156,25 @@ export class MobileAPIConnector {
       const sessionId = request.sessionId || `session_${Date.now()}`;
       const userId = this.sessionId || `mobile_${Date.now()}`;
       
+      // tRPC standard format: wrap input in 'json' key
+      // publicProcedure: no authentication required
       const response = await this.retryRequest(() =>
         this.apiClient.post('/api/trpc/chat.processMessage', {
-          userId,
-          sessionId,
-          message: request.message,
-        }, {
-          headers: {
-            'Authorization': this.sessionToken ? `Bearer ${this.sessionToken}` : undefined,
+          json: {
+            userId,
+            sessionId,
+            message: request.message,
           }
         })
       );
 
       // Extract data from tRPC response
-      const data = response.data?.result?.data || response.data?.data || response.data;
+      // tRPC response format: { result: { data: {...} } }
+      const data = response.data?.result?.data;
+      
+      if (!data) {
+        throw new Error('No data in tRPC response: ' + JSON.stringify(response.data));
+      }
       this.setCache(cacheKey, data);
 
       return {
