@@ -80,7 +80,7 @@ export class MobileAPIConnector {
   private maxRetries: number = 3;
   private retryDelay: number = 1000;
 
-  constructor(baseURL: string = 'http://localhost:3000') {
+  constructor(baseURL: string = 'https://3000-iocr6xxkalzfajqrgw1vp-917fb80f.sg1.manus.computer') {
     this.baseURL = baseURL;
     this.apiClient = axios.create({
       baseURL,
@@ -152,15 +152,24 @@ export class MobileAPIConnector {
         return { success: true, data: cached };
       }
 
+      // Generate or use existing session ID
+      const sessionId = request.sessionId || `session_${Date.now()}`;
+      const userId = this.sessionId || `mobile_${Date.now()}`;
+      
       const response = await this.retryRequest(() =>
-        this.apiClient.post('/api/trpc/chat.sendMessage', {
+        this.apiClient.post('/api/trpc/chat.processMessage', {
+          userId,
+          sessionId,
           message: request.message,
-          sessionId: request.sessionId || this.sessionId,
-          context: request.context,
+        }, {
+          headers: {
+            'Authorization': this.sessionToken ? `Bearer ${this.sessionToken}` : undefined,
+          }
         })
       );
 
-      const data = response.data.result?.data;
+      // Extract data from tRPC response
+      const data = response.data?.result?.data || response.data?.data || response.data;
       this.setCache(cacheKey, data);
 
       return {
