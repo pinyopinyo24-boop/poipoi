@@ -1,13 +1,13 @@
 services:
   - type: web
     name: poipoi-api
-    runtime: docker
+    runtime: node
     plan: standard
     region: singapore
     
     # Build configuration
-    dockerfilePath: ./Dockerfile
-    dockerContext: ./
+    buildCommand: npm run build
+    startCommand: npm start
     
     # Environment variables
     envVars:
@@ -34,10 +34,6 @@ services:
     
     # Health check
     healthCheckPath: /health
-    
-    # Build and deploy hooks
-    buildCommand: npm run build
-    startCommand: npm start
     
     # Auto-deploy on git push
     autoDeploy: true
