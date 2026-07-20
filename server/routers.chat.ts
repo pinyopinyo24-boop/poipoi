@@ -6,8 +6,6 @@
 import { router, protectedProcedure, publicProcedure } from './_core/trpc';
 import { z } from 'zod';
 import { ChatCoreManager } from './core/ChatCoreManager';
-import { ManusLLMService } from './services/aiProvider';
-
 
 // シングルトンインスタンス
 let chatCoreManager: ChatCoreManager | null = null;
@@ -52,15 +50,13 @@ function getChatCoreManager(): ChatCoreManager {
       },
     } as any;
 
-    const manusLLMService = new ManusLLMService(process.env.BUILT_IN_FORGE_API_KEY || "", process.env.BUILT_IN_FORGE_API_URL || "https://forge.manus.ai");
     chatCoreManager = new ChatCoreManager(
       memoryManager,
       reasoningManager,
       null, // agentManager
       manufacturingManager,
       mockAuditManager,
-      mockApprovalManager,
-      manusLLMService // Pass the AI chat provider
+      mockApprovalManager
     );
   }
   return chatCoreManager;
