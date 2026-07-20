@@ -10,7 +10,7 @@ import { ChatService } from '../services/ChatService';
 import { MessageProcessingService } from '../services/MessageProcessingService';
 import { ContextAwarenessService } from '../services/ContextAwarenessService';
 import { ChatRepository } from '../repositories/ChatRepository';
-import { invokeLLM } from '../_core/llm';
+import { IAIChatProvider } from '../services/aiProvider';
 
 export interface ChatMessage {
   id: string;
@@ -54,7 +54,8 @@ export class ChatCoreManager {
     private agentManager: any,
     private manufacturingManager: ManufacturingIntelligenceAIManager,
     private auditManager: any,
-    private approvalManager: any
+    private approvalManager: any,
+    private aiChatProvider: IAIChatProvider
   ) {
     this.chatService = new ChatService();
     this.messageProcessingService = new MessageProcessingService(
@@ -167,7 +168,7 @@ export class ChatCoreManager {
   ): Promise<string> {
     try {
       // LLM APIを呼び出し
-      const llmResult = await invokeLLM({
+      const llmResult = await this.aiChatProvider.invokeLLM({
         messages: [
           {
             role: "user",

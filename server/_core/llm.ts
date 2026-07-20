@@ -3,22 +3,6 @@
  * Manus プラットフォームの組み込みLLM APIを使用
  */
 
-// [LLM KEY CHECK] Startup verification
-if (typeof process !== 'undefined' && process.env) {
-  const apiUrl = process.env.BUILT_IN_FORGE_API_URL;
-  const apiKey = process.env.BUILT_IN_FORGE_API_KEY;
-  if (!apiKey) {
-    console.warn('[LLM KEY CHECK] WARNING: BUILT_IN_FORGE_API_KEY is not set');
-  } else {
-    console.log('[LLM KEY CHECK] BUILT_IN_FORGE_API_KEY is configured');
-  }
-  if (!apiUrl) {
-    console.warn('[LLM KEY CHECK] WARNING: BUILT_IN_FORGE_API_URL is not set');
-  } else {
-    console.log('[LLM KEY CHECK] BUILT_IN_FORGE_API_URL is configured:', apiUrl);
-  }
-}
-
 export type Role = "system" | "user" | "assistant" | "tool" | "function";
 
 export type TextContent = {
@@ -130,9 +114,9 @@ export type LLMModel = {
  * Manus LLM API設定
  */
 const baseUrl = process.env.BUILT_IN_FORGE_API_URL || "https://forge.manus.ai";
-const MANUS_LLM_URL = baseUrl.endsWith("/v1") ? baseUrl : `${baseUrl}/v1`;
-const MANUS_LLM_KEY = process.env.BUILT_IN_FORGE_API_KEY || "";
-const DEFAULT_MODEL = "gpt-4o-mini"; // Manus デフォルトモデル
+export const MANUS_LLM_URL = baseUrl.endsWith("/v1") ? baseUrl : `${baseUrl}/v1`;
+export const MANUS_LLM_KEY = process.env.BUILT_IN_FORGE_API_KEY || "";
+export const DEFAULT_MODEL = "gpt-4o-mini"; // Manus デフォルトモデル
 
 /**
  * Invoke LLM - Manus Built-in LLM実装
@@ -140,6 +124,20 @@ const DEFAULT_MODEL = "gpt-4o-mini"; // Manus デフォルトモデル
 export async function invokeLLM(request: LLMRequest): Promise<LLMResponse> {
   try {
     const model = request.model || DEFAULT_MODEL;
+
+    // [LLM KEY CHECK] Startup verification
+    if (typeof process !== 'undefined' && process.env) {
+      if (!MANUS_LLM_KEY) {
+        console.warn('[LLM KEY CHECK] WARNING: BUILT_IN_FORGE_API_KEY is not set');
+      } else {
+        console.log('[LLM KEY CHECK] BUILT_IN_FORGE_API_KEY is configured');
+      }
+      if (!MANUS_LLM_URL) {
+        console.warn('[LLM KEY CHECK] WARNING: BUILT_IN_FORGE_API_URL is not set');
+      } else {
+        console.log('[LLM KEY CHECK] BUILT_IN_FORGE_API_URL is configured:', MANUS_LLM_URL);
+      }
+    }
     
     // [LLM REQUEST] Log request
     console.log('[LLM REQUEST]', {
@@ -213,7 +211,7 @@ export async function invokeLLM(request: LLMRequest): Promise<LLMResponse> {
 
     return {
       id: data.id || `manus-${Date.now()}`,
-      object: data.object || "chat.completion",
+      object: "chat.completion",
       created: data.created || Math.floor(Date.now() / 1000),
       model: data.model || model,
       choices: data.choices || [
@@ -226,7 +224,7 @@ export async function invokeLLM(request: LLMRequest): Promise<LLMResponse> {
           finish_reason: "error",
         },
       ],
-      usage: data.usage || {
+      usage: {
         prompt_tokens: 0,
         completion_tokens: 0,
         total_tokens: 0,
@@ -265,6 +263,8 @@ export async function invokeLLM(request: LLMRequest): Promise<LLMResponse> {
  */
 export async function listLLMModels(): Promise<{ data: LLMModel[] }> {
   try {
+    
+
     const response = await globalThis.fetch(`${MANUS_LLM_URL}/models`, {
       headers: {
         "Authorization": `Bearer ${MANUS_LLM_KEY}`,
