@@ -1,21 +1,15 @@
 /**
- * LLM Integration - Manus Built-in LLM実装
- * Manus プラットフォームの組み込みLLM APIを使用
+ * LLM Integration - Google Gemini API実装
+ * Google Gemini APIを使用したLLM統合
  */
 
 // [LLM KEY CHECK] Startup verification
 if (typeof process !== 'undefined' && process.env) {
-  const apiUrl = process.env.BUILT_IN_FORGE_API_URL;
-  const apiKey = process.env.BUILT_IN_FORGE_API_KEY;
+  const apiKey = process.env.GEMINI_API_KEY;
   if (!apiKey) {
-    console.warn('[LLM KEY CHECK] WARNING: BUILT_IN_FORGE_API_KEY is not set');
+    console.warn('[LLM KEY CHECK] WARNING: GEMINI_API_KEY is not set');
   } else {
-    console.log('[LLM KEY CHECK] BUILT_IN_FORGE_API_KEY is configured');
-  }
-  if (!apiUrl) {
-    console.warn('[LLM KEY CHECK] WARNING: BUILT_IN_FORGE_API_URL is not set');
-  } else {
-    console.log('[LLM KEY CHECK] BUILT_IN_FORGE_API_URL is configured:', apiUrl);
+    console.log('[LLM KEY CHECK] GEMINI_API_KEY is configured');
   }
 }
 
@@ -127,15 +121,14 @@ export type LLMModel = {
 };
 
 /**
- * Manus LLM API設定
+ * Google Gemini API設定
  */
-const baseUrl = process.env.BUILT_IN_FORGE_API_URL || "https://forge.manus.ai";
-const MANUS_LLM_URL = baseUrl.endsWith("/v1") ? baseUrl : `${baseUrl}/v1`;
-const MANUS_LLM_KEY = process.env.BUILT_IN_FORGE_API_KEY || "";
-const DEFAULT_MODEL = "gpt-4o-mini"; // Manus デフォルトモデル
+const GEMINI_API_KEY = process.env.GEMINI_API_KEY || "";
+const GEMINI_API_URL = "https://generativelanguage.googleapis.com/v1beta/openai/";
+const DEFAULT_MODEL = "gemini-2.0-flash";
 
 /**
- * Invoke LLM - Manus Built-in LLM実装
+ * Invoke LLM - Google Gemini API実装
  */
 export async function invokeLLM(request: LLMRequest): Promise<LLMResponse> {
   try {
@@ -172,13 +165,13 @@ export async function invokeLLM(request: LLMRequest): Promise<LLMResponse> {
       return { role: msg.role, content };
     });
 
-    // Manus LLM APIを呼び出し
-    const url = MANUS_LLM_URL.endsWith("/chat/completions") ? MANUS_LLM_URL : `${MANUS_LLM_URL}/chat/completions`;
+    // Google Gemini APIを呼び出し (OpenAI互換エンドポイント)
+    const url = `${GEMINI_API_URL}chat/completions`;
     const response = await globalThis.fetch(url, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        "Authorization": `Bearer ${MANUS_LLM_KEY}`,
+        "Authorization": `Bearer ${GEMINI_API_KEY}`,
       },
       body: JSON.stringify({
         model,
@@ -189,14 +182,12 @@ export async function invokeLLM(request: LLMRequest): Promise<LLMResponse> {
         tools: request.tools,
         tool_choice: request.tool_choice,
         response_format: request.response_format,
-        thinking: request.thinking,
-        reasoning: request.reasoning,
       }),
     });
 
     if (!response.ok) {
       const errorData = await response.text();
-      const errorMsg = `Manus LLM API error: ${response.statusText} - ${errorData}`;
+      const errorMsg = `Gemini API error: ${response.statusText} - ${errorData}`;
       console.error('[LLM ERROR]', errorMsg);
       throw new Error(errorMsg);
     }
@@ -212,7 +203,7 @@ export async function invokeLLM(request: LLMRequest): Promise<LLMResponse> {
     });
 
     return {
-      id: data.id || `manus-${Date.now()}`,
+      id: data.id || `gemini-${Date.now()}`,
       object: data.object || "chat.completion",
       created: data.created || Math.floor(Date.now() / 1000),
       model: data.model || model,
@@ -234,10 +225,10 @@ export async function invokeLLM(request: LLMRequest): Promise<LLMResponse> {
     };
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : String(error);
-    console.error("[LLM ERROR] Manus LLM call failed:", errorMsg);
+    console.error("[LLM ERROR] Gemini API call failed:", errorMsg);
     // フォールバック: ダミー応答を返す
     return {
-      id: `manus-${Date.now()}`,
+      id: `gemini-${Date.now()}`,
       object: "chat.completion",
       created: Math.floor(Date.now() / 1000),
       model: DEFAULT_MODEL,
@@ -261,22 +252,39 @@ export async function invokeLLM(request: LLMRequest): Promise<LLMResponse> {
 }
 
 /**
- * List LLM models - Manus実装
+ * List LLM models - Gemini実装
  */
 export async function listLLMModels(): Promise<{ data: LLMModel[] }> {
   try {
-    const response = await globalThis.fetch(`${MANUS_LLM_URL}/models`, {
-      headers: {
-        "Authorization": `Bearer ${MANUS_LLM_KEY}`,
-      },
-    });
-
-    if (!response.ok) {
-      throw new Error(`Failed to list models: ${response.statusText}`);
-    }
-
-    const data = await response.json() as any;
-    return { data: data.data || [] };
+    // Gemini APIでは models エンドポイントが異なるため、デフォルトモデルを返す
+    return {
+      data: [
+        {
+          id: "gemini-2.0-flash",
+          object: "model",
+          owned_by: "google",
+          permission: [],
+          created: Math.floor(Date.now() / 1000),
+          capabilities: {
+            vision: true,
+            function_calling: true,
+            json_mode: true,
+          },
+        },
+        {
+          id: "gemini-1.5-pro",
+          object: "model",
+          owned_by: "google",
+          permission: [],
+          created: Math.floor(Date.now() / 1000),
+          capabilities: {
+            vision: true,
+            function_calling: true,
+            json_mode: true,
+          },
+        },
+      ],
+    };
   } catch (error) {
     console.error("[LLM] Failed to list models:", error);
     // デフォルトモデルを返す
@@ -285,7 +293,7 @@ export async function listLLMModels(): Promise<{ data: LLMModel[] }> {
         {
           id: DEFAULT_MODEL,
           object: "model",
-          owned_by: "manus",
+          owned_by: "google",
           permission: [],
         },
       ],
