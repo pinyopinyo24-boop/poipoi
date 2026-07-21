@@ -24,6 +24,7 @@ import { colabIntegrationRouter } from "./routers.colab-integration";
 import { selfEvolutionRouter } from "./routers/self-evolution";
 import { autoProgramGenerationRouter } from "./routers/auto-program-generation";
 import { chatRouter } from "./routers.chat";
+import { aiAgentsRouter } from "./routers/aiAgents";
 import { z } from "zod";
 
 export const appRouter = router({
@@ -50,6 +51,7 @@ export const appRouter = router({
   evolution: selfEvolutionRouter,
   autoProgramGeneration: autoProgramGenerationRouter,
   chat: chatRouter,
+  aiAgents: aiAgentsRouter,
   
   clearHistory: protectedProcedure
     .mutation(async () => {
