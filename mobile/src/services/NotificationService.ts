@@ -85,14 +85,14 @@ export class NotificationService {
     // 通知受信時
     this.notificationListener = Notifications.addNotificationReceivedListener(
       notification => {
-        console.log('Notification received:', notification);
+        if (__DEV__) console.log('Notification received:', notification);
       }
     );
 
     // 通知タップ時
     this.responseListener = Notifications.addNotificationResponseReceivedListener(
       response => {
-        console.log('Notification response:', response);
+        if (__DEV__) console.log('Notification response:', response);
       }
     );
   }

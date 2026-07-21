@@ -36,7 +36,7 @@ export default function ChatScreen() {
       try {
         // app.json から apiBaseUrl を取得
         const apiBaseUrl = Constants.expoConfig?.extra?.apiBaseUrl || "https://3000-iocr6xxkalzfajqrgw1vp-917fb80f.sg1.manus.computer";
-        console.log("[ChatScreen] API Base URL:", apiBaseUrl);
+        if (__DEV__) console.log("[ChatScreen] API Base URL:", apiBaseUrl);
 
       const connector = new MobileAPIConnector(apiBaseUrl);
       setApiConnector(connector);
@@ -47,7 +47,7 @@ export default function ChatScreen() {
         // 接続確認
         const connected = await connector.checkConnectivity();
         setIsConnected(connected);
-        console.log("[ChatScreen] Backend connectivity:", connected);
+        if (__DEV__) console.log("[ChatScreen] Backend connectivity:", connected);
 
         if (!connected) {
           Alert.alert("接続警告", "バックエンドサーバーに接続できません。オフラインモードで動作します。");
