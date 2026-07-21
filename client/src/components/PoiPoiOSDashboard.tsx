@@ -247,6 +247,9 @@ export function PoiPoiOSDashboard() {
   const providerStatuses = providerStatusesQuery.data || {};
   const agentStatuses = agentStatusesQuery.data || {};
 
+  // Memory statistics query
+  const memorySummaryQuery = trpc.agentMemory.getMemorySummary.useQuery(undefined, { enabled: initialized });
+
   if (loading) {
     return (
       <div className="flex items-center justify-center h-96">

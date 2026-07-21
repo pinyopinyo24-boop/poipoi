@@ -26,6 +26,7 @@ import { autoProgramGenerationRouter } from "./routers/auto-program-generation";
 import { chatRouter } from "./routers.chat";
 import { aiAgentsRouter } from "./routers/aiAgents";
 import { executionLogsRouter } from "./routers/executionLogs";
+import { agentMemoryRouter } from "./routers/agentMemory";
 import { z } from "zod";
 
 export const appRouter = router({
@@ -54,6 +55,7 @@ export const appRouter = router({
   autoProgramGeneration: autoProgramGenerationRouter,
   chat: chatRouter,
   aiAgents: aiAgentsRouter,
+  agentMemory: agentMemoryRouter,
   
   clearHistory: protectedProcedure
     .mutation(async () => {
