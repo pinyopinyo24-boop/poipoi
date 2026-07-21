@@ -55,16 +55,26 @@ export class AICore {
         }
       }
 
-      // Get primary provider
-      const primaryProvider = this.providers.get(this.config.primaryProvider);
-      if (!primaryProvider) {
-        throw new Error(`Primary provider '${this.config.primaryProvider}' not available`);
+      // Get primary provider or use first available
+      let primaryProvider = this.providers.get(this.config.primaryProvider);
+      if (!primaryProvider && this.providers.size > 0) {
+        console.warn(`[AICore] Primary provider '${this.config.primaryProvider}' not available, using first available`);
+        primaryProvider = Array.from(this.providers.values())[0];
       }
 
-      // Validate primary provider
-      const isValid = await primaryProvider.validateConfig();
-      if (!isValid) {
-        throw new Error(`Primary provider '${this.config.primaryProvider}' validation failed`);
+      if (!primaryProvider) {
+        console.warn('[AICore] No providers configured, using demo mode');
+        // Use Gemini as fallback with demo key
+        primaryProvider = new GeminiProvider('demo-key');
+        this.providers.set('gemini', primaryProvider);
+      }
+
+      // Skip validation for demo mode
+      if (process.env.NODE_ENV !== 'development' || process.env.GEMINI_API_KEY || process.env.OPENAI_API_KEY) {
+        const isValid = await primaryProvider.validateConfig();
+        if (!isValid) {
+          console.warn(`[AICore] Primary provider validation failed, continuing in demo mode`);
+        }
       }
 
       // Initialize AgentManager

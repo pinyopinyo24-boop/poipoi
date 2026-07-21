@@ -19,6 +19,7 @@ import FaceFusionHybridPage from './pages/FaceFusionHybrid';
 import UnifiedChat from './pages/UnifiedChat';
 import CodeGeneratorPage from './pages/CodeGeneratorPage';
 import PoiPoiDashboard from './pages/PoiPoiDashboard';
+import PoiPoiOSDashboardPage from './pages/PoiPoiOSDashboardPage';
 import PoiPoiBetaChat from './pages/PoiPoiBetaChat';
 import AIProviderSelector from './pages/AIProviderSelector';
 import FileProcessing from './pages/FileProcessing';
@@ -48,7 +49,8 @@ function Router() {
       <Route path="/facefusion-hybrid" component={FaceFusionHybridPage} />
       <Route path="/unified-chat" component={UnifiedChat} />
       <Route path="/code-generator" component={CodeGeneratorPage} />
-      <Route path="/dashboard" component={PoiPoiDashboard} />
+      <Route path="/dashboard" component={PoiPoiOSDashboardPage} />
+      <Route path="/dashboard-legacy" component={PoiPoiDashboard} />
       <Route path="/beta-chat" component={PoiPoiBetaChat} />
       <Route path="/ai-providers" component={AIProviderSelector} />
       <Route path="/file-processing" component={FileProcessing} />
