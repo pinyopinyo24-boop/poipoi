@@ -8,6 +8,7 @@ import { ChatGPTProvider } from './providers/ChatGPTProvider';
 import { GeminiProvider } from './providers/GeminiProvider';
 import { AgentManager, AgentManagerConfig, WorkflowStep, WorkflowResult } from './AgentManager';
 import { BaseAgent, AgentType, AgentStatus, AgentExecutionResult } from './agents/BaseAgent';
+import { getConnectionMonitor } from './ProviderConnectionMonitor';
 
 export interface AICoreConfig {
   enableChatGPT: boolean;
@@ -24,6 +25,7 @@ export class AICore {
   private agentManager: AgentManager | null = null;
   private config: AICoreConfig;
   private initialized: boolean = false;
+  private connectionMonitor = getConnectionMonitor();
 
   constructor(config: AICoreConfig) {
     this.config = config;
@@ -37,21 +39,27 @@ export class AICore {
       // Initialize providers
       if (this.config.enableChatGPT) {
         const apiKey = process.env.OPENAI_API_KEY || '';
+        const isRealMode = !!(apiKey && apiKey !== 'demo-key');
         if (apiKey) {
           this.providers.set('chatgpt', new ChatGPTProvider(apiKey));
-          console.log('[AICore] ChatGPT provider initialized');
+          this.connectionMonitor.registerProvider('ChatGPT', isRealMode ? 'real' : 'demo', isRealMode);
+          console.log(`[AICore] ChatGPT provider initialized (${isRealMode ? 'real' : 'demo'} mode)`);
         } else {
           console.warn('[AICore] ChatGPT provider skipped - API key not found');
+          this.connectionMonitor.registerProvider('ChatGPT', 'demo', false);
         }
       }
 
       if (this.config.enableGemini) {
         const apiKey = process.env.GEMINI_API_KEY || '';
+        const isRealMode = !!(apiKey && apiKey !== 'demo-key');
         if (apiKey) {
           this.providers.set('gemini', new GeminiProvider(apiKey));
-          console.log('[AICore] Gemini provider initialized');
+          this.connectionMonitor.registerProvider('Gemini', isRealMode ? 'real' : 'demo', isRealMode);
+          console.log(`[AICore] Gemini provider initialized (${isRealMode ? 'real' : 'demo'} mode)`);
         } else {
           console.warn('[AICore] Gemini provider skipped - API key not found');
+          this.connectionMonitor.registerProvider('Gemini', 'demo', false);
         }
       }
 
@@ -67,6 +75,7 @@ export class AICore {
         // Use Gemini as fallback with demo key
         primaryProvider = new GeminiProvider('demo-key');
         this.providers.set('gemini', primaryProvider);
+        this.connectionMonitor.registerProvider('Gemini', 'demo', false);
       }
 
       // Skip validation for demo mode
@@ -246,7 +255,15 @@ export class AICore {
       providers: Array.from(this.providers.keys()),
       primaryProvider: this.config.primaryProvider,
       agentManager: this.agentManager?.getManagerStatus(),
+      connectionStatus: this.connectionMonitor.getConnectionSummary(),
     };
+  }
+
+  /**
+   * Get connection monitor
+   */
+  getConnectionMonitor() {
+    return this.connectionMonitor;
   }
 
   /**
