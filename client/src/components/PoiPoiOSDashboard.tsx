@@ -7,7 +7,7 @@ import { useState, useEffect } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { AlertCircle, CheckCircle, AlertTriangle, Zap, Brain, Cog, TrendingUp, Clock, Activity, Loader2 } from 'lucide-react';
+import { AlertCircle, CheckCircle, AlertTriangle, Zap, Brain, Cog, TrendingUp, Clock, Activity, Loader2, Send } from 'lucide-react';
 import { trpc } from '@/lib/trpc';
 
 // Status Badge Component
@@ -98,16 +98,72 @@ function AgentStatusCard({ agentType, status }: { agentType: string; status: str
   );
 }
 
+// Workflow Result Display
+function WorkflowResultDisplay({ result }: { result: any }) {
+  if (!result) return null;
+
+  return (
+    <Card className="border-blue-200 bg-blue-50">
+      <CardHeader>
+        <CardTitle className="text-lg">🔄 ワークフロー実行結果</CardTitle>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-2 text-sm">
+          <div>
+            <p className="text-muted-foreground">ステータス</p>
+            <p className="font-semibold capitalize">{result.status}</p>
+          </div>
+          <div>
+            <p className="text-muted-foreground">ステップ数</p>
+            <p className="font-semibold">{result.stepCount}</p>
+          </div>
+          <div>
+            <p className="text-muted-foreground">実行時間</p>
+            <p className="font-semibold">{result.executionTime}ms</p>
+          </div>
+          <div>
+            <p className="text-muted-foreground">トークン使用</p>
+            <p className="font-semibold">{result.totalTokensUsed}</p>
+          </div>
+        </div>
+
+        {result.aggregatedResults && (
+          <div className="space-y-3">
+            <h4 className="font-semibold text-sm">📊 各Agent の返答:</h4>
+            {Object.entries(result.aggregatedResults).map(([key, value]: [string, any]) => (
+              <div key={key} className="bg-white border rounded p-3 text-sm">
+                <p className="font-semibold text-blue-700 mb-2">{key}:</p>
+                <p className="text-gray-700 whitespace-pre-wrap">{typeof value === 'string' ? value : JSON.stringify(value, null, 2)}</p>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {result.error && (
+          <div className="bg-red-50 border border-red-200 rounded p-3 text-sm text-red-700">
+            <p className="font-semibold">エラー:</p>
+            <p>{result.error}</p>
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
 // Main Dashboard Component
 export function PoiPoiOSDashboard() {
   const [initialized, setInitialized] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [inputText, setInputText] = useState('');
+  const [workflowResult, setWorkflowResult] = useState<any>(null);
+  const [isExecuting, setIsExecuting] = useState(false);
 
   // tRPC queries
   const initializeMutation = trpc.aiAgents.initialize.useMutation();
   const systemStatusQuery = trpc.aiAgents.getSystemStatus.useQuery(undefined, { enabled: initialized });
   const providerStatusesQuery = trpc.aiAgents.getProviderStatuses.useQuery(undefined, { enabled: initialized });
   const agentStatusesQuery = trpc.aiAgents.getAgentStatuses.useQuery(undefined, { enabled: initialized });
+  const executeWorkflowMutation = trpc.aiAgents.executeWorkflow.useMutation();
 
   // Initialize AI Core on mount
   useEffect(() => {
@@ -138,6 +194,54 @@ export function PoiPoiOSDashboard() {
 
     return () => clearInterval(interval);
   }, [initialized]);
+
+  // Handle workflow execution
+  const handleExecuteWorkflow = async () => {
+    if (!inputText.trim()) return;
+
+    setIsExecuting(true);
+    try {
+      const result = await executeWorkflowMutation.mutateAsync({
+        workflowId: `workflow-${Date.now()}`,
+        steps: [
+          {
+            agentType: 'task',
+            description: 'ユーザー入力を処理',
+            input: { userInput: inputText },
+          },
+          {
+            agentType: 'implementation',
+            description: 'ChatGPT で返答を生成',
+            input: { message: inputText, provider: 'chatgpt' },
+            dependsOn: ['task'],
+          },
+          {
+            agentType: 'design',
+            description: 'Gemini で返答を生成',
+            input: { message: inputText, provider: 'gemini' },
+            dependsOn: ['task'],
+          },
+          {
+            agentType: 'review',
+            description: 'ReviewAgent が両方の返答をレビュー',
+            input: { message: inputText },
+            dependsOn: ['implementation', 'design'],
+          },
+        ],
+      });
+
+      setWorkflowResult(result);
+      setInputText('');
+    } catch (error) {
+      console.error('Workflow execution failed:', error);
+      setWorkflowResult({
+        status: 'failed',
+        error: error instanceof Error ? error.message : 'ワークフロー実行に失敗しました',
+      });
+    } finally {
+      setIsExecuting(false);
+    }
+  };
 
   const systemStatus = systemStatusQuery.data;
   const providerStatuses = providerStatusesQuery.data || {};
@@ -193,6 +297,41 @@ export function PoiPoiOSDashboard() {
           </CardContent>
         </Card>
       )}
+
+      {/* Workflow Input Section */}
+      <Card className="border-green-200 bg-green-50">
+        <CardHeader>
+          <CardTitle className="text-lg">💬 Agent ワークフロー実行</CardTitle>
+          <CardDescription>メッセージを入力して、複数の Agent に処理させます</CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="flex gap-2">
+            <input
+              type="text"
+              value={inputText}
+              onChange={(e) => setInputText(e.target.value)}
+              onKeyPress={(e) => e.key === 'Enter' && handleExecuteWorkflow()}
+              placeholder="例: こんにちは、PoiPoi について教えてください"
+              className="flex-1 px-4 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+              disabled={isExecuting}
+            />
+            <Button
+              onClick={handleExecuteWorkflow}
+              disabled={isExecuting || !inputText.trim()}
+              className="gap-2"
+            >
+              <Send className="w-4 h-4" />
+              {isExecuting ? '実行中...' : '実行'}
+            </Button>
+          </div>
+          <p className="text-xs text-muted-foreground">
+            ℹ️ 入力したメッセージは TaskAgent → ImplementationAgent (ChatGPT) → DesignAgent (Gemini) → ReviewAgent の順で処理されます
+          </p>
+        </CardContent>
+      </Card>
+
+      {/* Workflow Result */}
+      {workflowResult && <WorkflowResultDisplay result={workflowResult} />}
 
       {/* Providers Section */}
       <div className="space-y-4">
