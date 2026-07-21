@@ -25,9 +25,11 @@ import { selfEvolutionRouter } from "./routers/self-evolution";
 import { autoProgramGenerationRouter } from "./routers/auto-program-generation";
 import { chatRouter } from "./routers.chat";
 import { aiAgentsRouter } from "./routers/aiAgents";
+import { executionLogsRouter } from "./routers/executionLogs";
 import { z } from "zod";
 
 export const appRouter = router({
+  executionLogs: executionLogsRouter,
   system: systemRouter,
   auth: router(localAuthRouter),
   advanced: advancedRouter,

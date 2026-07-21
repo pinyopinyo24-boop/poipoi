@@ -9,6 +9,7 @@ import { ImplementationAgent } from './agents/ImplementationAgent';
 import { ReviewAgent } from './agents/ReviewAgent';
 import { TaskAgent } from './agents/TaskAgent';
 import { IAIProvider, AIProviderType } from './providers/AIProvider';
+import { getExecutionLogger } from './ExecutionLogger';
 
 export interface AgentManagerConfig {
   primaryProvider: IAIProvider;
@@ -43,6 +44,8 @@ export class AgentManager {
   private taskQueue: AgentTask[] = [];
   private executionHistory: AgentExecutionResult[] = [];
   private activeWorkflows: Map<string, WorkflowResult> = new Map();
+  private executionLogger = getExecutionLogger();
+  private mode: 'demo' | 'real' = 'demo';
 
   constructor(config: AgentManagerConfig) {
     this.config = config;
@@ -139,6 +142,13 @@ export class AgentManager {
 
     this.log('Workflow started', { workflowId, stepCount: steps.length });
 
+    // Start execution logging
+    this.executionLogger.startWorkflow(
+      workflowId,
+      this.config.primaryProvider.getProviderType(),
+      this.mode
+    );
+
     const workflow: WorkflowResult = {
       workflowId,
       status: 'in_progress',
@@ -172,21 +182,55 @@ export class AgentManager {
           dependencies: step.dependsOn,
         };
 
-        const result = await this.executeTask(
+        const stepStartTime = Date.now();
+        const entryId = this.executionLogger.logAgentStart(
+          workflowId,
           step.agentType,
-          step.description,
+          this.config.primaryProvider.getProviderType(),
           step.input,
-          context
+          this.mode
         );
 
-        results.push(result);
-        aggregatedResults[step.agentType] = result.output;
-        totalTokensUsed += result.tokensUsed || 0;
+        try {
+          this.executionLogger.logAgentProcessing(workflowId, entryId);
 
+          const result = await this.executeTask(
+            step.agentType,
+            step.description,
+            step.input,
+            context
+          );
+
+          const stepExecutionTime = Date.now() - stepStartTime;
+          this.executionLogger.logAgentCompletion(
+            workflowId,
+            entryId,
+            result.output,
+            stepExecutionTime,
+            result.tokensUsed || 0
+          );
+
+          results.push(result);
+          aggregatedResults[step.agentType] = result.output;
+          totalTokensUsed += result.tokensUsed || 0;
+        } catch (stepError) {
+          const stepExecutionTime = Date.now() - stepStartTime;
+          const errorMessage = stepError instanceof Error ? stepError.message : String(stepError);
+          this.executionLogger.logAgentError(
+            workflowId,
+            entryId,
+            errorMessage,
+            stepExecutionTime
+          );
+          throw stepError;
+        }
+
+        // Note: result is from the try block above
+        const lastResult = results[results.length - 1];
         this.log('Workflow step completed', {
           workflowId,
           agentType: step.agentType,
-          success: result.success,
+          success: lastResult?.success || false,
         });
       }
 
@@ -197,6 +241,9 @@ export class AgentManager {
       workflow.aggregatedResults = aggregatedResults;
       workflow.executionTime = executionTime;
       workflow.totalTokensUsed = totalTokensUsed;
+
+      // Complete execution logging
+      this.executionLogger.completeWorkflow(workflowId, 'completed');
 
       this.log('Workflow completed', {
         workflowId,
@@ -212,6 +259,9 @@ export class AgentManager {
       workflow.status = 'failed';
       workflow.error = errorMessage;
       workflow.executionTime = executionTime;
+
+      // Complete execution logging
+      this.executionLogger.completeWorkflow(workflowId, 'failed');
 
       this.logError('Workflow failed', { workflowId, error });
 
@@ -278,5 +328,40 @@ export class AgentManager {
       timestamp: new Date().toISOString(),
       ...data,
     });
+  }
+
+  /**
+   * Set mode (demo or real)
+   */
+  setMode(mode: 'demo' | 'real'): void {
+    this.mode = mode;
+  }
+
+  /**
+   * Get mode
+   */
+  getMode(): 'demo' | 'real' {
+    return this.mode;
+  }
+
+  /**
+   * Get execution logs
+   */
+  getExecutionLogs() {
+    return this.executionLogger.getAllLogs();
+  }
+
+  /**
+   * Get workflow log
+   */
+  getWorkflowLog(workflowId: string) {
+    return this.executionLogger.getWorkflowLog(workflowId);
+  }
+
+  /**
+   * Get statistics
+   */
+  getStatistics() {
+    return this.executionLogger.getStatistics();
   }
 }
