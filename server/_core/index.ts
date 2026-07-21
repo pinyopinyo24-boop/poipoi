@@ -51,7 +51,14 @@ async function startServer() {
   });
   registerStorageProxy(app);
   registerOAuthRoutes(app);
-  
+    // Health check API
+  app.get("/health", (_req, res) => {
+    res.json({
+      status: "ok",
+      service: "Poipoi",
+      timestamp: new Date().toISOString(),
+    });
+  });
   // Serve upload directory for testing
   app.use('/upload', express.static('/home/ubuntu/upload'));
   
