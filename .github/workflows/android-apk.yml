@@ -1,0 +1,161 @@
+name: Android APK Build
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+    inputs:
+      build_type:
+        description: 'Build type (debug or release)'
+        required: false
+        default: 'release'
+        type: choice
+        options:
+          - debug
+          - release
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      # Phase 6: Repository Checkout
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      # Phase 7: Node.js Setup (v24)
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: 'npm'
+
+      # Phase 8: Java Setup (Java 17)
+      - name: Setup Java 17
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+
+      # Phase 5: Android SDK Setup
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+
+      # Phase 9-10: Install dependencies with npm ci
+      - name: Check for package-lock.json in mobile
+        id: check_lock
+        run: |
+          if [ -f mobile/package-lock.json ]; then
+            echo "lock_exists=true" >> $GITHUB_OUTPUT
+          else
+            echo "lock_exists=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Install dependencies with npm ci
+        if: steps.check_lock.outputs.lock_exists == 'true'
+        working-directory: ./mobile
+        run: npm ci
+
+      - name: Install dependencies with npm install
+        if: steps.check_lock.outputs.lock_exists == 'false'
+        working-directory: ./mobile
+        run: npm install
+
+      # Phase 11: Expo prebuild (if android folder doesn't exist)
+      - name: Check if android folder exists
+        id: check_android
+        run: |
+          if [ -d mobile/android ]; then
+            echo "android_exists=true" >> $GITHUB_OUTPUT
+          else
+            echo "android_exists=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Run Expo prebuild
+        if: steps.check_android.outputs.android_exists == 'false'
+        working-directory: ./mobile
+        run: npx expo prebuild --platform android --clean
+
+      # Create local.properties if not exists
+      - name: Create local.properties
+        working-directory: ./mobile/android
+        run: |
+          if [ ! -f local.properties ]; then
+            echo "sdk.dir=$ANDROID_HOME" > local.properties
+            echo "✅ Created local.properties"
+          else
+            echo "✅ local.properties already exists"
+          fi
+
+      # Phase 12: Gradle Build (Release APK)
+      - name: Make gradlew executable
+        working-directory: ./mobile/android
+        run: chmod +x gradlew
+
+      - name: Build Release APK
+        if: github.event.inputs.build_type == 'release' || (github.event_name == 'push')
+        working-directory: ./mobile/android
+        env:
+          MYAPP_UPLOAD_STORE_FILE: ${{ secrets.MYAPP_UPLOAD_STORE_FILE }}
+          MYAPP_UPLOAD_STORE_PASSWORD: ${{ secrets.MYAPP_UPLOAD_STORE_PASSWORD }}
+          MYAPP_UPLOAD_KEY_ALIAS: ${{ secrets.MYAPP_UPLOAD_KEY_ALIAS }}
+          MYAPP_UPLOAD_KEY_PASSWORD: ${{ secrets.MYAPP_UPLOAD_KEY_PASSWORD }}
+        run: ./gradlew assembleRelease
+
+      - name: Build Debug APK
+        if: github.event.inputs.build_type == 'debug'
+        working-directory: ./mobile/android
+        run: ./gradlew assembleDebug
+
+      # Phase 13: APK Verification
+      - name: Verify Release APK
+        if: github.event.inputs.build_type == 'release' || (github.event_name == 'push')
+        working-directory: ./mobile/android
+        run: |
+          echo "=== Release APK Build Output ===" 
+          find . -name "*.apk" -type f
+          echo ""
+          echo "=== APK Details ===" 
+          ls -lh app/build/outputs/apk/release/app-release.apk || echo "❌ Release APK not found"
+
+      - name: Verify Debug APK
+        if: github.event.inputs.build_type == 'debug'
+        working-directory: ./mobile/android
+        run: |
+          echo "=== Debug APK Build Output ===" 
+          find . -name "*.apk" -type f
+          echo ""
+          echo "=== APK Details ===" 
+          ls -lh app/build/outputs/apk/debug/app-debug.apk || echo "❌ Debug APK not found"
+
+      # Phase 14: Artifacts Upload
+      - name: Upload Release APK Artifact
+        if: github.event.inputs.build_type == 'release' || (github.event_name == 'push')
+        uses: actions/upload-artifact@v4
+        with:
+          name: PoiPoi-APK
+          path: mobile/android/app/build/outputs/apk/release/app-release.apk
+          retention-days: 30
+
+      - name: Upload Debug APK Artifact
+        if: github.event.inputs.build_type == 'debug'
+        uses: actions/upload-artifact@v4
+        with:
+          name: PoiPoi-APK-Debug
+          path: mobile/android/app/build/outputs/apk/debug/app-debug.apk
+          retention-days: 30
+
+      # Success Notification
+      - name: Build Success
+        if: success()
+        run: |
+          echo "✅ APK Build Successful!"
+          echo "📦 Artifacts available for download"
+
+      # Failure Notification
+      - name: Build Failure
+        if: failure()
+        run: |
+          echo "❌ APK Build Failed!"
+          exit 1
