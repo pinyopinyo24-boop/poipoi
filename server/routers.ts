@@ -30,6 +30,7 @@ import { agentMemoryRouter } from "./routers/agentMemory";
 import { commanderRouter } from "./routers/commander";
 import { improvementRouter } from "./routers/improvement";
 import { productionRouter } from "./routers/production";
+import { hybridRouter } from "./routers/hybrid";
 import { z } from "zod";
 
 export const appRouter = router({
@@ -62,6 +63,7 @@ export const appRouter = router({
   commander: commanderRouter,
   improvement: improvementRouter,
   production: productionRouter,
+  hybrid: hybridRouter,
   
   clearHistory: protectedProcedure
     .mutation(async () => {
