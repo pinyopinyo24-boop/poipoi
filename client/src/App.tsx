@@ -24,6 +24,7 @@ import PoiPoiBetaChat from './pages/PoiPoiBetaChat';
 import AIProviderSelector from './pages/AIProviderSelector';
 import FileProcessing from './pages/FileProcessing';
 import ManufacturingAIDashboard from './pages/ManufacturingAIDashboard';
+import Settings from './pages/Settings';
 import Login from "./pages/Login";
 import NotFound from "./pages/NotFound";
 
@@ -37,10 +38,10 @@ function Router() {
       <Route path="/streaming" component={StreamingChat} />
       <Route path="/api-docs" component={APIDocs} />
       <Route path="/admin" component={AdminDashboard} />
-      <Route path="/export" component={ExportSettings} />
+      {/* <Route path="/export" component={ExportSettings} /> */}
       <Route path="/advanced-features" component={AdvancedFeatures} />
       <Route path="/documents" component={DocumentGenerator} />
-      <Route path="/advanced-features" component={AdvancedFeaturesPage} />
+      {/* <Route path="/advanced-features" component={AdvancedFeaturesPage} /> */}
       <Route path="/history-memory" component={HistoryMemory} />
       <Route path="/face-swap" component={FaceSwap} />
       <Route path="/face-swap-new" component={FaceSwapPage} />
@@ -55,6 +56,7 @@ function Router() {
       <Route path="/ai-providers" component={AIProviderSelector} />
       <Route path="/file-processing" component={FileProcessing} />
       <Route path="/manufacturing-ai" component={ManufacturingAIDashboard} />
+      <Route path="/settings" component={Settings} />
       <Route path="/404" component={NotFound} />
       {/* Final fallback route */}
       <Route component={NotFound} />
