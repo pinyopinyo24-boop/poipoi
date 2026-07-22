@@ -31,6 +31,7 @@ import { commanderRouter } from "./routers/commander";
 import { improvementRouter } from "./routers/improvement";
 import { productionRouter } from "./routers/production";
 import { hybridRouter } from "./routers/hybrid";
+import { syncRouter } from "./routers/sync";
 import { z } from "zod";
 
 export const appRouter = router({
@@ -64,6 +65,7 @@ export const appRouter = router({
   improvement: improvementRouter,
   production: productionRouter,
   hybrid: hybridRouter,
+  sync: syncRouter,
   
   clearHistory: protectedProcedure
     .mutation(async () => {
