@@ -28,6 +28,7 @@ import { aiAgentsRouter } from "./routers/aiAgents";
 import { executionLogsRouter } from "./routers/executionLogs";
 import { agentMemoryRouter } from "./routers/agentMemory";
 import { commanderRouter } from "./routers/commander";
+import { improvementRouter } from "./routers/improvement";
 import { z } from "zod";
 
 export const appRouter = router({
@@ -58,6 +59,7 @@ export const appRouter = router({
   aiAgents: aiAgentsRouter,
   agentMemory: agentMemoryRouter,
   commander: commanderRouter,
+  improvement: improvementRouter,
   
   clearHistory: protectedProcedure
     .mutation(async () => {
