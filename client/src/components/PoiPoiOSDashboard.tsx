@@ -7,25 +7,30 @@ import { useState, useEffect } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { AlertCircle, CheckCircle, AlertTriangle, Zap, Brain, Cog, TrendingUp, Clock, Activity, Loader2, Send } from 'lucide-react';
+import { AlertCircle, CheckCircle, AlertTriangle, Zap, Brain, Cog, TrendingUp, Clock, Activity, Loader2, Send, BarChart3 } from 'lucide-react';
 import { trpc } from '@/lib/trpc';
 
 // Status Badge Component
-function StatusBadge({ status }: { status: 'idle' | 'processing' | 'completed' | 'failed' | 'waiting' }) {
-  const statusConfig = {
+function StatusBadge({ status }: { status: 'idle' | 'processing' | 'completed' | 'failed' | 'waiting' | 'pending' | 'analyzing' | 'designing' | 'implementing' | 'reviewing' }) {
+  const statusConfig: Record<string, any> = {
     idle: { icon: CheckCircle, label: 'アイドル', color: 'bg-green-100 text-green-800' },
     processing: { icon: Loader2, label: '処理中', color: 'bg-blue-100 text-blue-800' },
     completed: { icon: CheckCircle, label: '完了', color: 'bg-green-100 text-green-800' },
     failed: { icon: AlertCircle, label: 'エラー', color: 'bg-red-100 text-red-800' },
     waiting: { icon: Clock, label: '待機中', color: 'bg-yellow-100 text-yellow-800' },
+    pending: { icon: Clock, label: '保留中', color: 'bg-gray-100 text-gray-800' },
+    analyzing: { icon: Brain, label: '分析中', color: 'bg-blue-100 text-blue-800' },
+    designing: { icon: Cog, label: 'デザイン中', color: 'bg-purple-100 text-purple-800' },
+    implementing: { icon: Zap, label: '実装中', color: 'bg-orange-100 text-orange-800' },
+    reviewing: { icon: CheckCircle, label: 'レビュー中', color: 'bg-cyan-100 text-cyan-800' },
   };
 
-  const config = statusConfig[status];
+  const config = statusConfig[status] || statusConfig.idle;
   const Icon = config.icon;
 
   return (
     <Badge variant="outline" className={`${config.color} border-0`}>
-      <Icon className={`w-3 h-3 mr-1 ${status === 'processing' ? 'animate-spin' : ''}`} />
+      <Icon className={`w-3 h-3 mr-1 ${(status === 'processing' || status === 'analyzing' || status === 'designing' || status === 'implementing' || status === 'reviewing') ? 'animate-spin' : ''}`} />
       {config.label}
     </Badge>
   );
@@ -98,46 +103,106 @@ function AgentStatusCard({ agentType, status }: { agentType: string; status: str
   );
 }
 
+// Workflow Progress Display
+function WorkflowProgressDisplay({ workflow }: { workflow: any }) {
+  if (!workflow) return null;
+
+  const steps = ['analyzing', 'designing', 'implementing', 'reviewing', 'completed'];
+  const currentStepIndex = steps.indexOf(workflow.state);
+
+  return (
+    <Card className="border-blue-200 bg-blue-50">
+      <CardHeader>
+        <CardTitle className="text-lg">⚙️ ワークフロー進行状況</CardTitle>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        {/* Progress Bar */}
+        <div className="space-y-2">
+          <div className="flex justify-between text-sm">
+            <span className="font-semibold">進捗</span>
+            <span className="text-muted-foreground">{Math.round((currentStepIndex / steps.length) * 100)}%</span>
+          </div>
+          <div className="w-full bg-gray-200 rounded-full h-2">
+            <div
+              className="bg-blue-600 h-2 rounded-full transition-all duration-300"
+              style={{ width: `${(currentStepIndex / steps.length) * 100}%` }}
+            />
+          </div>
+        </div>
+
+        {/* Step Timeline */}
+        <div className="space-y-2">
+          {workflow.steps && workflow.steps.map((step: any, index: number) => (
+            <div key={step.id} className="flex items-center gap-3 text-sm">
+              <div className="flex-shrink-0 w-6 h-6 rounded-full flex items-center justify-center bg-white border-2 border-blue-600">
+                {step.state === 'completed' ? (
+                  <CheckCircle className="w-4 h-4 text-green-600" />
+                ) : step.state === 'failed' ? (
+                  <AlertCircle className="w-4 h-4 text-red-600" />
+                ) : (
+                  <span className="text-xs font-semibold">{index + 1}</span>
+                )}
+              </div>
+              <div className="flex-1">
+                <p className="font-semibold capitalize">{step.agentType} Agent</p>
+                <p className="text-xs text-muted-foreground">{step.duration || 0}ms</p>
+              </div>
+              <StatusBadge status={step.state} />
+              {step.error && (
+                <AlertTriangle className="w-4 h-4 text-red-600" />
+              )}
+            </div>
+          ))}
+        </div>
+
+        {/* Summary */}
+        <div className="grid grid-cols-3 gap-2 bg-white rounded p-3 text-sm border">
+          <div>
+            <p className="text-muted-foreground text-xs">成功率</p>
+            <p className="font-semibold">{workflow.successRate?.toFixed(1) || 0}%</p>
+          </div>
+          <div>
+            <p className="text-muted-foreground text-xs">実行時間</p>
+            <p className="font-semibold">{workflow.duration || 0}ms</p>
+          </div>
+          <div>
+            <p className="text-muted-foreground text-xs">トークン使用</p>
+            <p className="font-semibold">{workflow.totalTokensUsed || 0}</p>
+          </div>
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
 // Workflow Result Display
 function WorkflowResultDisplay({ result }: { result: any }) {
   if (!result) return null;
 
   return (
-    <Card className="border-blue-200 bg-blue-50">
+    <Card className="border-green-200 bg-green-50">
       <CardHeader>
-        <CardTitle className="text-lg">🔄 ワークフロー実行結果</CardTitle>
+        <CardTitle className="text-lg">✅ ワークフロー実行完了</CardTitle>
       </CardHeader>
       <CardContent className="space-y-4">
         <div className="grid grid-cols-2 md:grid-cols-4 gap-2 text-sm">
           <div>
             <p className="text-muted-foreground">ステータス</p>
-            <p className="font-semibold capitalize">{result.status}</p>
+            <p className="font-semibold capitalize">{result.state}</p>
           </div>
           <div>
             <p className="text-muted-foreground">ステップ数</p>
-            <p className="font-semibold">{result.stepCount}</p>
+            <p className="font-semibold">{result.steps?.length || 0}</p>
           </div>
           <div>
             <p className="text-muted-foreground">実行時間</p>
-            <p className="font-semibold">{result.executionTime}ms</p>
+            <p className="font-semibold">{result.duration || 0}ms</p>
           </div>
           <div>
-            <p className="text-muted-foreground">トークン使用</p>
-            <p className="font-semibold">{result.totalTokensUsed}</p>
+            <p className="text-muted-foreground">成功率</p>
+            <p className="font-semibold">{result.successRate?.toFixed(1) || 0}%</p>
           </div>
         </div>
-
-        {result.aggregatedResults && (
-          <div className="space-y-3">
-            <h4 className="font-semibold text-sm">📊 各Agent の返答:</h4>
-            {Object.entries(result.aggregatedResults).map(([key, value]: [string, any]) => (
-              <div key={key} className="bg-white border rounded p-3 text-sm">
-                <p className="font-semibold text-blue-700 mb-2">{key}:</p>
-                <p className="text-gray-700 whitespace-pre-wrap">{typeof value === 'string' ? value : JSON.stringify(value, null, 2)}</p>
-              </div>
-            ))}
-          </div>
-        )}
 
         {result.error && (
           <div className="bg-red-50 border border-red-200 rounded p-3 text-sm text-red-700">
@@ -150,11 +215,44 @@ function WorkflowResultDisplay({ result }: { result: any }) {
   );
 }
 
+// Workflow History Display
+function WorkflowHistoryDisplay({ workflows }: { workflows: any[] }) {
+  if (!workflows || workflows.length === 0) return null;
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="text-lg flex items-center gap-2">
+          <BarChart3 className="w-5 h-5" />
+          実行履歴
+        </CardTitle>
+      </CardHeader>
+      <CardContent>
+        <div className="space-y-2 max-h-64 overflow-y-auto">
+          {workflows.slice(0, 10).map((workflow: any) => (
+            <div key={workflow.workflowId} className="flex items-center justify-between p-2 border rounded bg-gray-50 text-sm">
+              <div className="flex-1">
+                <p className="font-semibold capitalize">{workflow.state}</p>
+                <p className="text-xs text-muted-foreground">{workflow.userInput?.substring(0, 50)}...</p>
+              </div>
+              <div className="flex items-center gap-4 text-xs">
+                <span>{workflow.duration}ms</span>
+                <span>{workflow.successRate?.toFixed(0)}%</span>
+              </div>
+            </div>
+          ))}
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
 // Main Dashboard Component
 export function PoiPoiOSDashboard() {
   const [initialized, setInitialized] = useState(false);
   const [loading, setLoading] = useState(true);
   const [inputText, setInputText] = useState('');
+  const [currentWorkflow, setCurrentWorkflow] = useState<any>(null);
   const [workflowResult, setWorkflowResult] = useState<any>(null);
   const [isExecuting, setIsExecuting] = useState(false);
 
@@ -164,6 +262,7 @@ export function PoiPoiOSDashboard() {
   const providerStatusesQuery = trpc.aiAgents.getProviderStatuses.useQuery(undefined, { enabled: initialized });
   const agentStatusesQuery = trpc.aiAgents.getAgentStatuses.useQuery(undefined, { enabled: initialized });
   const executeWorkflowMutation = trpc.aiAgents.executeWorkflow.useMutation();
+  const workflowHistoryQuery = trpc.agentMemory.getMemorySummary.useQuery(undefined, { enabled: initialized });
 
   // Initialize AI Core on mount
   useEffect(() => {
@@ -190,6 +289,7 @@ export function PoiPoiOSDashboard() {
       systemStatusQuery.refetch();
       providerStatusesQuery.refetch();
       agentStatusesQuery.refetch();
+      workflowHistoryQuery.refetch();
     }, 5000);
 
     return () => clearInterval(interval);
@@ -210,32 +310,36 @@ export function PoiPoiOSDashboard() {
             input: { userInput: inputText },
           },
           {
-            agentType: 'implementation',
-            description: 'ChatGPT で返答を生成',
-            input: { message: inputText, provider: 'chatgpt' },
+            agentType: 'design',
+            description: 'デザイン生成',
+            input: { userInput: inputText },
             dependsOn: ['task'],
           },
           {
-            agentType: 'design',
-            description: 'Gemini で返答を生成',
-            input: { message: inputText, provider: 'gemini' },
-            dependsOn: ['task'],
+            agentType: 'implementation',
+            description: '実装生成',
+            input: { userInput: inputText },
+            dependsOn: ['design'],
           },
           {
             agentType: 'review',
-            description: 'ReviewAgent が両方の返答をレビュー',
-            input: { message: inputText },
-            dependsOn: ['implementation', 'design'],
+            description: 'レビュー実行',
+            input: { userInput: inputText },
+            dependsOn: ['implementation'],
           },
         ],
       });
 
+      setCurrentWorkflow(result);
       setWorkflowResult(result);
       setInputText('');
+      
+      // Refresh history
+      // workflowHistoryQuery.refetch();
     } catch (error) {
       console.error('Workflow execution failed:', error);
       setWorkflowResult({
-        status: 'failed',
+        state: 'failed',
         error: error instanceof Error ? error.message : 'ワークフロー実行に失敗しました',
       });
     } finally {
@@ -246,9 +350,7 @@ export function PoiPoiOSDashboard() {
   const systemStatus = systemStatusQuery.data;
   const providerStatuses = providerStatusesQuery.data || {};
   const agentStatuses = agentStatusesQuery.data || {};
-
-  // Memory statistics query
-  const memorySummaryQuery = trpc.agentMemory.getMemorySummary.useQuery(undefined, { enabled: initialized });
+  const workflowHistory = (Array.isArray(workflowHistoryQuery.data) ? workflowHistoryQuery.data : []) || [];
 
   if (loading) {
     return (
@@ -328,13 +430,23 @@ export function PoiPoiOSDashboard() {
             </Button>
           </div>
           <p className="text-xs text-muted-foreground">
-            ℹ️ 入力したメッセージは TaskAgent → ImplementationAgent (ChatGPT) → DesignAgent (Gemini) → ReviewAgent の順で処理されます
+            ℹ️ 入力したメッセージは TaskAgent → DesignAgent → ImplementationAgent → ReviewAgent の順で処理されます
           </p>
         </CardContent>
       </Card>
 
+      {/* Workflow Progress */}
+      {currentWorkflow && currentWorkflow.state !== 'completed' && (
+        <WorkflowProgressDisplay workflow={currentWorkflow} />
+      )}
+
       {/* Workflow Result */}
-      {workflowResult && <WorkflowResultDisplay result={workflowResult} />}
+      {workflowResult && workflowResult.state === 'completed' && (
+        <WorkflowResultDisplay result={workflowResult} />
+      )}
+
+      {/* Workflow History */}
+      {Array.isArray(workflowHistory) && <WorkflowHistoryDisplay workflows={workflowHistory} />}
 
       {/* Providers Section */}
       <div className="space-y-4">
