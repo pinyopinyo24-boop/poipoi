@@ -63,52 +63,71 @@ export class CommanderEngine {
   private executionPlans: ExecutionPlan[] = [];
   private currentStatus: CommanderStatus | null = null;
 
-  // Task category keywords
+  // Task category keywords (English + Japanese)
   private categoryKeywords: Record<TaskCategory, string[]> = {
     question: [
       'what', 'how', 'why', 'when', 'where', 'who', 'explain', 'describe',
       'tell me', 'help', 'understand', 'know', 'learn', 'question', 'ask',
-      'clarify', 'meaning', 'definition', 'information'
+      'clarify', 'meaning', 'definition', 'information',
+      'なぜ', 'どうして', 'どのように', 'いつ', 'どこ', 'だれ', '説明', '理解',
+      '教えて', 'わかる', '知る', '学ぶ', '質問', 'なに', 'どう'
     ],
     design: [
       'design', 'create', 'build', 'architect', 'plan', 'structure', 'layout',
       'ui', 'ux', 'interface', 'schema', 'model', 'diagram', 'mockup',
-      'prototype', 'sketch', 'wireframe', 'component'
+      'prototype', 'sketch', 'wireframe', 'component',
+      'デザイン', '作成', '構築', '設計', '計画', 'UI', 'UX', 'インターフェース',
+      'スキーマ', 'モデル', '図', 'プロトタイプ', 'スケッチ', 'ワイヤーフレーム'
     ],
     implementation: [
       'implement', 'code', 'write', 'develop', 'build', 'create', 'generate',
       'function', 'class', 'module', 'script', 'program', 'application',
-      'feature', 'fix', 'patch', 'update'
+      'feature', 'fix', 'patch', 'update',
+      '実装', 'コード', '書く', '開発', '構築', '作成', '生成', 'プログラム',
+      'アプリケーション', '機能', '修正', 'パッチ', '更新'
     ],
     review: [
       'review', 'check', 'test', 'validate', 'verify', 'audit', 'inspect',
       'quality', 'error', 'bug', 'issue', 'problem', 'improve', 'optimize',
-      'refactor', 'clean', 'best practice'
+      'refactor', 'clean', 'best practice',
+      'レビュー', 'チェック', 'テスト', '検証', '監査', '品質', 'エラー',
+      'バグ', '問題', '改善', '最適化', 'リファクタリング'
     ],
     analysis: [
-      'analyze', 'analyze', 'examine', 'investigate', 'study', 'research',
+      'analyze', 'examine', 'investigate', 'study', 'research',
       'evaluate', 'assess', 'measure', 'calculate', 'statistics', 'data',
-      'pattern', 'trend', 'insight', 'metric', 'performance'
+      'pattern', 'trend', 'insight', 'metric', 'performance',
+      '分析', '調査', '研究', '評価', '測定', '計算', '統計', 'データ',
+      'パターン', 'トレンド', '洞察', 'メトリクス', '回転率', 'レート'
     ],
     optimization: [
       'optimize', 'improve', 'enhance', 'speed up', 'faster', 'efficient',
       'performance', 'reduce', 'minimize', 'maximize', 'scale', 'refactor',
-      'streamline', 'simplify', 'better'
+      'streamline', 'simplify', 'better',
+      '最適化', '改善', '向上', '高速化', '効率', 'パフォーマンス',
+      '削減', '最小化', '最大化', 'スケール'
     ],
     documentation: [
       'document', 'write', 'explain', 'comment', 'readme', 'guide', 'tutorial',
       'manual', 'specification', 'api', 'reference', 'example', 'description',
-      'docstring', 'javadoc', 'jsdoc'
+      'docstring', 'javadoc', 'jsdoc',
+      'ドキュメント', '書く', '説明', 'コメント', 'ガイド', 'チュートリアル',
+      'マニュアル', '仕様', 'API', 'リファレンス'
     ],
     debugging: [
       'debug', 'error', 'bug', 'fix', 'crash', 'fail', 'issue', 'problem',
       'not working', 'broken', 'exception', 'trace', 'stack', 'log',
-      'troubleshoot', 'diagnose'
+      'troubleshoot', 'diagnose',
+      'デバッグ', 'エラー', 'バグ', '修正', 'クラッシュ', '失敗', '問題',
+      '動作しない', '壊れた', '例外', 'トラブルシューティング'
     ],
     planning: [
       'plan', 'strategy', 'roadmap', 'timeline', 'schedule', 'milestone',
       'goal', 'objective', 'requirement', 'specification', 'scope',
-      'estimate', 'resource', 'task'
+      'estimate', 'resource', 'task',
+      '計画', '戦略', 'ロードマップ', 'タイムライン', 'スケジュール',
+      'マイルストーン', '目標', '要件', '仕様', '見積もり', 'リソース',
+      '案', '改善案', 'プラン'
     ],
     unknown: []
   };
@@ -260,7 +279,8 @@ export class CommanderEngine {
       
       let score = 0;
       for (const keyword of categoryKeywords) {
-        if (inputLower.includes(keyword)) {
+        // Check both lowercase and original for Japanese support
+        if (inputLower.includes(keyword.toLowerCase()) || input.includes(keyword)) {
           score += 2;
         }
       }
