@@ -91,7 +91,7 @@ export class ErrorAnalyzer {
   /**
    * Classify error
    */
-  private classifyError(message: string): { severity: string; category: string } {
+  private classifyError(message: string): { severity: 'low' | 'medium' | 'high' | 'critical'; category: string } {
     let severity: 'low' | 'medium' | 'high' | 'critical' = 'medium' as const;
     let category = 'unknown';
 

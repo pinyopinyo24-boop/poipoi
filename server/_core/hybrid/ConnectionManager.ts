@@ -87,23 +87,29 @@ export class ConnectionManager {
   /**
    * Perform health check on both servers
    */
-  private async performHealthCheck(): Promise<void> {
+  public async performHealthCheck(): Promise<{ local: boolean; cloud: boolean }> {
     console.log('[ConnectionManager] Performing health check...');
+
+    const result = { local: false, cloud: false };
 
     // Check local server
     if (this.config.connectionMode !== 'cloud-only') {
       const localResult = await this.checkServerHealth(this.config.localServerUrl);
       this.updateConnectionState('local', localResult);
+      result.local = localResult;
     }
 
     // Check cloud server
     if (this.config.connectionMode !== 'local-only') {
       const cloudResult = await this.checkServerHealth(this.config.cloudServerUrl);
       this.updateConnectionState('cloud', cloudResult);
+      result.cloud = cloudResult;
     }
 
     // Determine current connection
     await this.determineConnection();
+
+    return result;
   }
 
   /**
