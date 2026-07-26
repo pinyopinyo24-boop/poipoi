@@ -40,6 +40,7 @@ export type LLMResponse = {
   };
 };
 
+
 export type LLMModel = {
   id: string;
   object: string;
@@ -53,8 +54,20 @@ const GEMINI_API_URL =
   "https://generativelanguage.googleapis.com/v1beta/openai/";
 
 const DEFAULT_MODEL = "gemini-2.0-flash";
+export async function invokeLLM(
+  request: LLMRequest
+): Promise<LLMResponse> {
 
+  const model = request.model || ned_by: string;
+  permission: Array<Record<string, unknown>>;
+};
 
+const GEMINI_API_KEY = process.env.GEMINI_API_KEY || "";
+
+const GEMINI_API_URL =
+  "https://generativelanguage.googleapis.com/v1beta/openai/";
+
+const DEFAULT_MODEL = "gemini-2.0-flash";
 export async function invokeLLM(
   request: LLMRequest
 ): Promise<LLMResponse> {
