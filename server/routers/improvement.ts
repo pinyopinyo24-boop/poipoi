@@ -100,7 +100,7 @@ export const improvementRouter = router({
   /**
    * Apply a suggestion
    */
-  apply: publicProcedure
+  applySuggestion: publicProcedure
     .input(z.object({
       suggestionId: z.string(),
     }))

@@ -1,4 +1,4 @@
-import { int, mysqlEnum, mysqlTable, text, timestamp, varchar, boolean, json, index } from "drizzle-orm/mysql-core";
+import { int, mysqlEnum, mysqlTable, text, timestamp, varchar, boolean, json, index, date, decimal } from "drizzle-orm/mysql-core";
 
 /**
  * Core user table backing auth flow.
@@ -201,3 +201,62 @@ export const faceSwapResults = mysqlTable(
 
 export type FaceSwapResult = typeof faceSwapResults.$inferSelect;
 export type InsertFaceSwapResult = typeof faceSwapResults.$inferInsert;
+
+
+// Schedule table for Schedule Memory feature
+export const schedules = mysqlTable(
+  "schedules",
+  {
+    id: varchar("id", { length: 36 }).primaryKey(),
+    userId: int("userId").notNull(),
+    title: text("title").notNull(),
+    description: text("description"),
+    scheduledDate: date("scheduledDate").notNull(),
+    startTime: varchar("startTime", { length: 5 }), // HH:MM format
+    endTime: varchar("endTime", { length: 5 }), // HH:MM format
+    priority: mysqlEnum("priority", ["low", "medium", "high", "urgent"]).default("medium").notNull(),
+    status: mysqlEnum("status", ["pending", "in-progress", "completed", "cancelled"]).default("pending").notNull(),
+    category: varchar("category", { length: 100 }),
+    tags: json("tags"), // Array of strings
+    location: text("location"),
+    metadata: json("metadata"),
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
+    updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+  },
+  (table) => ({
+    userIdIdx: index("schedules_userId_idx").on(table.userId),
+    scheduledDateIdx: index("schedules_scheduledDate_idx").on(table.scheduledDate),
+    statusIdx: index("schedules_status_idx").on(table.status),
+    priorityIdx: index("schedules_priority_idx").on(table.priority),
+    userIdScheduledDateIdx: index("schedules_userId_scheduledDate_idx").on(table.userId, table.scheduledDate),
+  })
+);
+
+export type Schedule = typeof schedules.$inferSelect;
+export type InsertSchedule = typeof schedules.$inferInsert;
+
+// Schedule Memory table for AI learning
+export const scheduleMemories = mysqlTable(
+  "scheduleMemories",
+  {
+    id: varchar("id", { length: 36 }).primaryKey(),
+    userId: int("userId").notNull(),
+    memoryType: mysqlEnum("memoryType", ["pattern", "preference", "insight", "suggestion"]).notNull(),
+    content: text("content").notNull(),
+    relatedScheduleIds: json("relatedScheduleIds"), // Array of schedule IDs
+    confidence: decimal("confidence", { precision: 3, scale: 2 }).default("0.50").notNull(),
+    tags: json("tags"), // Array of strings
+    usageCount: int("usageCount").default(0).notNull(),
+    lastUsed: timestamp("lastUsed"),
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
+    updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+  },
+  (table) => ({
+    userIdIdx: index("scheduleMemories_userId_idx").on(table.userId),
+    memoryTypeIdx: index("scheduleMemories_memoryType_idx").on(table.memoryType),
+    confidenceIdx: index("scheduleMemories_confidence_idx").on(table.confidence),
+  })
+);
+
+export type ScheduleMemory = typeof scheduleMemories.$inferSelect;
+export type InsertScheduleMemory = typeof scheduleMemories.$inferInsert;
