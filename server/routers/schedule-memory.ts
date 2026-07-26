@@ -5,7 +5,7 @@
 
 import { router, protectedProcedure } from "../_core/trpc";
 import { z } from "zod";
-import { scheduleMemoryService } from "../services/schedule/ScheduleMemoryService";
+import * as scheduleDb from "../db.schedule";
 
 export const scheduleMemoryRouter = router({
   /**
@@ -26,57 +26,50 @@ export const scheduleMemoryRouter = router({
         location: z.string().optional(),
       })
     )
-    .mutation(({ ctx, input }) => {
-      return scheduleMemoryService.addSchedule(ctx.user.id, input as any);
+    .mutation(async ({ ctx, input }) => {
+      return scheduleDb.addSchedule(ctx.user.id, input);
     }),
 
   /**
    * Get today's schedules
    */
-  getToday: protectedProcedure
-    .query(({ ctx }) => {
-      const schedules = scheduleMemoryService.getTodaySchedules(ctx.user.id);
-      return {
-        schedules,
-        summary: scheduleMemoryService.getTodaySummary(ctx.user.id),
-      };
-    }),
+  getToday: protectedProcedure.query(async ({ ctx }) => {
+    const schedules = await scheduleDb.getTodaySchedules(ctx.user.id);
+    const summary = await scheduleDb.getTodaySummary(ctx.user.id);
+    return {
+      schedules,
+      summary,
+    };
+  }),
 
   /**
    * Get schedules for a specific date
    */
   getByDate: protectedProcedure
     .input(z.object({ date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/) }))
-    .query(({ ctx, input }) => {
-      const schedules = scheduleMemoryService.getSchedulesByDate(ctx.user.id, input.date);
-      if (schedules.length === 0) {
-        return {
-          schedules: [],
-          message: `${input.date}に登録されている予定はありません`,
-        };
-      }
-      return { schedules, message: null };
+    .query(async ({ ctx, input }) => {
+      const schedules = await scheduleDb.getSchedulesByDate(ctx.user.id, input.date);
+      return { schedules };
     }),
 
   /**
    * Get upcoming schedules (next 7 days)
    */
-  getUpcoming: protectedProcedure
-    .query(({ ctx }) => {
-      const schedules = scheduleMemoryService.getUpcomingSchedules(ctx.user.id);
-      return {
-        schedules,
-        summary: scheduleMemoryService.getUpcomingSummary(ctx.user.id),
-      };
-    }),
+  getUpcoming: protectedProcedure.query(async ({ ctx }) => {
+    const schedules = await scheduleDb.getUpcomingSchedules(ctx.user.id);
+    const summary = await scheduleDb.getUpcomingSummary(ctx.user.id);
+    return {
+      schedules,
+      summary,
+    };
+  }),
 
   /**
-   * Get all schedules for the user
+   * Get all schedules for user
    */
-  getAll: protectedProcedure
-    .query(({ ctx }) => {
-      return scheduleMemoryService.getUserSchedules(ctx.user.id);
-    }),
+  getAll: protectedProcedure.query(async ({ ctx }) => {
+    return scheduleDb.getUserSchedules(ctx.user.id);
+  }),
 
   /**
    * Update a schedule
@@ -85,22 +78,21 @@ export const scheduleMemoryRouter = router({
     .input(
       z.object({
         id: z.string(),
-        updates: z.object({
-          title: z.string().optional(),
-          description: z.string().optional(),
-          scheduledDate: z.string().optional(),
-          startTime: z.string().optional(),
-          endTime: z.string().optional(),
-          priority: z.enum(["low", "medium", "high", "urgent"]).optional(),
-          status: z.enum(["pending", "in-progress", "completed", "cancelled"]).optional(),
-          category: z.string().optional(),
-          tags: z.array(z.string()).optional(),
-          location: z.string().optional(),
-        }),
+        title: z.string().optional(),
+        description: z.string().optional(),
+        scheduledDate: z.string().optional(),
+        startTime: z.string().optional(),
+        endTime: z.string().optional(),
+        priority: z.enum(["low", "medium", "high", "urgent"]).optional(),
+        status: z.enum(["pending", "in-progress", "completed", "cancelled"]).optional(),
+        category: z.string().optional(),
+        tags: z.array(z.string()).optional(),
+        location: z.string().optional(),
       })
     )
-    .mutation(({ input }) => {
-      return scheduleMemoryService.updateSchedule(input.id, input.updates);
+    .mutation(async ({ ctx, input }) => {
+      const { id, ...updates } = input;
+      return scheduleDb.updateSchedule(ctx.user.id, id, updates);
     }),
 
   /**
@@ -108,92 +100,38 @@ export const scheduleMemoryRouter = router({
    */
   deleteSchedule: protectedProcedure
     .input(z.object({ id: z.string() }))
-    .mutation(({ input }) => {
-      return scheduleMemoryService.deleteSchedule(input.id);
+    .mutation(async ({ ctx, input }) => {
+      return scheduleDb.deleteSchedule(ctx.user.id, input.id);
     }),
 
   /**
-   * Mark schedule as completed
-   */
-  completeSchedule: protectedProcedure
-    .input(z.object({ id: z.string() }))
-    .mutation(({ input }) => {
-      return scheduleMemoryService.updateSchedule(input.id, { status: "completed" });
-    }),
-
-  /**
-   * Get schedule context for AI
-   */
-  getContext: protectedProcedure
-    .query(({ ctx }) => {
-      return scheduleMemoryService.getScheduleContext(ctx.user.id);
-    }),
-
-  /**
-   * Get today's summary
-   */
-  getTodaySummary: protectedProcedure
-    .query(({ ctx }) => {
-      return {
-        summary: scheduleMemoryService.getTodaySummary(ctx.user.id),
-      };
-    }),
-
-  /**
-   * Get upcoming summary
-   */
-  getUpcomingSummary: protectedProcedure
-    .query(({ ctx }) => {
-      return {
-        summary: scheduleMemoryService.getUpcomingSummary(ctx.user.id),
-      };
-    }),
-
-  /**
-   * Analyze schedule patterns
-   */
-  analyzePatterns: protectedProcedure
-    .query(({ ctx }) => {
-      return {
-        analysis: scheduleMemoryService.analyzePatterns(ctx.user.id),
-      };
-    }),
-
-  /**
-   * Add memory entry
+   * Add schedule memory
    */
   addMemory: protectedProcedure
     .input(
       z.object({
         memoryType: z.enum(["pattern", "preference", "insight", "suggestion"]),
-        content: z.string(),
+        content: z.string().min(1),
         relatedScheduleIds: z.array(z.string()).optional(),
+        confidence: z.number().min(0).max(1).optional(),
+        tags: z.array(z.string()).optional(),
       })
     )
-    .mutation(({ ctx, input }) => {
-      return scheduleMemoryService.addMemory(
-        ctx.user.id,
-        input.memoryType,
-        input.content,
-        input.relatedScheduleIds
-      );
+    .mutation(async ({ ctx, input }) => {
+      return scheduleDb.addScheduleMemory(ctx.user.id, input);
     }),
 
   /**
-   * Get memories
+   * Get schedule memories
    */
   getMemories: protectedProcedure
-    .input(z.object({ memoryType: z.string().optional() }))
-    .query(({ ctx, input }) => {
-      return scheduleMemoryService.getUserMemories(ctx.user.id, input.memoryType);
-    }),
-
-  /**
-   * Get patterns
-   */
-  getPatterns: protectedProcedure
-    .query(({ ctx }) => {
-      return scheduleMemoryService.getPatterns(ctx.user.id);
+    .input(
+      z.object({
+        memoryType: z.enum(["pattern", "preference", "insight", "suggestion"]).optional(),
+      })
+    )
+    .query(async ({ ctx, input }) => {
+      return scheduleDb.getScheduleMemories(ctx.user.id, input.memoryType);
     }),
 
   /**
@@ -206,7 +144,94 @@ export const scheduleMemoryRouter = router({
         confidence: z.number().min(0).max(1),
       })
     )
-    .mutation(({ input }) => {
-      return scheduleMemoryService.updateMemoryConfidence(input.id, input.confidence);
+    .mutation(async ({ ctx, input }) => {
+      return scheduleDb.updateMemoryConfidence(ctx.user.id, input.id, input.confidence);
+    }),
+
+  /**
+   * Analyze schedule patterns
+   */
+  analyzePatterns: protectedProcedure.query(async ({ ctx }) => {
+    const analysis = await scheduleDb.analyzeSchedulePatterns(ctx.user.id);
+    return { analysis };
+  }),
+
+  /**
+   * Process natural language schedule request
+   * Recognizes: "今日の予定を整理して", "明日の予定は？", "予定を追加して"
+   */
+  processNaturalLanguage: protectedProcedure
+    .input(z.object({ query: z.string() }))
+    .mutation(async ({ ctx, input }) => {
+      const query = input.query.toLowerCase();
+
+      // Check for "today's schedules"
+      if (query.includes("今日") || query.includes("きょう")) {
+        if (query.includes("予定") || query.includes("整理")) {
+          const summary = await scheduleDb.getTodaySummary(ctx.user.id);
+          return {
+            type: "today",
+            response: summary,
+          };
+        }
+      }
+
+      // Check for "tomorrow's schedules"
+      if (query.includes("明日") || query.includes("あした")) {
+        if (query.includes("予定") || query.includes("？")) {
+          const tomorrow = new Date();
+          tomorrow.setDate(tomorrow.getDate() + 1);
+          const tomorrowStr = tomorrow.toISOString().split("T")[0];
+          const schedules = await scheduleDb.getSchedulesByDate(ctx.user.id, tomorrowStr);
+
+          if (schedules.length === 0) {
+            return {
+              type: "tomorrow",
+              response: "明日の予定は登録されていません",
+            };
+          }
+
+          const summary = schedules
+            .map((s: any) => `${s.startTime || "時間未設定"} ${s.title}`)
+            .join("\n");
+
+          return {
+            type: "tomorrow",
+            response: `明日の予定:\n${summary}`,
+          };
+        }
+      }
+
+      // Check for "add schedule"
+      if (query.includes("予定") && (query.includes("追加") || query.includes("登録"))) {
+        return {
+          type: "add_schedule",
+          response: "予定を追加するには、以下の情報を教えてください:\n- タイトル\n- 日付 (YYYY-MM-DD)\n- 時間 (HH:MM, オプション)\n- 優先度 (low/medium/high/urgent, オプション)",
+        };
+      }
+
+      // Check for "analyze patterns"
+      if (query.includes("分析") || query.includes("パターン")) {
+        const analysis = await scheduleDb.analyzeSchedulePatterns(ctx.user.id);
+        return {
+          type: "analyze",
+          response: analysis,
+        };
+      }
+
+      // Check for "upcoming schedules"
+      if (query.includes("今後") || query.includes("来週") || query.includes("週末")) {
+        const summary = await scheduleDb.getUpcomingSummary(ctx.user.id);
+        return {
+          type: "upcoming",
+          response: summary,
+        };
+      }
+
+      // Default: return no schedules message
+      return {
+        type: "default",
+        response: "現在登録されている予定はありません",
+      };
     }),
 });
