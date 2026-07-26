@@ -24,6 +24,7 @@ import { colabIntegrationRouter } from "./routers.colab-integration";
 import { selfEvolutionRouter } from "./routers/self-evolution";
 import { autoProgramGenerationRouter } from "./routers/auto-program-generation";
 import { chatRouter } from "./routers.chat";
+import { scheduleMemoryRouter } from "./routers/schedule-memory";
 import { aiAgentsRouter } from "./routers/aiAgents";
 import { executionLogsRouter } from "./routers/executionLogs";
 import { agentMemoryRouter } from "./routers/agentMemory";
@@ -59,6 +60,7 @@ export const appRouter = router({
   evolution: selfEvolutionRouter,
   autoProgramGeneration: autoProgramGenerationRouter,
   chat: chatRouter,
+  scheduleMemory: scheduleMemoryRouter,
   aiAgents: aiAgentsRouter,
   agentMemory: agentMemoryRouter,
   commander: commanderRouter,
