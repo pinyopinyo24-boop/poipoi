@@ -24,6 +24,7 @@ import PoiPoiBetaChat from './pages/PoiPoiBetaChat';
 import AIProviderSelector from './pages/AIProviderSelector';
 import FileProcessing from './pages/FileProcessing';
 import ManufacturingAIDashboard from './pages/ManufacturingAIDashboard';
+import ScheduleMemory from './pages/ScheduleMemory';
 import Settings from './pages/Settings';
 import Login from "./pages/Login";
 import NotFound from "./pages/NotFound";
@@ -55,7 +56,8 @@ function Router() {
       <Route path="/beta-chat" component={PoiPoiBetaChat} />
       <Route path="/ai-providers" component={AIProviderSelector} />
       <Route path="/file-processing" component={FileProcessing} />
-      <Route path="/manufacturing-ai" component={ManufacturingAIDashboard} />
+      <Route path="/manufacturing" component={ManufacturingAIDashboard} />
+      <Route path="/schedule-memory" component={ScheduleMemory} />
       <Route path="/settings" component={Settings} />
       <Route path="/404" component={NotFound} />
       {/* Final fallback route */}
