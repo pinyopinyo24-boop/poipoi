@@ -6,6 +6,9 @@
 import { router, protectedProcedure } from "../_core/trpc";
 import { z } from "zod";
 import * as scheduleDb from "../db.schedule";
+import * as recurrenceDb from "../db.recurrence";
+import { AIPriorityAssistant } from "../services/ai/AIPriorityAssistant";
+import { AndroidNotificationService } from "../services/notification/AndroidNotificationService";
 
 export const scheduleMemoryRouter = router({
   /**
@@ -233,5 +236,185 @@ export const scheduleMemoryRouter = router({
         type: "default",
         response: "現在登録されている予定はありません",
       };
+    }),
+
+  /**
+   * Add recurrence rule for a schedule
+   */
+  addRecurrence: protectedProcedure
+    .input(
+      z.object({
+        scheduleId: z.string(),
+        frequency: z.enum(["daily", "weekly", "monthly", "yearly"]),
+        interval: z.number().min(1).default(1),
+        endDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+        daysOfWeek: z.array(z.number()).optional(),
+      })
+    )
+    .mutation(async ({ ctx, input }) => {
+      const startDate = new Date();
+      const endDate = input.endDate ? new Date(input.endDate) : undefined;
+      return recurrenceDb.addRecurrenceRule(
+        ctx.user.id,
+        input.scheduleId,
+        input.frequency,
+        startDate,
+        {
+          interval: input.interval,
+          daysOfWeek: input.daysOfWeek,
+          endDate,
+        }
+      );
+    }),
+
+  /**
+   * Get recurrence rules for user
+   */
+  getRecurrences: protectedProcedure.query(async ({ ctx }) => {
+    return recurrenceDb.getActiveRecurrenceRules(ctx.user.id);
+  }),
+
+  /**
+   * Update recurrence rule
+   */
+  updateRecurrence: protectedProcedure
+    .input(
+      z.object({
+        id: z.string(),
+        frequency: z.enum(["daily", "weekly", "monthly", "yearly"]).optional(),
+        interval: z.number().min(1).optional(),
+        endDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+        daysOfWeek: z.array(z.number()).optional(),
+      })
+    )
+    .mutation(async ({ ctx, input }) => {
+      const { id, ...updates } = input;
+      const updateObj: any = {};
+      if (updates.frequency) updateObj.frequency = updates.frequency;
+      if (updates.interval) updateObj.interval = updates.interval;
+      if (updates.endDate) updateObj.endDate = new Date(updates.endDate);
+      if (updates.daysOfWeek) updateObj.daysOfWeek = JSON.stringify(updates.daysOfWeek);
+      return recurrenceDb.updateRecurrenceRule(ctx.user.id, id, updateObj);
+    }),
+
+  /**
+   * Delete recurrence rule
+   */
+  deleteRecurrence: protectedProcedure
+    .input(z.object({ id: z.string() }))
+    .mutation(async ({ ctx, input }) => {
+      return recurrenceDb.deleteRecurrenceRule(ctx.user.id, input.id);
+    }),
+
+  /**
+   * Analyze schedule priorities using AI
+   */
+  analyzePriorities: protectedProcedure.query(async ({ ctx }) => {
+    return AIPriorityAssistant.analyzePriorities(ctx.user.id);
+  }),
+
+  /**
+   * Get priority recommendation for a specific schedule
+   */
+  getSchedulePriority: protectedProcedure
+    .input(
+      z.object({
+        scheduleId: z.string(),
+        title: z.string(),
+        description: z.string().optional(),
+      })
+    )
+    .query(async ({ ctx, input }) => {
+      return AIPriorityAssistant.getSchedulePriorityRecommendation(
+        ctx.user.id,
+        input.scheduleId,
+        input.title,
+        input.description
+      );
+    }),
+
+  /**
+   * Get daily focus recommendation
+   */
+  getDailyFocus: protectedProcedure.query(async ({ ctx }) => {
+    return AIPriorityAssistant.getDailyFocusRecommendation(ctx.user.id);
+  }),
+
+  /**
+   * Get time management suggestions
+   */
+  getTimeManagementSuggestions: protectedProcedure.query(async ({ ctx }) => {
+    return AIPriorityAssistant.getTimeManagementSuggestions(ctx.user.id);
+  }),
+
+  /**
+   * Send reminder notification
+   */
+  sendReminder: protectedProcedure
+    .input(
+      z.object({
+        scheduleId: z.string(),
+        title: z.string(),
+        minutesBefore: z.number().default(15),
+      })
+    )
+    .mutation(async ({ ctx, input }) => {
+      return AndroidNotificationService.sendReminderNotification(
+        ctx.user.id,
+        input.title,
+        input.scheduleId,
+        input.minutesBefore
+      );
+    }),
+
+  /**
+   * Register Android device for notifications
+   */
+  registerAndroidDevice: protectedProcedure
+    .input(
+      z.object({
+        deviceId: z.string(),
+        fcmToken: z.string(),
+        platform: z.enum(["android", "ios", "web"]).default("android"),
+      })
+    )
+    .mutation(async ({ ctx, input }) => {
+      return recurrenceDb.registerDevice(
+        ctx.user.id,
+        input.deviceId,
+        input.fcmToken,
+        input.platform
+      );
+    }),
+
+  /**
+   * Get notification history
+   */
+  getNotificationHistory: protectedProcedure
+    .input(
+      z.object({
+        limit: z.number().default(50),
+      })
+    )
+    .query(async ({ ctx, input }) => {
+      return recurrenceDb.getNotificationHistory(ctx.user.id, input.limit);
+    }),
+
+  /**
+   * Update notification settings
+   */
+  updateNotificationSettings: protectedProcedure
+    .input(
+      z.object({
+        deviceId: z.string(),
+        fcmToken: z.string(),
+      })
+    )
+    .mutation(async ({ ctx, input }) => {
+      return recurrenceDb.updateDevice(
+        ctx.user.id,
+        input.deviceId,
+        input.fcmToken
+      );
     }),
 });
