@@ -3910,3 +3910,89 @@ STEP 71: Real-time Collaboration Engine - リアルタイム協働エンジン
 ## STEP111: Feature Implementation (BLOCKED)
 - [ ] 新機能実装は STEP110 完了まで保留
 - [ ] Release Stabilization 優先
+
+
+## STEP112: PoiPoi v1.1 - Advanced Scheduling & AI Priority Management
+
+### Phase 7: Recurrence, Priority, & Notification System (IN PROGRESS)
+
+#### Phase 7.1: Database Schema & Recurrence Management
+- [x] reminders テーブル追加 (scheduledDate, reminderTime, status)
+- [x] recurrenceRules テーブル追加 (frequency, interval, endDate)
+- [x] notificationHistory テーブル追加 (channel, status, metadata)
+- [x] notificationChannels テーブル追加 (platform, fcmToken, isActive)
+- [x] db.recurrence.ts 実装 (recurrence, notification, device 管理)
+- [x] Drizzle マイグレーション実行
+- [x] TypeScript エラー 0
+
+#### Phase 7.2: AI Priority Assistant
+- [x] AIPriorityAssistant.ts 実装
+  - analyzePriorities: 全予定の優先度分析
+  - getSchedulePriorityRecommendation: 個別予定の優先度提案
+  - getDailyFocusRecommendation: 日次フォーカス提案
+  - getTimeManagementSuggestions: 時間管理提案
+- [x] Gemini 2.0 Flash 統合
+- [x] TypeScript エラー 0
+
+#### Phase 7.3: Android Notification Service
+- [x] AndroidNotificationService.ts 実装
+  - sendNotification: 単一デバイスへの通知
+  - sendBatchNotifications: 複数デバイスへの一括送信
+  - sendReminderNotification: リマインダー通知
+  - sendPriorityAlertNotification: 優先度アラート
+  - sendDailySummaryNotification: 日次サマリー
+  - sendTestNotification: テスト通知
+- [x] FCM (Firebase Cloud Messaging) 統合
+- [x] TypeScript エラー 0
+
+#### Phase 7.4: tRPC Router Integration (PENDING)
+- [ ] scheduleMemory.addRecurrence
+- [ ] scheduleMemory.getRecurrences
+- [ ] scheduleMemory.updateRecurrence
+- [ ] scheduleMemory.deleteRecurrence
+- [ ] scheduleMemory.analyzePriorities
+- [ ] scheduleMemory.getSchedulePriority
+- [ ] scheduleMemory.getDailyFocus
+- [ ] scheduleMemory.getTimeManagementSuggestions
+- [ ] scheduleMemory.sendReminder
+- [ ] scheduleMemory.registerAndroidDevice
+- [ ] scheduleMemory.getNotificationHistory
+- [ ] scheduleMemory.updateNotificationSettings
+
+#### Phase 7.5: Frontend UI Implementation (PENDING)
+- [ ] RecurringScheduleForm コンポーネント
+- [ ] PriorityRecommendations コンポーネント
+- [ ] NotificationSettings コンポーネント
+- [ ] AndroidDeviceManager コンポーネント
+- [ ] ScheduleMemory.tsx に統合
+
+#### Phase 7.6: Integration Tests (PENDING)
+- [ ] Recurrence ロジックテスト
+- [ ] Priority 分析テスト
+- [ ] Notification 送信テスト
+- [ ] End-to-end フロー テスト
+
+#### Phase 7.7: Production Build & Verification (PENDING)
+- [ ] npm run check: TypeScript 0 errors
+- [ ] npm run test: 全テスト PASS
+- [ ] npm run build: 本番ビルド成功
+- [ ] Portable Server 動作確認
+- [ ] GitHub commit 準備
+
+### Current Status
+- **Completed**: Phases 7.1-7.3 (Backend services)
+- **In Progress**: Phase 7.4 (tRPC integration)
+- **Pending**: Phases 7.5-7.7 (Frontend & deployment)
+
+### Build Status
+- TypeScript: ✅ 0 errors
+- Tests: ✅ 4084/4136 PASS (98.7%)
+- Build: ✅ Success (621.4 KB)
+- Dev Server: ✅ Running
+
+### Next Steps
+1. Implement tRPC routers for recurrence, priority, and notifications
+2. Create frontend UI components for new v1.1 features
+3. Run comprehensive integration tests
+4. Perform production build verification
+5. Commit changes to GitHub

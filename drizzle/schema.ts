@@ -260,3 +260,103 @@ export const scheduleMemories = mysqlTable(
 
 export type ScheduleMemory = typeof scheduleMemories.$inferSelect;
 export type InsertScheduleMemory = typeof scheduleMemories.$inferInsert;
+
+
+// Reminders table for recurring notifications
+export const reminders = mysqlTable(
+  "reminders",
+  {
+    id: varchar("id", { length: 36 }).primaryKey(),
+    userId: int("userId").notNull(),
+    scheduleId: varchar("scheduleId", { length: 36 }).notNull(),
+    reminderTime: varchar("reminderTime", { length: 5 }), // HH:MM format
+    frequency: mysqlEnum("frequency", ["once", "daily", "weekly", "monthly"]).default("once").notNull(),
+    isActive: boolean("isActive").default(true).notNull(),
+    lastSentAt: timestamp("lastSentAt"),
+    nextSendAt: timestamp("nextSendAt"),
+    metadata: json("metadata"),
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
+    updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+  },
+  (table) => ({
+    userIdIdx: index("reminders_userId_idx").on(table.userId),
+    scheduleIdIdx: index("reminders_scheduleId_idx").on(table.scheduleId),
+    isActiveIdx: index("reminders_isActive_idx").on(table.isActive),
+    nextSendAtIdx: index("reminders_nextSendAt_idx").on(table.nextSendAt),
+  })
+);
+export type Reminder = typeof reminders.$inferSelect;
+export type InsertReminder = typeof reminders.$inferInsert;
+
+// Recurrence rules for recurring schedules
+export const recurrenceRules = mysqlTable(
+  "recurrenceRules",
+  {
+    id: varchar("id", { length: 36 }).primaryKey(),
+    userId: int("userId").notNull(),
+    scheduleId: varchar("scheduleId", { length: 36 }).notNull(),
+    frequency: mysqlEnum("frequency", ["daily", "weekly", "monthly", "yearly"]).notNull(),
+    interval: int("interval").default(1).notNull(),
+    daysOfWeek: json("daysOfWeek"), // Array: [0-6] for Sun-Sat
+    daysOfMonth: json("daysOfMonth"), // Array: [1-31]
+    monthsOfYear: json("monthsOfYear"), // Array: [1-12]
+    startDate: date("startDate").notNull(),
+    endDate: date("endDate"),
+    occurrences: int("occurrences"), // Max occurrences
+    isActive: boolean("isActive").default(true).notNull(),
+    metadata: json("metadata"),
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
+    updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+  },
+  (table) => ({
+    userIdIdx: index("recurrenceRules_userId_idx").on(table.userId),
+    scheduleIdIdx: index("recurrenceRules_scheduleId_idx").on(table.scheduleId),
+    isActiveIdx: index("recurrenceRules_isActive_idx").on(table.isActive),
+  })
+);
+export type RecurrenceRule = typeof recurrenceRules.$inferSelect;
+export type InsertRecurrenceRule = typeof recurrenceRules.$inferInsert;
+
+// Notification history for tracking sent notifications
+export const notificationHistory = mysqlTable(
+  "notificationHistory",
+  {
+    id: varchar("id", { length: 36 }).primaryKey(),
+    userId: int("userId").notNull(),
+    scheduleId: varchar("scheduleId", { length: 36 }),
+    sentAt: timestamp("sentAt").defaultNow().notNull(),
+    status: mysqlEnum("status", ["sent", "failed", "bounced"]).default("sent").notNull(),
+    channel: mysqlEnum("channel", ["push", "email", "sms"]).notNull(),
+    response: json("response"),
+    metadata: json("metadata"),
+  },
+  (table) => ({
+    userIdIdx: index("notificationHistory_userId_idx").on(table.userId),
+    scheduleIdIdx: index("notificationHistory_scheduleId_idx").on(table.scheduleId),
+    sentAtIdx: index("notificationHistory_sentAt_idx").on(table.sentAt),
+  })
+);
+export type NotificationHistory = typeof notificationHistory.$inferSelect;
+export type InsertNotificationHistory = typeof notificationHistory.$inferInsert;
+
+// Notification channels for device management
+export const notificationChannels = mysqlTable(
+  "notificationChannels",
+  {
+    id: varchar("id", { length: 36 }).primaryKey(),
+    userId: int("userId").notNull(),
+    deviceId: varchar("deviceId", { length: 255 }).notNull(),
+    fcmToken: text("fcmToken").notNull(),
+    platform: mysqlEnum("platform", ["android", "ios", "web"]).notNull(),
+    isActive: boolean("isActive").default(true).notNull(),
+    lastUpdatedAt: timestamp("lastUpdatedAt").defaultNow().onUpdateNow().notNull(),
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
+  },
+  (table) => ({
+    userIdIdx: index("notificationChannels_userId_idx").on(table.userId),
+    deviceIdIdx: index("notificationChannels_deviceId_idx").on(table.deviceId),
+    isActiveIdx: index("notificationChannels_isActive_idx").on(table.isActive),
+  })
+);
+export type NotificationChannel = typeof notificationChannels.$inferSelect;
+export type InsertNotificationChannel = typeof notificationChannels.$inferInsert;
