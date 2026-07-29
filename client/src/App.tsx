@@ -19,19 +19,13 @@ import FaceFusionHybridPage from './pages/FaceFusionHybrid';
 import UnifiedChat from './pages/UnifiedChat';
 import CodeGeneratorPage from './pages/CodeGeneratorPage';
 import PoiPoiDashboard from './pages/PoiPoiDashboard';
-<<<<<<< HEAD
-=======
 import PoiPoiOSDashboardPage from './pages/PoiPoiOSDashboardPage';
->>>>>>> phase13-18
 import PoiPoiBetaChat from './pages/PoiPoiBetaChat';
 import AIProviderSelector from './pages/AIProviderSelector';
 import FileProcessing from './pages/FileProcessing';
 import ManufacturingAIDashboard from './pages/ManufacturingAIDashboard';
-<<<<<<< HEAD
-=======
 import ScheduleMemory from './pages/ScheduleMemory';
 import Settings from './pages/Settings';
->>>>>>> phase13-18
 import Login from "./pages/Login";
 import NotFound from "./pages/NotFound";
 
@@ -45,17 +39,10 @@ function Router() {
       <Route path="/streaming" component={StreamingChat} />
       <Route path="/api-docs" component={APIDocs} />
       <Route path="/admin" component={AdminDashboard} />
-<<<<<<< HEAD
-      <Route path="/export" component={ExportSettings} />
-      <Route path="/advanced-features" component={AdvancedFeatures} />
-      <Route path="/documents" component={DocumentGenerator} />
-      <Route path="/advanced-features" component={AdvancedFeaturesPage} />
-=======
       {/* <Route path="/export" component={ExportSettings} /> */}
       <Route path="/advanced-features" component={AdvancedFeatures} />
       <Route path="/documents" component={DocumentGenerator} />
       {/* <Route path="/advanced-features" component={AdvancedFeaturesPage} /> */}
->>>>>>> phase13-18
       <Route path="/history-memory" component={HistoryMemory} />
       <Route path="/face-swap" component={FaceSwap} />
       <Route path="/face-swap-new" component={FaceSwapPage} />
@@ -64,13 +51,6 @@ function Router() {
       <Route path="/facefusion-hybrid" component={FaceFusionHybridPage} />
       <Route path="/unified-chat" component={UnifiedChat} />
       <Route path="/code-generator" component={CodeGeneratorPage} />
-<<<<<<< HEAD
-      <Route path="/dashboard" component={PoiPoiDashboard} />
-      <Route path="/beta-chat" component={PoiPoiBetaChat} />
-      <Route path="/ai-providers" component={AIProviderSelector} />
-      <Route path="/file-processing" component={FileProcessing} />
-      <Route path="/manufacturing-ai" component={ManufacturingAIDashboard} />
-=======
       <Route path="/dashboard" component={PoiPoiOSDashboardPage} />
       <Route path="/dashboard-legacy" component={PoiPoiDashboard} />
       <Route path="/beta-chat" component={PoiPoiBetaChat} />
@@ -79,7 +59,6 @@ function Router() {
       <Route path="/manufacturing" component={ManufacturingAIDashboard} />
       <Route path="/schedule-memory" component={ScheduleMemory} />
       <Route path="/settings" component={Settings} />
->>>>>>> phase13-18
       <Route path="/404" component={NotFound} />
       {/* Final fallback route */}
       <Route component={NotFound} />

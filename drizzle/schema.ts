@@ -1,8 +1,4 @@
-<<<<<<< HEAD
-import { int, mysqlEnum, mysqlTable, text, timestamp, varchar, boolean, json, index } from "drizzle-orm/mysql-core";
-=======
 import { int, mysqlEnum, mysqlTable, text, timestamp, varchar, boolean, json, index, date, decimal } from "drizzle-orm/mysql-core";
->>>>>>> phase13-18
 
 /**
  * Core user table backing auth flow.
@@ -205,8 +201,6 @@ export const faceSwapResults = mysqlTable(
 
 export type FaceSwapResult = typeof faceSwapResults.$inferSelect;
 export type InsertFaceSwapResult = typeof faceSwapResults.$inferInsert;
-<<<<<<< HEAD
-=======
 
 
 // Schedule table for Schedule Memory feature
@@ -366,4 +360,3 @@ export const notificationChannels = mysqlTable(
 );
 export type NotificationChannel = typeof notificationChannels.$inferSelect;
 export type InsertNotificationChannel = typeof notificationChannels.$inferInsert;
->>>>>>> phase13-18
