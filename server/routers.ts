@@ -24,9 +24,25 @@ import { colabIntegrationRouter } from "./routers.colab-integration";
 import { selfEvolutionRouter } from "./routers/self-evolution";
 import { autoProgramGenerationRouter } from "./routers/auto-program-generation";
 import { chatRouter } from "./routers.chat";
+<<<<<<< HEAD
 import { z } from "zod";
 
 export const appRouter = router({
+=======
+import { scheduleMemoryRouter } from "./routers/schedule-memory";
+import { aiAgentsRouter } from "./routers/aiAgents";
+import { executionLogsRouter } from "./routers/executionLogs";
+import { agentMemoryRouter } from "./routers/agentMemory";
+import { commanderRouter } from "./routers/commander";
+import { improvementRouter } from "./routers/improvement";
+import { productionRouter } from "./routers/production";
+import { hybridRouter } from "./routers/hybrid";
+import { syncRouter } from "./routers/sync";
+import { z } from "zod";
+
+export const appRouter = router({
+  executionLogs: executionLogsRouter,
+>>>>>>> phase13-18
   system: systemRouter,
   auth: router(localAuthRouter),
   advanced: advancedRouter,
@@ -50,6 +66,17 @@ export const appRouter = router({
   evolution: selfEvolutionRouter,
   autoProgramGeneration: autoProgramGenerationRouter,
   chat: chatRouter,
+<<<<<<< HEAD
+=======
+  scheduleMemory: scheduleMemoryRouter,
+  aiAgents: aiAgentsRouter,
+  agentMemory: agentMemoryRouter,
+  commander: commanderRouter,
+  improvement: improvementRouter,
+  production: productionRouter,
+  hybrid: hybridRouter,
+  sync: syncRouter,
+>>>>>>> phase13-18
   
   clearHistory: protectedProcedure
     .mutation(async () => {

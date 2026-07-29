@@ -32,5 +32,15 @@ export default defineConfig({
       strict: true,
       deny: ["**/.*"],
     },
+<<<<<<< HEAD
+=======
+    proxy: {
+      "/api": {
+        target: "http://localhost:3001",
+        changeOrigin: true,
+        rewrite: (path) => path,
+      },
+    },
+>>>>>>> phase13-18
   },
 });

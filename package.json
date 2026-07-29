@@ -4,9 +4,15 @@
   "type": "module",
   "license": "MIT",
   "scripts": {
+<<<<<<< HEAD
     "dev": "set NODE_ENV=development&& tsx watch server/_core/index.ts",
     "build": "vite build && esbuild server/_core/index.ts --platform=node --packages=external --bundle --format=esm --outdir=dist",
     "start": "set NODE_ENV=production&& node dist/index.js",
+=======
+    "dev": "NODE_ENV=development tsx watch server/_core/index.ts",
+    "build": "vite build && esbuild server/_core/index.ts --platform=node --packages=external --bundle --format=esm --outdir=dist",
+    "start": "NODE_ENV=production node dist/index.js",
+>>>>>>> phase13-18
     "check": "tsc --noEmit",
     "format": "prettier --write .",
     "test": "vitest run",
@@ -19,9 +25,16 @@
   "dependencies": {
     "@aws-sdk/client-s3": "^3.693.0",
     "@aws-sdk/s3-request-presigner": "^3.693.0",
+<<<<<<< HEAD
     "@hookform/resolvers": "^5.2.2",
     "@mediapipe/face_detection": "^0.4.1646425229",
     "@mediapipe/face_mesh": "^0.4.1633559619",
+=======
+    "@capacitor/android": "^8.4.2",
+    "@capacitor/cli": "^8.4.2",
+    "@capacitor/core": "^8.4.2",
+    "@hookform/resolvers": "^5.2.2",
+>>>>>>> phase13-18
     "@radix-ui/react-accordion": "^1.2.12",
     "@radix-ui/react-alert-dialog": "^1.1.15",
     "@radix-ui/react-aspect-ratio": "^1.1.7",
@@ -50,7 +63,10 @@
     "@radix-ui/react-tooltip": "^1.2.8",
     "@tanstack/react-query": "^5.90.2",
     "@tensorflow-models/coco-ssd": "^2.2.3",
+<<<<<<< HEAD
     "@tensorflow-models/face-detection": "^1.0.3",
+=======
+>>>>>>> phase13-18
     "@tensorflow-models/face-landmarks-detection": "^1.0.6",
     "@tensorflow-models/facemesh": "^0.0.5",
     "@tensorflow/tfjs": "^4.22.0",
@@ -63,11 +79,19 @@
     "@types/ws": "^8.18.1",
     "@types/xlsx": "^0.0.36",
     "axios": "^1.12.0",
+<<<<<<< HEAD
     "canvas": "^3.2.3",
+=======
+
+>>>>>>> phase13-18
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "cmdk": "^1.1.1",
     "cookie": "^1.0.2",
+<<<<<<< HEAD
+=======
+    "cors": "^2.8.6",
+>>>>>>> phase13-18
     "date-fns": "^4.1.0",
     "docx": "^9.7.1",
     "dotenv": "^17.2.2",
@@ -113,6 +137,10 @@
     "@builder.io/vite-plugin-jsx-loc": "^0.1.1",
     "@tailwindcss/typography": "^0.5.15",
     "@tailwindcss/vite": "^4.1.3",
+<<<<<<< HEAD
+=======
+    "@types/cors": "^2.8.19",
+>>>>>>> phase13-18
     "@types/express": "4.17.21",
     "@types/google.maps": "^3.58.1",
     "@types/multer": "^2.2.0",
@@ -143,7 +171,14 @@
       "esbuild"
     ],
     "onlyBuiltDependencies": [
+<<<<<<< HEAD
       "canvas"
     ]
   }
 }
+=======
+
+    ]
+  }
+}
+>>>>>>> phase13-18

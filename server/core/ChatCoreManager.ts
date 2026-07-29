@@ -10,6 +10,10 @@ import { ChatService } from '../services/ChatService';
 import { MessageProcessingService } from '../services/MessageProcessingService';
 import { ContextAwarenessService } from '../services/ContextAwarenessService';
 import { ChatRepository } from '../repositories/ChatRepository';
+<<<<<<< HEAD
+=======
+import { invokeLLM } from '../_core/llm';
+>>>>>>> phase13-18
 
 export interface ChatMessage {
   id: string;
@@ -164,6 +168,7 @@ export class ChatCoreManager {
     processedResult: any,
     context: any
   ): Promise<string> {
+<<<<<<< HEAD
     // 製造業関連の質問の場合
     if (processedResult.isManufacturingRelated) {
       const manufacturingAnalysis =
@@ -183,6 +188,45 @@ export class ChatCoreManager {
 
     // 通常の応答
     return this.formatStandardResponse(userMessage, processedResult, context);
+=======
+    try {
+      // LLM APIを呼び出し
+      const llmResult = await invokeLLM({
+        messages: [
+          {
+            role: "user",
+            content: userMessage
+          }
+        ]
+      });
+
+      const aiMessage = llmResult.choices[0]?.message?.content || "LLM応答なし";
+      return aiMessage;
+    } catch (error) {
+      console.error("[ChatCoreManager][LLM ERROR]", error);
+      
+      // フォールバック: 従来の応答生成
+      // 製造業関連の質問の場合
+      if (processedResult.isManufacturingRelated) {
+        const manufacturingAnalysis =
+          await this.manufacturingManager.analyzeProduction(
+            processedResult.manufacturingData || {}
+          );
+        return this.formatManufacturingResponse(
+          userMessage,
+          manufacturingAnalysis
+        );
+      }
+
+      // 推論が必要な場合
+      if (processedResult.requiresReasoning) {
+        return processedResult.reasoning;
+      }
+
+      // 通常の応答
+      return this.formatStandardResponse(userMessage, processedResult, context);
+    }
+>>>>>>> phase13-18
   }
 
   /**

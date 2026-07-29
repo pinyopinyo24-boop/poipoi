@@ -1,4 +1,8 @@
+<<<<<<< HEAD
 import { int, mysqlEnum, mysqlTable, text, timestamp, varchar, boolean, json, index } from "drizzle-orm/mysql-core";
+=======
+import { int, mysqlEnum, mysqlTable, text, timestamp, varchar, boolean, json, index, date, decimal } from "drizzle-orm/mysql-core";
+>>>>>>> phase13-18
 
 /**
  * Core user table backing auth flow.
@@ -201,3 +205,165 @@ export const faceSwapResults = mysqlTable(
 
 export type FaceSwapResult = typeof faceSwapResults.$inferSelect;
 export type InsertFaceSwapResult = typeof faceSwapResults.$inferInsert;
+<<<<<<< HEAD
+=======
+
+
+// Schedule table for Schedule Memory feature
+export const schedules = mysqlTable(
+  "schedules",
+  {
+    id: varchar("id", { length: 36 }).primaryKey(),
+    userId: int("userId").notNull(),
+    title: text("title").notNull(),
+    description: text("description"),
+    scheduledDate: date("scheduledDate").notNull(),
+    startTime: varchar("startTime", { length: 5 }), // HH:MM format
+    endTime: varchar("endTime", { length: 5 }), // HH:MM format
+    priority: mysqlEnum("priority", ["low", "medium", "high", "urgent"]).default("medium").notNull(),
+    status: mysqlEnum("status", ["pending", "in-progress", "completed", "cancelled"]).default("pending").notNull(),
+    category: varchar("category", { length: 100 }),
+    tags: json("tags"), // Array of strings
+    location: text("location"),
+    metadata: json("metadata"),
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
+    updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+  },
+  (table) => ({
+    userIdIdx: index("schedules_userId_idx").on(table.userId),
+    scheduledDateIdx: index("schedules_scheduledDate_idx").on(table.scheduledDate),
+    statusIdx: index("schedules_status_idx").on(table.status),
+    priorityIdx: index("schedules_priority_idx").on(table.priority),
+    userIdScheduledDateIdx: index("schedules_userId_scheduledDate_idx").on(table.userId, table.scheduledDate),
+  })
+);
+
+export type Schedule = typeof schedules.$inferSelect;
+export type InsertSchedule = typeof schedules.$inferInsert;
+
+// Schedule Memory table for AI learning
+export const scheduleMemories = mysqlTable(
+  "scheduleMemories",
+  {
+    id: varchar("id", { length: 36 }).primaryKey(),
+    userId: int("userId").notNull(),
+    memoryType: mysqlEnum("memoryType", ["pattern", "preference", "insight", "suggestion"]).notNull(),
+    content: text("content").notNull(),
+    relatedScheduleIds: json("relatedScheduleIds"), // Array of schedule IDs
+    confidence: decimal("confidence", { precision: 3, scale: 2 }).default("0.50").notNull(),
+    tags: json("tags"), // Array of strings
+    usageCount: int("usageCount").default(0).notNull(),
+    lastUsed: timestamp("lastUsed"),
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
+    updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+  },
+  (table) => ({
+    userIdIdx: index("scheduleMemories_userId_idx").on(table.userId),
+    memoryTypeIdx: index("scheduleMemories_memoryType_idx").on(table.memoryType),
+    confidenceIdx: index("scheduleMemories_confidence_idx").on(table.confidence),
+  })
+);
+
+export type ScheduleMemory = typeof scheduleMemories.$inferSelect;
+export type InsertScheduleMemory = typeof scheduleMemories.$inferInsert;
+
+
+// Reminders table for recurring notifications
+export const reminders = mysqlTable(
+  "reminders",
+  {
+    id: varchar("id", { length: 36 }).primaryKey(),
+    userId: int("userId").notNull(),
+    scheduleId: varchar("scheduleId", { length: 36 }).notNull(),
+    reminderTime: varchar("reminderTime", { length: 5 }), // HH:MM format
+    frequency: mysqlEnum("frequency", ["once", "daily", "weekly", "monthly"]).default("once").notNull(),
+    isActive: boolean("isActive").default(true).notNull(),
+    lastSentAt: timestamp("lastSentAt"),
+    nextSendAt: timestamp("nextSendAt"),
+    metadata: json("metadata"),
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
+    updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+  },
+  (table) => ({
+    userIdIdx: index("reminders_userId_idx").on(table.userId),
+    scheduleIdIdx: index("reminders_scheduleId_idx").on(table.scheduleId),
+    isActiveIdx: index("reminders_isActive_idx").on(table.isActive),
+    nextSendAtIdx: index("reminders_nextSendAt_idx").on(table.nextSendAt),
+  })
+);
+export type Reminder = typeof reminders.$inferSelect;
+export type InsertReminder = typeof reminders.$inferInsert;
+
+// Recurrence rules for recurring schedules
+export const recurrenceRules = mysqlTable(
+  "recurrenceRules",
+  {
+    id: varchar("id", { length: 36 }).primaryKey(),
+    userId: int("userId").notNull(),
+    scheduleId: varchar("scheduleId", { length: 36 }).notNull(),
+    frequency: mysqlEnum("frequency", ["daily", "weekly", "monthly", "yearly"]).notNull(),
+    interval: int("interval").default(1).notNull(),
+    daysOfWeek: json("daysOfWeek"), // Array: [0-6] for Sun-Sat
+    daysOfMonth: json("daysOfMonth"), // Array: [1-31]
+    monthsOfYear: json("monthsOfYear"), // Array: [1-12]
+    startDate: date("startDate").notNull(),
+    endDate: date("endDate"),
+    occurrences: int("occurrences"), // Max occurrences
+    isActive: boolean("isActive").default(true).notNull(),
+    metadata: json("metadata"),
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
+    updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+  },
+  (table) => ({
+    userIdIdx: index("recurrenceRules_userId_idx").on(table.userId),
+    scheduleIdIdx: index("recurrenceRules_scheduleId_idx").on(table.scheduleId),
+    isActiveIdx: index("recurrenceRules_isActive_idx").on(table.isActive),
+  })
+);
+export type RecurrenceRule = typeof recurrenceRules.$inferSelect;
+export type InsertRecurrenceRule = typeof recurrenceRules.$inferInsert;
+
+// Notification history for tracking sent notifications
+export const notificationHistory = mysqlTable(
+  "notificationHistory",
+  {
+    id: varchar("id", { length: 36 }).primaryKey(),
+    userId: int("userId").notNull(),
+    scheduleId: varchar("scheduleId", { length: 36 }),
+    sentAt: timestamp("sentAt").defaultNow().notNull(),
+    status: mysqlEnum("status", ["sent", "failed", "bounced"]).default("sent").notNull(),
+    channel: mysqlEnum("channel", ["push", "email", "sms"]).notNull(),
+    response: json("response"),
+    metadata: json("metadata"),
+  },
+  (table) => ({
+    userIdIdx: index("notificationHistory_userId_idx").on(table.userId),
+    scheduleIdIdx: index("notificationHistory_scheduleId_idx").on(table.scheduleId),
+    sentAtIdx: index("notificationHistory_sentAt_idx").on(table.sentAt),
+  })
+);
+export type NotificationHistory = typeof notificationHistory.$inferSelect;
+export type InsertNotificationHistory = typeof notificationHistory.$inferInsert;
+
+// Notification channels for device management
+export const notificationChannels = mysqlTable(
+  "notificationChannels",
+  {
+    id: varchar("id", { length: 36 }).primaryKey(),
+    userId: int("userId").notNull(),
+    deviceId: varchar("deviceId", { length: 255 }).notNull(),
+    fcmToken: text("fcmToken").notNull(),
+    platform: mysqlEnum("platform", ["android", "ios", "web"]).notNull(),
+    isActive: boolean("isActive").default(true).notNull(),
+    lastUpdatedAt: timestamp("lastUpdatedAt").defaultNow().onUpdateNow().notNull(),
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
+  },
+  (table) => ({
+    userIdIdx: index("notificationChannels_userId_idx").on(table.userId),
+    deviceIdIdx: index("notificationChannels_deviceId_idx").on(table.deviceId),
+    isActiveIdx: index("notificationChannels_isActive_idx").on(table.isActive),
+  })
+);
+export type NotificationChannel = typeof notificationChannels.$inferSelect;
+export type InsertNotificationChannel = typeof notificationChannels.$inferInsert;
+>>>>>>> phase13-18

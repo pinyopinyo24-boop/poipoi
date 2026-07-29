@@ -1,8 +1,16 @@
+<<<<<<< HEAD
 import "dotenv/config";
+=======
+import 'dotenv/config';
+>>>>>>> phase13-18
 import express from "express";
 import { createServer } from "http";
 import net from "net";
 import { createReadStream, existsSync } from "fs";
+<<<<<<< HEAD
+=======
+import cors from "cors";
+>>>>>>> phase13-18
 import { createExpressMiddleware } from "@trpc/server/adapters/express";
 import { registerOAuthRoutes } from "./oauth";
 import { registerStorageProxy } from "./storageProxy";
@@ -21,6 +29,15 @@ function isPortAvailable(port: number): Promise<boolean> {
 }
 
 async function findAvailablePort(startPort: number = 3000): Promise<number> {
+<<<<<<< HEAD
+=======
+  // Support PORT environment variable for external hosting (Render, Railway)
+  const envPort = process.env.PORT ? parseInt(process.env.PORT, 10) : null;
+  if (envPort && !isNaN(envPort)) {
+    return envPort;
+  }
+  
+>>>>>>> phase13-18
   for (let port = startPort; port < startPort + 20; port++) {
     if (await isPortAvailable(port)) {
       return port;
@@ -36,6 +53,17 @@ async function startServer() {
   // Set socket timeout to 10 minutes for long-running requests
   server.setTimeout(600000); // 10 minutes
   
+<<<<<<< HEAD
+=======
+  // CORS configuration for mobile and cross-origin requests
+  app.use(cors({
+    origin: '*', // Allow all origins for mobile app
+    methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+    allowedHeaders: ['Content-Type', 'Authorization'],
+    credentials: false,
+  }));
+  
+>>>>>>> phase13-18
   // Configure body parser with larger size limit for file uploads (500MB for video processing)
   app.use(express.json({ limit: "500mb" }));
   app.use(express.urlencoded({ limit: "500mb", extended: true }));
@@ -51,6 +79,7 @@ async function startServer() {
   });
   registerStorageProxy(app);
   registerOAuthRoutes(app);
+<<<<<<< HEAD
     // Health check API
   app.get("/health", (_req, res) => {
     res.json({
@@ -62,6 +91,17 @@ async function startServer() {
   // Serve upload directory for testing
   app.use('/upload', express.static('/home/ubuntu/upload'));
   
+=======
+  
+  // Serve upload directory for testing
+  app.use('/upload', express.static('/home/ubuntu/upload'));
+  
+  // Health check endpoint
+  app.get('/health', (req: any, res: any) => {
+    res.json({ status: 'ok', timestamp: new Date().toISOString() });
+  });
+  
+>>>>>>> phase13-18
   // Serve test HTML files
   app.use(express.static('/home/ubuntu/poipoi/client/public'));
   

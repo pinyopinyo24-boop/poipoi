@@ -1,0 +1,236 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>顔入れ替え機能 - 完全テスト</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { 
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      min-height: 100vh;
+      padding: 20px;
+    }
+    .container {
+      max-width: 1200px;
+      margin: 0 auto;
+    }
+    h1 {
+      color: white;
+      margin-bottom: 30px;
+      text-align: center;
+    }
+    .test-card {
+      background: white;
+      border-radius: 10px;
+      padding: 20px;
+      box-shadow: 0 10px 30px rgba(0,0,0,0.2);
+      margin-bottom: 20px;
+    }
+    .test-card h2 {
+      color: #333;
+      margin-bottom: 15px;
+      font-size: 18px;
+    }
+    button {
+      width: 100%;
+      padding: 12px;
+      background: #667eea;
+      color: white;
+      border: none;
+      border-radius: 6px;
+      cursor: pointer;
+      font-size: 16px;
+      font-weight: 600;
+      transition: background 0.3s;
+    }
+    button:hover { background: #5568d3; }
+    button:disabled { background: #ccc; cursor: not-allowed; }
+    .status {
+      padding: 15px;
+      border-radius: 6px;
+      margin: 15px 0;
+      font-weight: 600;
+    }
+    .status.loading {
+      background: #e3f2fd;
+      color: #1976d2;
+    }
+    .status.success {
+      background: #e8f5e9;
+      color: #388e3c;
+    }
+    .status.error {
+      background: #ffebee;
+      color: #c62828;
+    }
+    .log {
+      background: #f5f5f5;
+      padding: 15px;
+      border-radius: 6px;
+      font-family: monospace;
+      font-size: 12px;
+      max-height: 300px;
+      overflow-y: auto;
+      white-space: pre-wrap;
+      word-break: break-all;
+    }
+    .result-image {
+      max-width: 100%;
+      margin-top: 15px;
+      border-radius: 6px;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>🎬 顔入れ替え機能 - 完全テスト</h1>
+    
+    <div class="test-card">
+      <h2>📋 テスト内容</h2>
+      <p>提供されたファイルを使用して顔入れ替え機能をテストします：</p>
+      <ul style="margin-left: 20px; margin-top: 10px;">
+        <li>ソース画像: 1000016980.jpg</li>
+        <li>ターゲット画像: 1000016980.jpg</li>
+        <li>ターゲット動画: 1000019517.mp4</li>
+      </ul>
+    </div>
+    
+    <div class="test-card">
+      <h2>🔄 テスト実行</h2>
+      <button onclick="runTest()">テストを実行</button>
+      <div id="status"></div>
+      <div id="log" class="log" style="display:none;"></div>
+      <img id="resultImage" class="result-image" style="display:none;">
+    </div>
+  </div>
+
+  <script>
+    const logDiv = document.getElementById('log');
+    const statusDiv = document.getElementById('status');
+    const resultImage = document.getElementById('resultImage');
+    
+    function log(message) {
+      console.log(message);
+      logDiv.textContent += message + '\n';
+      logDiv.scrollTop = logDiv.scrollHeight;
+    }
+    
+    function setStatus(message, type = 'loading') {
+      statusDiv.innerHTML = `<div class="status ${type}">${message}</div>`;
+    }
+    
+    async function runTest() {
+      logDiv.style.display = 'block';
+      logDiv.textContent = '';
+      resultImage.style.display = 'none';
+      
+      setStatus('⏳ テスト開始...');
+      log('=== 顔入れ替え機能テスト開始 ===\n');
+      
+      try {
+        // ステップ1: ファイルを読み込む
+        log('ステップ 1: ファイルを読み込み中...');
+        const sourceRes = await fetch('/upload/1000016980.jpg');
+        const targetRes = await fetch('/upload/1000016980.jpg');
+        
+        if (!sourceRes.ok || !targetRes.ok) {
+          throw new Error('ファイルの読み込みに失敗しました');
+        }
+        
+        const sourceBlob = await sourceRes.blob();
+        const targetBlob = await targetRes.blob();
+        
+        log(`  ✓ ソース画像: ${(sourceBlob.size / 1024).toFixed(2)}KB`);
+        log(`  ✓ ターゲット画像: ${(targetBlob.size / 1024).toFixed(2)}KB\n`);
+        
+        // ステップ2: Base64に変換
+        log('ステップ 2: Base64に変換中...');
+        const sourceBase64 = await blobToBase64(sourceBlob);
+        const targetBase64 = await blobToBase64(targetBlob);
+        log(`  ✓ 変換完了\n`);
+        
+        // ステップ3: tRPC httpBatchLink形式でリクエスト
+        log('ステップ 3: tRPC httpBatchLink形式でリクエスト中...');
+        
+        const startTime = Date.now();
+        
+        // httpBatchLink形式：複数のリクエストを配列で送信
+        const batchPayload = [
+          {
+            "0": {
+              "json": {
+                "sourceImage": sourceBase64,
+                "targetImage": targetBase64,
+                "quality": "medium"
+              }
+            }
+          }
+        ];
+        
+        const response = await fetch('/api/trpc/fileUpload.swap', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify(batchPayload),
+          credentials: 'include'
+        });
+        
+        const apiTime = Date.now() - startTime;
+        log(`  HTTP ステータス: ${response.status}`);
+        log(`  応答時間: ${apiTime}ms\n`);
+        
+        const data = await response.json();
+        
+        if (response.ok && Array.isArray(data) && data[0]) {
+          const result = data[0].result?.data;
+          
+          if (result) {
+            log('ステップ 4: 結果を確認中...');
+            log(`  成功: ${result.success}`);
+            log(`  メッセージ: ${result.message}`);
+            log(`  処理時間: ${result.processingTime}ms`);
+            
+            if (result.resultImage) {
+              log(`  結果画像: ${(result.resultImage.length / 1024).toFixed(2)}KB`);
+              
+              // 結果画像を表示
+              resultImage.src = `data:image/jpeg;base64,${result.resultImage}`;
+              resultImage.style.display = 'block';
+              
+              setStatus('✅ テスト成功！', 'success');
+              log('\n=== テスト完了（成功） ===');
+            } else {
+              setStatus('❌ テスト失敗：結果画像がありません', 'error');
+              log('\n=== テスト完了（失敗） ===');
+            }
+          } else {
+            setStatus('❌ API レスポンスが不正です', 'error');
+            log(JSON.stringify(data, null, 2));
+          }
+        } else {
+          setStatus('❌ API エラー', 'error');
+          log(`ステータス: ${response.status}`);
+          log(JSON.stringify(data, null, 2));
+        }
+      } catch (error) {
+        setStatus(`❌ エラー: ${error.message}`, 'error');
+        log(`\nエラー詳細: ${error.message}`);
+        log(error.stack);
+      }
+    }
+    
+    function blobToBase64(blob) {
+      return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onloadend = () => {
+          const base64 = reader.result.split(',')[1];
+          resolve(base64);
+        };
+        reader.onerror = reject;
+        reader.readAsDataURL(blob);
+      });
+    }
+  </script>
+</body>
+</html>
