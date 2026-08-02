@@ -78,6 +78,11 @@ export class MemoryEngine {
     this.memory.delete(userId);
   }
 
+  public getMemoryUsage(userId: string): number {
+    const userMemory = this.memory.get(userId);
+    return userMemory ? Object.keys(userMemory).length : 0;
+  }
+
   public clearAllMemory(): void {
     this.memory.clear();
   }
