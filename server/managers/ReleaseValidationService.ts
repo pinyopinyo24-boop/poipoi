@@ -219,6 +219,7 @@ export class ReleaseValidationService {
   cleanup(): void {
     this.rules.clear();
     this.results.clear();
+    this.initializeDefaultRules();
   }
 }
 

@@ -8,8 +8,7 @@ import { environmentConfigService, EnvironmentConfigService } from './Environmen
 describe('EnvironmentConfigService', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    environmentConfigService.cleanup();
-    new EnvironmentConfigService();
+    environmentConfigService.resetAllToDefaults();
   });
 
   afterEach(() => {

@@ -245,6 +245,9 @@ export class APKSigningService {
   cleanup(): void {
     this.signingKeys.clear();
     this.signedApks.clear();
+    this.keyCounter = 0;
+    this.apkCounter = 0;
+    this.initializeDefaultKey();
   }
 }
 

@@ -164,9 +164,7 @@ export class BetaDistributionManager {
    */
   generateInvitationCode(userId?: string): string {
     const code = `BETA_${Date.now()}_${Math.random().toString(36).substring(2, 8).toUpperCase()}`;
-    if (userId) {
-      this.invitationCodes.set(code, userId);
-    }
+    this.invitationCodes.set(code, userId || '');
     return code;
   }
 

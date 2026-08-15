@@ -229,6 +229,7 @@ export class DeploymentPipelineService {
   cleanup(): void {
     this.pipelines.clear();
     this.executions.clear();
+    this.initializeDefaultPipelines();
   }
 }
 

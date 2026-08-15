@@ -10,6 +10,7 @@ export default defineConfig({
       "@": path.resolve(templateRoot, "client", "src"),
       "@shared": path.resolve(templateRoot, "shared"),
       "@assets": path.resolve(templateRoot, "attached_assets"),
+      "@tensorflow-models/face-detection": path.resolve(templateRoot, "server/__mocks__/tensorflow-face-detection.ts"),
     },
   },
   test: {

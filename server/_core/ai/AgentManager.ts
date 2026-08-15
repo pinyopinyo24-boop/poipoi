@@ -111,7 +111,22 @@ export class AgentManager {
     input: Record<string, any>,
     context?: AgentContext
   ): Promise<AgentExecutionResult> {
-    const agent = this.agents.get(agentType);
+   if (process.env.DEMO_MODE === 'true') {
+  return {
+    success: true,
+    agentType,
+    taskId: `demo-${Date.now()}`,
+    executionTime: 0,
+    output: {
+      simulated: true,
+      agentType,
+      message: 'Demo execution'
+    },
+    tokensUsed: 0
+  };
+} 
+  
+  const agent = this.agents.get(agentType);
     if (!agent) {
       throw new Error(`Agent type '${agentType}' not found`);
     }

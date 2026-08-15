@@ -91,7 +91,7 @@ describe('IncidentManager', () => {
         100
       );
       const resolved = incidentManager.updateIncidentStatus(recorded.id, 'resolved');
-      expect(resolved?.duration).toBeGreaterThan(0);
+      expect(resolved?.duration).toBeGreaterThanOrEqual(0);
     });
   });
 

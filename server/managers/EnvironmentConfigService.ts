@@ -179,7 +179,15 @@ export class EnvironmentConfigService {
   }
 
   /**
-   * クリーンアップ
+   * 全設定をデフォルトにリセット
+   */
+  resetAllToDefaults(): void {
+    this.configs.clear();
+    this.initializeDefaultConfigs();
+  }
+
+  /**
+   * クリーンアップ（全データ削除のみ）
    */
   cleanup(): void {
     this.configs.clear();

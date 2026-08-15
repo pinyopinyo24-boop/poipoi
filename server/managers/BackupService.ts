@@ -50,7 +50,10 @@ export class BackupService {
   /**
    * バックアップ設定初期化
    */
-  initializeBackupConfig(userId: number): BackupConfig {
+  initializeBackupConfig(userId: number, forceReinit: boolean = false): BackupConfig {
+    if (!forceReinit && this.backupConfigs.has(userId)) {
+      return this.backupConfigs.get(userId)!;
+    }
     const config: BackupConfig = {
       autoBackupEnabled: true,
       backupInterval: 86400000,
@@ -60,6 +63,9 @@ export class BackupService {
     };
 
     this.backupConfigs.set(userId, config);
+    if (!this.backups.has(userId)) {
+      this.backups.set(userId, []);
+    }
     return config;
   }
 

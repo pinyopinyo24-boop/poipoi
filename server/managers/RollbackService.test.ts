@@ -190,7 +190,7 @@ describe('RollbackService', () => {
       const execution = rollbackService.startRollbackExecution(created.requestId, 'deployer');
       if (execution) {
         const completed = rollbackService.completeRollbackExecution(execution.executionId);
-        expect(completed?.status).toBe('success' || 'failed');
+        expect(['success', 'failed']).toContain(completed?.status);
       }
     });
   });

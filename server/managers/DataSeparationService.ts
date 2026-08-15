@@ -208,6 +208,7 @@ export class DataSeparationService {
   cleanup(): void {
     this.dataStores.forEach((store) => store.tables.clear());
     this.dataContextStack = [];
+    this.currentEnvironment = 'production';
   }
 }
 

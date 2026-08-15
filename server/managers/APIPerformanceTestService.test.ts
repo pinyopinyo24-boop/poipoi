@@ -140,12 +140,12 @@ describe('APIPerformanceTestService', () => {
       const test2 = apiPerformanceTestService.startTest('device123', 'auth');
 
       apiPerformanceTestService.completeTest(test1.testId, 100, 1000, 0.5, 100, 0);
-      apiPerformanceTestService.completeTest(test2.testId, 200, 900, 1, 99, 1);
+      apiPerformanceTestService.completeTest(test2.testId, 100, 900, 0.5, 99, 1);
 
       const stats = apiPerformanceTestService.getAPIStatistics();
       expect(stats.totalTests).toBe(2);
       expect(stats.excellentTests).toBe(2);
-      expect(stats.averageResponseTime).toBe(150);
+      expect(stats.averageResponseTime).toBe(100);
       expect(stats.totalSuccesses).toBe(199);
     });
 

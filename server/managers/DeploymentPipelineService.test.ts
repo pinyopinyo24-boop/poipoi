@@ -102,7 +102,7 @@ describe('DeploymentPipelineService', () => {
       const execution = deploymentPipelineService.startPipelineExecution('default');
       if (execution) {
         const completed = deploymentPipelineService.completePipelineExecution(execution.executionId);
-        expect(completed?.status).toBe('running' || 'success' || 'failed');
+        expect(['running', 'success', 'failed']).toContain(completed?.status);
       }
     });
 

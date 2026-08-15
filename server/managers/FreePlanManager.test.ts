@@ -29,10 +29,11 @@ interface FreeUser {
 class FreePlanManager {
   private plans: Map<string, FreePlan> = new Map();
   private users: Map<string, FreeUser> = new Map();
+  private counter = 0;
 
   // Free Plan管理
   createFreePlan(plan: Omit<FreePlan, 'id' | 'createdAt'>): FreePlan {
-    const id = `plan_${Date.now()}`;
+    const id = `plan_${Date.now()}_${++this.counter}`;
     const newPlan: FreePlan = {
       ...plan,
       id,
@@ -68,7 +69,7 @@ class FreePlanManager {
     const plan = this.plans.get(planId);
     if (!plan) throw new Error('Plan not found');
 
-    const id = `user_${Date.now()}`;
+    const id = `user_${Date.now()}_${++this.counter}`;
     const newUser: FreeUser = {
       id,
       email,

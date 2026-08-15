@@ -47,7 +47,10 @@ export class RestoreService {
   /**
    * 復元設定初期化
    */
-  initializeRestoreConfig(userId: number): RestoreConfig {
+  initializeRestoreConfig(userId: number, forceReinit: boolean = false): RestoreConfig {
+    if (!forceReinit && this.restoreConfigs.has(userId)) {
+      return this.restoreConfigs.get(userId)!;
+    }
     const config: RestoreConfig = {
       verifyChecksum: true,
       preserveTimestamps: true,
@@ -56,6 +59,9 @@ export class RestoreService {
     };
 
     this.restoreConfigs.set(userId, config);
+    if (!this.restoreJobs.has(userId)) {
+      this.restoreJobs.set(userId, []);
+    }
     return config;
   }
 

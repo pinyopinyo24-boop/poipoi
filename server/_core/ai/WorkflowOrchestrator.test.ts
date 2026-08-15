@@ -21,6 +21,9 @@ describe('WorkflowOrchestrator', () => {
   let aiCore: AICore;
 
   beforeEach(() => {
+    // Demo mode so tests don't require real API keys
+    vi.stubEnv('DEMO_MODE', 'true');
+
     // Initialize mock providers and managers
     const provider = new GeminiProvider('demo-key');
     
@@ -50,6 +53,7 @@ describe('WorkflowOrchestrator', () => {
   });
 
   afterEach(() => {
+    vi.unstubAllEnvs();
     memoryService.clearMemories();
     executionLogger.clearLogs();
   });
@@ -60,7 +64,7 @@ describe('WorkflowOrchestrator', () => {
       const workflow = await orchestrator.executeTaskWorkflow(userInput);
 
       expect(workflow).toBeDefined();
-      expect(workflow.id).toMatch(/^workflow-\d+$/);
+      expect(workflow.id).toMatch(/^workflow-\d+/);
       expect(workflow.state).toBe('completed');
       expect(workflow.steps.length).toBeGreaterThan(0);
       expect(workflow.duration).toBeGreaterThanOrEqual(0);

@@ -107,7 +107,8 @@ export class UpdateNotificationService {
     if (!latest) return null;
 
     const currentCode = this.parseVersionCode(currentVersion);
-    if (latest.versionCode <= currentCode) return null;
+    const latestCode = this.parseVersionCode(latest.version);
+    if (latestCode <= currentCode) return null;
 
     if (minOSVersion && latest.minOSVersion > minOSVersion) return null;
 

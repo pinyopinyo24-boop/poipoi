@@ -334,7 +334,7 @@ export class ProductionReadinessManager {
     if (reports.length === 0) return undefined;
 
     return reports.reduce((latest, current) =>
-      current.timestamp > latest.timestamp ? current : latest
+      current.timestamp >= latest.timestamp ? current : latest
     );
   }
 

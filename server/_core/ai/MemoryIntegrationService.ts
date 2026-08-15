@@ -204,7 +204,15 @@ export class MemoryIntegrationService {
     agentMemoryContextManager.clearMemories();
     console.log('[MemoryIntegration] Memories cleared');
   }
+
+  async retrieveContext(userInput: string) {
+    return {
+      relatedMemories: [],
+      query: userInput
+    };
+  }
 }
 
 // グローバルインスタンス
 export const memoryIntegrationService = new MemoryIntegrationService();
+
