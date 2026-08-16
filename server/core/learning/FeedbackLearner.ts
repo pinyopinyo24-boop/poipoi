@@ -46,7 +46,7 @@ export class FeedbackLearner {
   private feedbacks: Map<string, Feedback[]>;
 
   private constructor() {
-    this.securityEngine = new SecurityEngine();
+    this.securityEngine = SecurityEngine.getInstance();
     this.memoryEngine = MemoryEngine.getInstance();
     this.feedbacks = new Map();
   }

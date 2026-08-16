@@ -49,7 +49,7 @@ export class KnowledgeMemoryIntegration {
   private constructor() {
     this.knowledgeEngine = KnowledgeEngine.getInstance();
     this.memoryEngine = MemoryEngine.getInstance();
-    this.securityEngine = new SecurityEngine();
+    this.securityEngine = SecurityEngine.getInstance();
     this.memoryToKnowledgeMap = new Map();
     this.knowledgeToMemoryMap = new Map();
     this.evolutionHistory = [];

@@ -78,7 +78,7 @@ export class SelfLearningEngine {
   private learningData: LearningData[];
 
   private constructor() {
-    this.securityEngine = new SecurityEngine();
+    this.securityEngine = SecurityEngine.getInstance();
     this.memoryEngine = MemoryEngine.getInstance();
     this.knowledgeEngine = KnowledgeEngine.getInstance();
     this.learningCycles = new Map();

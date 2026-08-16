@@ -52,7 +52,7 @@ export class KnowledgeGraphEngine {
     this.nodes = new Map();
     this.edges = new Map();
     this.confidenceHistory = new Map();
-    this.securityEngine = new SecurityEngine();
+    this.securityEngine = SecurityEngine.getInstance();
   }
 
   public static getInstance(): KnowledgeGraphEngine {

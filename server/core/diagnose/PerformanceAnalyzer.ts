@@ -44,7 +44,7 @@ export class PerformanceAnalyzer {
   private metrics: PerformanceMetric[];
 
   private constructor() {
-    this.securityEngine = new SecurityEngine();
+    this.securityEngine = SecurityEngine.getInstance();
     this.metrics = [];
   }
 

@@ -11,12 +11,12 @@ describe('SelfImprovementManager', () => {
   let userId: string;
 
   /**
-   * SelfDiagnoseEngine と SelfLearningEngine は内部で同一の SecurityEngine
-   * インスタンスを使う。テストでは diagnoseEngine の securityEngine を取得して
-   * 権限を付与することで、両エンジンが同じコンテキストを参照できるようにする。
+   * SelfDiagnoseEngine 邵ｺ・ｨ SelfLearningEngine 邵ｺ・ｯ陷繝ｻﾎ夂ｸｺ・ｧ陷ｷ蠕｡・ｸﾂ邵ｺ・ｮ SecurityEngine
+   * 郢ｧ・､郢晢ｽｳ郢ｧ・ｹ郢ｧ・ｿ郢晢ｽｳ郢ｧ・ｹ郢ｧ蜑・ｽｽ・ｿ邵ｺ繝ｻﾂ繧・Θ郢ｧ・ｹ郢晏現縲堤ｸｺ・ｯ diagnoseEngine 邵ｺ・ｮ securityEngine 郢ｧ雋槫徐陟募干・邵ｺ・ｦ
+   * 隶難ｽｩ鬮ｯ闊鯉ｽ定脂蛟・ｽｸ蠑ｱ笘・ｹｧ荵晢ｼ・ｸｺ・ｨ邵ｺ・ｧ邵ｲ竏ｽ・ｸ・｡郢ｧ・ｨ郢晢ｽｳ郢ｧ・ｸ郢晢ｽｳ邵ｺ謔滄・邵ｺ蛟･縺慕ｹ晢ｽｳ郢昴・縺冗ｹｧ・ｹ郢晏現・定愾繧峨・邵ｺ・ｧ邵ｺ髦ｪ・狗ｹｧ蛹ｻ竕ｧ邵ｺ・ｫ邵ｺ蜷ｶ・狗ｸｲ繝ｻ
    */
   beforeEach(async () => {
-    // Singletonをリセットして干渉を防ぐ
+    // Singleton郢ｧ蛛ｵﾎ懃ｹｧ・ｻ郢昴・繝ｨ邵ｺ蜉ｱ窶ｻ陝ｷ・ｲ雋ょｳｨ・帝ｫｦ・ｲ邵ｺ繝ｻ
     manager = SelfImprovementManager.getInstance();
     manager.clearAllData();
 
@@ -28,7 +28,7 @@ describe('SelfImprovementManager', () => {
 
     MemoryEngine.getInstance().clearAllMemory();
 
-    // SecurityEngine の初期化
+    // SecurityEngine 邵ｺ・ｮ陋ｻ譎・ｄ陋ｹ繝ｻ
     securityEngine = (diagnoseEngine as any).securityEngine as SecurityEngine;
     if (!securityEngine.isReady()) {
       await securityEngine.initialize();
@@ -36,7 +36,7 @@ describe('SelfImprovementManager', () => {
 
     userId = 'test-user-' + Date.now();
 
-    // 必要な権限を付与
+    // 陟｢繝ｻ・ｦ竏壺・隶難ｽｩ鬮ｯ闊鯉ｽ定脂蛟・ｽｸ繝ｻ
     await securityEngine.createContext(userId, 'user');
     await securityEngine.grantPermission(userId, 'diagnose:read');
     await securityEngine.grantPermission(userId, 'diagnose:write');
@@ -48,18 +48,6 @@ describe('SelfImprovementManager', () => {
     await securityEngine.grantPermission(userId, 'knowledge:read');
     await securityEngine.grantPermission(userId, 'knowledge:write');
 
-    // learningEngine は別の securityEngine インスタンスを持つため
-    // そちらも初期化が必要
-    const learnSecEngine = (learningEngine as any).securityEngine as SecurityEngine;
-    if (!learnSecEngine.isReady()) {
-      await learnSecEngine.initialize();
-    }
-    await learnSecEngine.createContext(userId, 'user');
-    await learnSecEngine.grantPermission(userId, 'learning:read');
-    await learnSecEngine.grantPermission(userId, 'learning:write');
-    await learnSecEngine.grantPermission(userId, 'memory:read');
-    await learnSecEngine.grantPermission(userId, 'memory:write');
-    await learnSecEngine.grantPermission(userId, 'audit:write');
   });
 
   afterEach(async () => {
@@ -67,9 +55,7 @@ describe('SelfImprovementManager', () => {
 
     const diagnoseEngine = SelfDiagnoseEngine.getInstance();
     diagnoseEngine.clearAllData();
-    if (securityEngine.isReady()) {
-      await securityEngine.shutdown();
-    }
+
 
     const learningEngine = SelfLearningEngine.getInstance();
     learningEngine.clearAllData();
@@ -81,7 +67,7 @@ describe('SelfImprovementManager', () => {
     MemoryEngine.getInstance().clearAllMemory();
   });
 
-  // ── Singleton ──────────────────────────────────────────
+  // 隨渉隨渉 Singleton 隨渉隨渉隨渉隨渉隨渉隨渉隨渉隨渉隨渉隨渉隨渉隨渉隨渉隨渉隨渉隨渉隨渉隨渉隨渉隨渉隨渉隨渉隨渉隨渉隨渉隨渉隨渉隨渉隨渉隨渉隨渉隨渉隨渉隨渉隨渉隨渉隨渉隨渉隨渉隨渉隨渉隨渉
 
   describe('Singleton', () => {
     it('should return the same instance', () => {
@@ -91,7 +77,7 @@ describe('SelfImprovementManager', () => {
     });
   });
 
-  // ── runImprovementCycle ──────────────────────────────────
+  // 隨渉隨渉 runImprovementCycle 隨渉隨渉隨渉隨渉隨渉隨渉隨渉隨渉隨渉隨渉隨渉隨渉隨渉隨渉隨渉隨渉隨渉隨渉隨渉隨渉隨渉隨渉隨渉隨渉隨渉隨渉隨渉隨渉隨渉隨渉隨渉隨渉隨渉隨渉
 
   describe('runImprovementCycle', () => {
     it('should complete a full improvement cycle', async () => {
@@ -159,7 +145,7 @@ describe('SelfImprovementManager', () => {
     });
   });
 
-  // ── getCycleHistory ──────────────────────────────────────
+  // 隨渉隨渉 getCycleHistory 隨渉隨渉隨渉隨渉隨渉隨渉隨渉隨渉隨渉隨渉隨渉隨渉隨渉隨渉隨渉隨渉隨渉隨渉隨渉隨渉隨渉隨渉隨渉隨渉隨渉隨渉隨渉隨渉隨渉隨渉隨渉隨渉隨渉隨渉隨渉隨渉隨渉隨渉
 
   describe('getCycleHistory', () => {
     it('should return empty array before any cycle', () => {
@@ -185,23 +171,16 @@ describe('SelfImprovementManager', () => {
     });
 
     it('should isolate cycles by user', async () => {
-      // 別ユーザーの setup
+      // 陋ｻ・･郢晢ｽｦ郢晢ｽｼ郢ｧ・ｶ郢晢ｽｼ邵ｺ・ｮ setup
       const userId2 = 'test-user-2-' + Date.now();
 
-      // diagnoseEngine の securityEngine
+      // diagnoseEngine 邵ｺ・ｮ securityEngine
       await securityEngine.createContext(userId2, 'user');
       await securityEngine.grantPermission(userId2, 'diagnose:read');
       await securityEngine.grantPermission(userId2, 'diagnose:write');
+      await securityEngine.grantPermission(userId2, 'learning:write');
 
-      // learningEngine の securityEngine
-      const learnSecEngine = (SelfLearningEngine.getInstance() as any)
-        .securityEngine as SecurityEngine;
-      await learnSecEngine.createContext(userId2, 'user');
-      await learnSecEngine.grantPermission(userId2, 'learning:read');
-      await learnSecEngine.grantPermission(userId2, 'learning:write');
-      await learnSecEngine.grantPermission(userId2, 'memory:read');
-      await learnSecEngine.grantPermission(userId2, 'memory:write');
-      await learnSecEngine.grantPermission(userId2, 'audit:write');
+      // learningEngine 邵ｺ・ｮ securityEngine
 
       await manager.runImprovementCycle(userId);
       await manager.runImprovementCycle(userId2);
@@ -211,7 +190,7 @@ describe('SelfImprovementManager', () => {
     });
   });
 
-  // ── getLatestCycle ───────────────────────────────────────
+  // 隨渉隨渉 getLatestCycle 隨渉隨渉隨渉隨渉隨渉隨渉隨渉隨渉隨渉隨渉隨渉隨渉隨渉隨渉隨渉隨渉隨渉隨渉隨渉隨渉隨渉隨渉隨渉隨渉隨渉隨渉隨渉隨渉隨渉隨渉隨渉隨渉隨渉隨渉隨渉隨渉隨渉隨渉隨渉
 
   describe('getLatestCycle', () => {
     it('should return null when no cycles exist', () => {
@@ -228,7 +207,7 @@ describe('SelfImprovementManager', () => {
     });
   });
 
-  // ── getApprovedCandidates / getRejectedCandidates ────────
+  // 隨渉隨渉 getApprovedCandidates / getRejectedCandidates 隨渉隨渉隨渉隨渉隨渉隨渉隨渉隨渉
 
   describe('getApprovedCandidates / getRejectedCandidates', () => {
     it('should correctly split candidates into approved and rejected', async () => {
@@ -257,7 +236,7 @@ describe('SelfImprovementManager', () => {
     });
   });
 
-  // ── getStats ─────────────────────────────────────────────
+  // 隨渉隨渉 getStats 隨渉隨渉隨渉隨渉隨渉隨渉隨渉隨渉隨渉隨渉隨渉隨渉隨渉隨渉隨渉隨渉隨渉隨渉隨渉隨渉隨渉隨渉隨渉隨渉隨渉隨渉隨渉隨渉隨渉隨渉隨渉隨渉隨渉隨渉隨渉隨渉隨渉隨渉隨渉隨渉隨渉隨渉隨渉隨渉隨渉
 
   describe('getStats', () => {
     it('should return zero stats when no cycles have run', () => {
@@ -281,7 +260,7 @@ describe('SelfImprovementManager', () => {
     });
   });
 
-  // ── clearAllData ─────────────────────────────────────────
+  // 隨渉隨渉 clearAllData 隨渉隨渉隨渉隨渉隨渉隨渉隨渉隨渉隨渉隨渉隨渉隨渉隨渉隨渉隨渉隨渉隨渉隨渉隨渉隨渉隨渉隨渉隨渉隨渉隨渉隨渉隨渉隨渉隨渉隨渉隨渉隨渉隨渉隨渉隨渉隨渉隨渉隨渉隨渉隨渉隨渉
 
   describe('clearAllData', () => {
     it('should remove all cycle history', async () => {
@@ -295,7 +274,7 @@ describe('SelfImprovementManager', () => {
     });
   });
 
-  // ── ImprovementCandidate structure ───────────────────────
+  // 隨渉隨渉 ImprovementCandidate structure 隨渉隨渉隨渉隨渉隨渉隨渉隨渉隨渉隨渉隨渉隨渉隨渉隨渉隨渉隨渉隨渉隨渉隨渉隨渉隨渉隨渉隨渉隨渉
 
   describe('ImprovementCandidate structure', () => {
     it('each candidate should have required fields', async () => {

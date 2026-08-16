@@ -63,7 +63,9 @@ const mockSecurityEngineInstance = {
 };
 
 vi.mock("../security/SecurityEngine", () => ({
-  SecurityEngine: vi.fn(() => mockSecurityEngineInstance),
+  SecurityEngine: {
+    getInstance: vi.fn(() => mockSecurityEngineInstance),
+  },
 }));
 
 describe("ApplicationEngine", () => {

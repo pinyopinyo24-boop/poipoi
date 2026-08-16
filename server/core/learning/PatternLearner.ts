@@ -47,7 +47,7 @@ export class PatternLearner {
   private executionHistory: any[];
 
   private constructor() {
-    this.securityEngine = new SecurityEngine();
+    this.securityEngine = SecurityEngine.getInstance();
     this.memoryEngine = MemoryEngine.getInstance();
     this.patterns = new Map();
     this.executionHistory = [];

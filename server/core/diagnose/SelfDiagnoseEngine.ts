@@ -60,7 +60,7 @@ export class SelfDiagnoseEngine {
   private issueHistory: Issue[];
 
   private constructor() {
-    this.securityEngine = new SecurityEngine();
+    this.securityEngine = SecurityEngine.getInstance();
     this.memoryEngine = MemoryEngine.getInstance();
     this.knowledgeEngine = KnowledgeEngine.getInstance();
     this.diagnosticHistory = [];
@@ -78,10 +78,8 @@ export class SelfDiagnoseEngine {
    * Run full system diagnosis
    */
   public async runFullDiagnosis(userId: string): Promise<DiagnosticReport> {
-    // Initialize security engine if needed
-    if (!this.securityEngine.isReady()) {
-      await this.securityEngine.initialize();
-    }
+    // Ensure shared security engine is initialized before authorization
+    await this.securityEngine.initialize()
 
     // Security check
     const hasPermission = await this.securityEngine.checkAuthorization(

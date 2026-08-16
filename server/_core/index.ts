@@ -5,6 +5,7 @@ import net from "net";
 import { createReadStream, existsSync } from "fs";
 import cors from "cors";
 import { createExpressMiddleware } from "@trpc/server/adapters/express";
+import { HeartbeatConnector } from "../core/HeartbeatConnector";
 import { registerOAuthRoutes } from "./oauth";
 import { registerStorageProxy } from "./storageProxy";
 import { appRouter } from "../routers";
@@ -94,6 +95,18 @@ async function startServer() {
     stream.pipe(res);
   });
   
+  // Heartbeat self-evolution callback
+  app.post("/api/scheduled/self-evolution", async (req, res) => {
+    try {
+      const userId = req.body?.userId || "system";
+      const result = await HeartbeatConnector.getInstance().onHeartbeatCallback(userId);
+      res.json(result);
+    } catch (error) {
+      console.error("[Heartbeat] self-evolution callback error:", error);
+      res.status(500).json({ error: "Self-evolution callback failed" });
+    }
+  });
+
   // tRPC API
   app.use(
     "/api/trpc",
@@ -118,4 +131,3 @@ async function startServer() {
 }
 
 startServer().catch(console.error);
-

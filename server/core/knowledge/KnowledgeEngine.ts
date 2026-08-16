@@ -62,7 +62,7 @@ export class KnowledgeEngine {
     this.tagIndex = new Map();
     this.versionHistory = new Map();
     this.memoryEngine = MemoryEngine.getInstance();
-    this.securityEngine = new SecurityEngine();
+    this.securityEngine = SecurityEngine.getInstance();
     this.initializeSecurityEngine();
   }
 

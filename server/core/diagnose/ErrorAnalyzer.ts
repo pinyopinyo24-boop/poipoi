@@ -35,7 +35,7 @@ export class ErrorAnalyzer {
   private errorLog: ErrorEntry[];
 
   private constructor() {
-    this.securityEngine = new SecurityEngine();
+    this.securityEngine = SecurityEngine.getInstance();
     this.errorLog = [];
   }
 

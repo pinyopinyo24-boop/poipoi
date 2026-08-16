@@ -25,12 +25,22 @@ export interface AuditLogEntry {
 }
 
 export class SecurityEngine {
+  private static instance: SecurityEngine;
+  private readonly isSingletonInstance: boolean;
   private isInitialized: boolean = false;
   private auditLogs: AuditLogEntry[] = [];
   private userContexts: Map<string, SecurityContext> = new Map();
   private rolePermissions: Map<string, Set<string>> = new Map();
 
-  constructor() {
+  public static getInstance(): SecurityEngine {
+    if (!SecurityEngine.instance) {
+      SecurityEngine.instance = new SecurityEngine(true);
+    }
+    return SecurityEngine.instance;
+  }
+
+  constructor(isSingletonInstance: boolean = false) {
+    this.isSingletonInstance = isSingletonInstance;
     this.initializeRolePermissions();
   }
 
@@ -39,9 +49,16 @@ export class SecurityEngine {
    */
   async initialize(): Promise<void> {
     if (this.isInitialized) {
+      if (this.isSingletonInstance) {
+        return;
+      }
       throw new Error('SecurityEngine is already initialized');
     }
     this.isInitialized = true;
+
+    if (!this.userContexts.has('local-user')) {
+      await this.createContext('local-user', 'system');
+    }
   }
 
   /**
@@ -365,6 +382,8 @@ export class SecurityEngine {
       'write_knowledge',
       'delete_knowledge',
       'execute_evolution',
+      'diagnose:read',
+      'learning:write',
       'view_audit_logs',
       'manage_permissions',
     ]);

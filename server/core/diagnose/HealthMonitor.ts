@@ -33,7 +33,7 @@ export class HealthMonitor {
   private serviceStatuses: Map<string, ServiceStatus>;
 
   private constructor() {
-    this.securityEngine = new SecurityEngine();
+    this.securityEngine = SecurityEngine.getInstance();
     this.metrics = new Map();
     this.serviceStatuses = new Map();
   }

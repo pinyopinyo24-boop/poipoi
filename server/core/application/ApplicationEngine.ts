@@ -13,7 +13,7 @@ export class ApplicationEngine {
   private selfLearningEngine: SelfLearningEngine;
 
   private constructor() {
-    this.securityEngine = new SecurityEngine();
+    this.securityEngine = SecurityEngine.getInstance();
     this.memoryEngine = MemoryEngine.getInstance();
     this.knowledgeEngine = KnowledgeEngine.getInstance();
     this.selfDiagnoseEngine = SelfDiagnoseEngine.getInstance();
