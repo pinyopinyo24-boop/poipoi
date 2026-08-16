@@ -167,6 +167,11 @@ export class ChatCoreManager {
   ): Promise<string> {
     try {
       // LLM APIを呼び出し
+      if (processedResult.isManufacturingRelated) {
+        const manufacturingAnalysis = await this.manufacturingManager.analyzeProduction(processedResult.manufacturingData || {});
+        return this.formatManufacturingResponse(userMessage, manufacturingAnalysis);
+      }
+
       const llmResult = await invokeLLM({
         messages: [
           {
