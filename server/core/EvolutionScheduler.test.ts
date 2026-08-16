@@ -489,4 +489,326 @@ describe('EvolutionScheduler', () => {
       expect(typeof result.rollbacks).toBe('number');
     });
   });
+
+  // ── SafeImprovementApplier 統合 ───────────────────────────────────────────
+
+  describe('SafeImprovementApplier integration', () => {
+    it('should populate applyResult when execution succeeds and succeeded candidates exist', async () => {
+      // auto_cycle ON
+      await applier.apply(
+        userId,
+        { id: 'c-int', source: 'diagnosis', title: 'T', description: 'D', priority: 'low', estimatedImpact: 10, createdAt: Date.now() },
+        'self_improvement.enable_auto_cycle',
+        true
+      );
+
+      // succeeded candidate を 1 件含む execution 結果を返す mock
+      const simSpy = vi.spyOn(
+        SelfEvolutionWorkflow.getInstance(),
+        'runSimulation'
+      ).mockResolvedValue({
+        workflowId: 'mock-sim-int',
+        userId,
+        mode: 'simulation',
+        cycle: {
+          id: 'cyc', userId, startedAt: Date.now(),
+          diagnosticReport: { id: 'd', timestamp: Date.now(), status: 'healthy' as any, components: [], issues: [], recommendations: [], overallScore: 100 },
+          candidates: [],
+          testResults: [],
+          appliedCount: 0,
+          summary: '',
+        },
+        approvedCandidates: [
+          {
+            id: 'int-cand-1',
+            source: 'diagnosis' as const,
+            title: 'candidate_score_threshold adjustment',
+            description: 'self_improvement.candidate_score_threshold tuning',
+            priority: 'low' as const,
+            estimatedImpact: 20,
+            createdAt: Date.now(),
+          },
+        ],
+        rejectedCandidates: [],
+        completedAt: Date.now(),
+        summary: '[Simulation] mock',
+      });
+
+      const execSpy = vi.spyOn(
+        SelfEvolutionWorkflow.getInstance(),
+        'runExecution'
+      ).mockResolvedValue({
+        workflowId: 'mock-exec-int',
+        userId,
+        mode: 'execution',
+        simulation: {
+          workflowId: 'mock-sim-int',
+          userId,
+          mode: 'simulation',
+          cycle: {
+            id: 'cyc', userId, startedAt: Date.now(),
+            diagnosticReport: { id: 'd', timestamp: Date.now(), status: 'healthy' as any, components: [], issues: [], recommendations: [], overallScore: 100 },
+            candidates: [],
+            testResults: [],
+            appliedCount: 0,
+            summary: '',
+          },
+          approvedCandidates: [
+            {
+              id: 'int-cand-1',
+              source: 'diagnosis' as const,
+              title: 'candidate_score_threshold adjustment',
+              description: 'self_improvement.candidate_score_threshold tuning',
+              priority: 'low' as const,
+              estimatedImpact: 20,
+              createdAt: Date.now(),
+            },
+          ],
+          rejectedCandidates: [],
+          completedAt: Date.now(),
+          summary: '[Simulation] mock',
+        },
+        execution: {
+          userId,
+          total: 1,
+          succeeded: 1,
+          failed: 0,
+          rolledBack: 0,
+          skipped: 0,
+          results: [
+            {
+              candidateId: 'int-cand-1',
+              userId,
+              status: 'success' as const,
+              durationMs: 5,
+              rolledBack: false,
+              executedAt: Date.now(),
+            },
+          ],
+          executedAt: Date.now(),
+        },
+        completedAt: Date.now(),
+        summary: '[Execution] mock',
+      });
+
+      const result = await scheduler.triggerOnce(userId);
+
+      simSpy.mockRestore();
+      execSpy.mockRestore();
+
+      expect(result.outcome).toBe('executed');
+      // applyResult が定義されている（SafeImprovementApplier が呼ばれた）
+      expect(result.applyResult).toBeDefined();
+      expect(result.applyResult!.total).toBeGreaterThan(0);
+    });
+
+    it('should NOT populate applyResult when no candidates succeeded', async () => {
+      await applier.apply(
+        userId,
+        { id: 'c-ns', source: 'diagnosis', title: 'T', description: 'D', priority: 'low', estimatedImpact: 10, createdAt: Date.now() },
+        'self_improvement.enable_auto_cycle',
+        true
+      );
+
+      // succeeded なしの execution 結果
+      const simSpy = vi.spyOn(
+        SelfEvolutionWorkflow.getInstance(),
+        'runSimulation'
+      ).mockResolvedValue({
+        workflowId: 'mock-sim-ns',
+        userId,
+        mode: 'simulation',
+        cycle: {
+          id: 'cyc', userId, startedAt: Date.now(),
+          diagnosticReport: { id: 'd', timestamp: Date.now(), status: 'healthy' as any, components: [], issues: [], recommendations: [], overallScore: 100 },
+          candidates: [],
+          testResults: [],
+          appliedCount: 0,
+          summary: '',
+        },
+        approvedCandidates: [
+          { id: 'ns-cand-1', source: 'diagnosis' as const, title: 'T', description: 'D', priority: 'low' as const, estimatedImpact: 10, createdAt: Date.now() },
+        ],
+        rejectedCandidates: [],
+        completedAt: Date.now(),
+        summary: '[Simulation] mock',
+      });
+
+      const execSpy = vi.spyOn(
+        SelfEvolutionWorkflow.getInstance(),
+        'runExecution'
+      ).mockResolvedValue({
+        workflowId: 'mock-exec-ns',
+        userId,
+        mode: 'execution',
+        simulation: {
+          workflowId: 'mock-sim-ns',
+          userId,
+          mode: 'simulation',
+          cycle: {
+            id: 'cyc', userId, startedAt: Date.now(),
+            diagnosticReport: { id: 'd', timestamp: Date.now(), status: 'healthy' as any, components: [], issues: [], recommendations: [], overallScore: 100 },
+            candidates: [],
+            testResults: [],
+            appliedCount: 0,
+            summary: '',
+          },
+          approvedCandidates: [
+            { id: 'ns-cand-1', source: 'diagnosis' as const, title: 'T', description: 'D', priority: 'low' as const, estimatedImpact: 10, createdAt: Date.now() },
+          ],
+          rejectedCandidates: [],
+          completedAt: Date.now(),
+          summary: '[Simulation] mock',
+        },
+        execution: {
+          userId,
+          total: 1,
+          succeeded: 0,
+          failed: 0,
+          rolledBack: 1,
+          skipped: 0,
+          results: [
+            {
+              candidateId: 'ns-cand-1',
+              userId,
+              status: 'rolled_back' as const,
+              durationMs: 5,
+              failureReason: 'simulated failure',
+              rolledBack: true,
+              executedAt: Date.now(),
+            },
+          ],
+          executedAt: Date.now(),
+        },
+        completedAt: Date.now(),
+        summary: '[Execution] mock no-success',
+      });
+
+      const result = await scheduler.triggerOnce(userId);
+
+      simSpy.mockRestore();
+      execSpy.mockRestore();
+
+      expect(result.outcome).toBe('executed');
+      // 成功候補がないので applyResult は undefined
+      expect(result.applyResult).toBeUndefined();
+    });
+
+    it('should auto-stop when SafeImprovementApplier rollback_failed occurs', async () => {
+      await applier.apply(
+        userId,
+        { id: 'c-rbf2', source: 'diagnosis', title: 'T', description: 'D', priority: 'low', estimatedImpact: 10, createdAt: Date.now() },
+        'self_improvement.enable_auto_cycle',
+        true
+      );
+
+      // applyBatch が rollback_failed を含む結果を返すように mock
+      const applierSpy = vi.spyOn(applier, 'applyBatch').mockResolvedValue({
+        userId,
+        total: 1,
+        applied: 0,
+        rolledBack: 0,
+        rejected: 0,
+        rollbackFailed: 1,
+        results: [],
+        executedAt: Date.now(),
+      });
+
+      const simSpy = vi.spyOn(
+        SelfEvolutionWorkflow.getInstance(),
+        'runSimulation'
+      ).mockResolvedValue({
+        workflowId: 'mock-sim-rbf2',
+        userId,
+        mode: 'simulation',
+        cycle: {
+          id: 'cyc', userId, startedAt: Date.now(),
+          diagnosticReport: { id: 'd', timestamp: Date.now(), status: 'healthy' as any, components: [], issues: [], recommendations: [], overallScore: 100 },
+          candidates: [],
+          testResults: [],
+          appliedCount: 0,
+          summary: '',
+        },
+        approvedCandidates: [
+          {
+            id: 'rbf2-cand-1',
+            source: 'diagnosis' as const,
+            title: 'candidate_score_threshold adjustment',
+            description: 'self_improvement.candidate_score_threshold tuning',
+            priority: 'low' as const,
+            estimatedImpact: 20,
+            createdAt: Date.now(),
+          },
+        ],
+        rejectedCandidates: [],
+        completedAt: Date.now(),
+        summary: '[Simulation] mock',
+      });
+
+      const execSpy = vi.spyOn(
+        SelfEvolutionWorkflow.getInstance(),
+        'runExecution'
+      ).mockResolvedValue({
+        workflowId: 'mock-exec-rbf2',
+        userId,
+        mode: 'execution',
+        simulation: {
+          workflowId: 'mock-sim-rbf2',
+          userId,
+          mode: 'simulation',
+          cycle: {
+            id: 'cyc', userId, startedAt: Date.now(),
+            diagnosticReport: { id: 'd', timestamp: Date.now(), status: 'healthy' as any, components: [], issues: [], recommendations: [], overallScore: 100 },
+            candidates: [],
+            testResults: [],
+            appliedCount: 0,
+            summary: '',
+          },
+          approvedCandidates: [
+            {
+              id: 'rbf2-cand-1',
+              source: 'diagnosis' as const,
+              title: 'candidate_score_threshold adjustment',
+              description: 'self_improvement.candidate_score_threshold tuning',
+              priority: 'low' as const,
+              estimatedImpact: 20,
+              createdAt: Date.now(),
+            },
+          ],
+          rejectedCandidates: [],
+          completedAt: Date.now(),
+          summary: '[Simulation] mock',
+        },
+        execution: {
+          userId,
+          total: 1,
+          succeeded: 1,
+          failed: 0,
+          rolledBack: 0,
+          skipped: 0,
+          results: [
+            {
+              candidateId: 'rbf2-cand-1',
+              userId,
+              status: 'success' as const,
+              durationMs: 5,
+              rolledBack: false,
+              executedAt: Date.now(),
+            },
+          ],
+          executedAt: Date.now(),
+        },
+        completedAt: Date.now(),
+        summary: '[Execution] mock rbf2',
+      });
+
+      await scheduler.triggerOnce(userId);
+
+      applierSpy.mockRestore();
+      simSpy.mockRestore();
+      execSpy.mockRestore();
+
+      expect(scheduler.getStatus()).toBe<SchedulerStatus>('auto_stopped');
+    });
+  });
 });

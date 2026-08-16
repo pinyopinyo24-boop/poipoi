@@ -4,7 +4,8 @@ import {
   ExecutionWorkflowResult,
   SimulationResult,
 } from './SelfEvolutionWorkflow';
-import { SafeImprovementApplier } from './SafeImprovementApplier';
+import { SafeImprovementApplier, ApplyBatchSummary } from './SafeImprovementApplier';
+import { ImprovementCandidate } from './SelfImprovementManager';
 import { SelfLearningEngine } from './learning/SelfLearningEngine';
 import { MemoryEngine } from './memory/MemoryEngine';
 
@@ -52,6 +53,8 @@ export interface ScheduledRunResult {
   simulationResult?: SimulationResult;
   /** execution フェーズ結果（実行した場合のみ） */
   executionResult?: ExecutionWorkflowResult;
+  /** SafeImprovementApplier によるパラメータ変更結果（実行した場合のみ） */
+  applyResult?: ApplyBatchSummary;
   error?: string;
   /** このサイクルで実際に変更された件数 */
   changesApplied: number;
@@ -294,9 +297,6 @@ export class EvolutionScheduler {
     const rollbacks = execResult.execution.rolledBack;
 
     // ─ 安全条件 6: rollback_failed で即停止 ─
-    // ExecutionBatchSummary.rolledBack は rolled_back の件数
-    // (rollback_failed は ImprovementExecutor が status='rolled_back' として
-    //  記録するため、results の status を直接確認する)
     const rollbackFailed = execResult.execution.results.filter(
       (r) => r.status === 'rolled_back' && r.failureReason?.includes('rollback')
     ).length;
@@ -304,10 +304,35 @@ export class EvolutionScheduler {
       this.autoStop('rollback_failed detected — immediate stop');
     }
 
+    // Step 3: 成功した候補を SafeImprovementApplier で実際に適用
+    const succeededCandidateIds = new Set(
+      execResult.execution.results
+        .filter((r) => r.status === 'success')
+        .map((r) => r.candidateId)
+    );
+    const succeededCandidates = execResult.simulation.approvedCandidates.filter(
+      (c) => succeededCandidateIds.has(c.id)
+    );
+
+    let applyResult: ApplyBatchSummary | undefined;
+    if (succeededCandidates.length > 0) {
+      const tasks = this.buildApplyTasks(succeededCandidates);
+      if (tasks.length > 0) {
+        applyResult = await this.applier.applyBatch(userId, tasks);
+
+        // rollback_failed が applyBatch でも発生したら即停止
+        if (applyResult.rollbackFailed > 0) {
+          this.autoStop('SafeImprovementApplier rollback_failed — immediate stop');
+        }
+      }
+    }
+
     return this.buildResult(
       runId, userId, startedAt, 'executed',
       changesApplied, rollbacks,
-      execResult.simulation, execResult
+      execResult.simulation, execResult,
+      undefined,
+      applyResult
     );
   }
 
@@ -322,7 +347,8 @@ export class EvolutionScheduler {
     rollbacks: number,
     simulationResult?: SimulationResult,
     executionResult?: ExecutionWorkflowResult,
-    error?: string
+    error?: string,
+    applyResult?: ApplyBatchSummary
   ): ScheduledRunResult {
     return {
       runId,
@@ -332,10 +358,76 @@ export class EvolutionScheduler {
       outcome,
       simulationResult,
       executionResult,
+      applyResult,
       error,
       changesApplied,
       rollbacks,
     };
+  }
+
+  /**
+   * 成功した ImprovementCandidate を SafeImprovementApplier のタスク形式にマッピングする。
+   *
+   * マッピングポリシー:
+   *   - 候補の description / title に許可リストのキーが含まれる場合はそのキーへ適用
+   *   - 該当なしの場合は 'self_improvement.candidate_score_threshold' に
+   *     estimatedImpact を 0–100 スケールでマッピング（汎用フォールバック）
+   */
+  private buildApplyTasks(
+    candidates: ImprovementCandidate[]
+  ): Array<{
+    candidate: ImprovementCandidate;
+    targetKey: string;
+    newValue: unknown;
+  }> {
+    const allowedKeys = this.applier.getAllowlist().map((t) => t.key);
+    const tasks: Array<{ candidate: ImprovementCandidate; targetKey: string; newValue: unknown }> = [];
+
+    for (const candidate of candidates) {
+      // critical 候補はここでも除外（二重ガード）
+      if (candidate.priority === 'critical') continue;
+
+      const text = `${candidate.title} ${candidate.description}`.toLowerCase();
+
+      // 許可リストのキーが候補テキストに含まれる場合は直接マッピング
+      const matchedKey = allowedKeys.find((k) => text.includes(k.toLowerCase()));
+
+      if (matchedKey) {
+        const target = this.applier.getAllowlist().find((t) => t.key === matchedKey)!;
+        // 数値型の場合は estimatedImpact を値として使用（スケール変換）
+        let newValue: unknown;
+        if (target.allowedType === 'number') {
+          const min = target.minValue ?? 0;
+          const max = target.maxValue ?? 100;
+          newValue = Math.round(min + (candidate.estimatedImpact / 100) * (max - min));
+        } else if (target.allowedType === 'boolean') {
+          newValue = candidate.estimatedImpact >= 50;
+        } else {
+          // string: そのままスキップ（自動変更しない）
+          continue;
+        }
+        tasks.push({ candidate, targetKey: matchedKey, newValue });
+      } else {
+        // フォールバック: スコアしきい値を候補のスコアに基づいて調整
+        const key = 'self_improvement.candidate_score_threshold';
+        const currentVal = this.applier.getCurrentValue(key);
+        if (typeof currentVal === 'number') {
+          // 高 impact な候補が通過した場合はしきい値を緩める（より多くの候補を通す）
+          const newVal = Math.max(0, Math.min(100, currentVal - Math.round(candidate.estimatedImpact * 0.1)));
+          if (newVal !== currentVal) {
+            tasks.push({ candidate, targetKey: key, newValue: newVal });
+          }
+        }
+      }
+    }
+
+    // 同一キーへの重複適用を排除（最初のタスクのみ）
+    const seen = new Set<string>();
+    return tasks.filter((t) => {
+      if (seen.has(t.targetKey)) return false;
+      seen.add(t.targetKey);
+      return true;
+    });
   }
 
   /** 自動停止 */
