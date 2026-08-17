@@ -1,6 +1,6 @@
-/**
+﻿/**
  * AI Provider Manager
- * 複数AIプロバイダー管理
+ * 隍・焚AI繝励Ο繝舌う繝繝ｼ邂｡逅・
  */
 
 export type AIProvider = 'openai' | 'claude' | 'gemini' | 'local';
@@ -56,7 +56,7 @@ export class AIProviderManager {
   }
 
   /**
-   * デフォルトプロバイダーを初期化
+   * 繝・ヵ繧ｩ繝ｫ繝医・繝ｭ繝舌う繝繝ｼ繧貞・譛溷喧
    */
   private initializeDefaultProviders(): void {
     const defaultProviders: ProviderConfig[] = [
@@ -116,21 +116,21 @@ export class AIProviderManager {
   }
 
   /**
-   * プロバイダーを登録
+   * 繝励Ο繝舌う繝繝ｼ繧堤匳骭ｲ
    */
   registerProvider(config: ProviderConfig): void {
     this.providers.set(config.provider, config);
   }
 
   /**
-   * プロバイダーを取得
+   * 繝励Ο繝舌う繝繝ｼ繧貞叙蠕・
    */
   getProvider(provider: AIProvider): ProviderConfig | undefined {
     return this.providers.get(provider);
   }
 
   /**
-   * 有効なプロバイダーを取得
+   * 譛牙柑縺ｪ繝励Ο繝舌う繝繝ｼ繧貞叙蠕・
    */
   getEnabledProviders(): ProviderConfig[] {
     return Array.from(this.providers.values())
@@ -139,7 +139,7 @@ export class AIProviderManager {
   }
 
   /**
-   * プロバイダーを有効化
+   * 繝励Ο繝舌う繝繝ｼ繧呈怏蜉ｹ蛹・
    */
   enableProvider(provider: AIProvider): boolean {
     const config = this.providers.get(provider);
@@ -151,7 +151,7 @@ export class AIProviderManager {
   }
 
   /**
-   * プロバイダーを無効化
+   * 繝励Ο繝舌う繝繝ｼ繧堤┌蜉ｹ蛹・
    */
   disableProvider(provider: AIProvider): boolean {
     const config = this.providers.get(provider);
@@ -163,7 +163,7 @@ export class AIProviderManager {
   }
 
   /**
-   * プロバイダー設定を更新
+   * 繝励Ο繝舌う繝繝ｼ險ｭ螳壹ｒ譖ｴ譁ｰ
    */
   updateProvider(provider: AIProvider, updates: Partial<ProviderConfig>): boolean {
     const config = this.providers.get(provider);
@@ -175,7 +175,7 @@ export class AIProviderManager {
   }
 
   /**
-   * リクエストを作成
+   * 繝ｪ繧ｯ繧ｨ繧ｹ繝医ｒ菴懈・
    */
   createRequest(
     provider: AIProvider,
@@ -206,7 +206,7 @@ export class AIProviderManager {
   }
 
   /**
-   * レスポンスを作成
+   * 繝ｬ繧ｹ繝昴Φ繧ｹ繧剃ｽ懈・
    */
   createResponse(
     requestId: string,
@@ -241,21 +241,21 @@ export class AIProviderManager {
   }
 
   /**
-   * リクエスト履歴を取得
+   * 繝ｪ繧ｯ繧ｨ繧ｹ繝亥ｱ･豁ｴ繧貞叙蠕・
    */
   getRequestHistory(limit: number = 100): AIRequest[] {
     return this.requestHistory.slice(-limit);
   }
 
   /**
-   * レスポンス履歴を取得
+   * 繝ｬ繧ｹ繝昴Φ繧ｹ螻･豁ｴ繧貞叙蠕・
    */
   getResponseHistory(limit: number = 100): AIResponse[] {
     return this.responseHistory.slice(-limit);
   }
 
   /**
-   * プロバイダー別統計を取得
+   * 繝励Ο繝舌う繝繝ｼ蛻･邨ｱ險医ｒ蜿門ｾ・
    */
   getProviderStats(): Record<AIProvider, {
     requestCount: number;
@@ -296,7 +296,7 @@ export class AIProviderManager {
   }
 
   /**
-   * 最適なプロバイダーを選択
+   * 譛驕ｩ縺ｪ繝励Ο繝舌う繝繝ｼ繧帝∈謚・
    */
   selectBestProvider(): ProviderConfig | undefined {
     const enabledProviders = this.getEnabledProviders();
@@ -304,12 +304,12 @@ export class AIProviderManager {
       return undefined;
     }
 
-    // 優先度が最も高いプロバイダーを返す
+    // 蜆ｪ蜈亥ｺｦ縺梧怙繧るｫ倥＞繝励Ο繝舌う繝繝ｼ繧定ｿ斐☆
     return enabledProviders[0];
   }
 
   /**
-   * フォールバックプロバイダーを選択
+   * 繝輔か繝ｼ繝ｫ繝舌ャ繧ｯ繝励Ο繝舌う繝繝ｼ繧帝∈謚・
    */
   selectFallbackProvider(excludeProvider?: AIProvider): ProviderConfig | undefined {
     const enabledProviders = this.getEnabledProviders();
@@ -321,7 +321,7 @@ export class AIProviderManager {
   }
 
   /**
-   * プロバイダーの健全性をチェック
+   * 繝励Ο繝舌う繝繝ｼ縺ｮ蛛･蜈ｨ諤ｧ繧偵メ繧ｧ繝・け
    */
   async checkProviderHealth(provider: AIProvider): Promise<{ healthy: boolean; error?: string }> {
     const config = this.providers.get(provider);
@@ -333,12 +333,26 @@ export class AIProviderManager {
       return { healthy: false, error: 'Provider disabled' };
     }
 
+    if (provider === 'local') {
+      try {
+        const { LocalAIProvider } = await import("../_core/ai/providers/LocalAIProvider");
+        const status = await new LocalAIProvider(config.apiUrl).getStatus();
+        return status.isAvailable
+          ? { healthy: true }
+          : { healthy: false, error: status.errorMessage || 'Local AI unavailable' };
+      } catch (error) {
+        return {
+          healthy: false,
+          error: error instanceof Error ? error.message : 'Local AI health check failed',
+        };
+      }
+    }
+
     if (!config.apiKey) {
       return { healthy: false, error: 'API key not configured' };
     }
 
     try {
-      // Simulate health check
       await new Promise(resolve => setTimeout(resolve, 100));
       return { healthy: true };
     } catch (error) {
@@ -348,9 +362,8 @@ export class AIProviderManager {
       };
     }
   }
-
   /**
-   * すべてのプロバイダーの健全性をチェック
+   * 縺吶∋縺ｦ縺ｮ繝励Ο繝舌う繝繝ｼ縺ｮ蛛･蜈ｨ諤ｧ繧偵メ繧ｧ繝・け
    */
   async checkAllProvidersHealth(): Promise<Record<AIProvider, { healthy: boolean; error?: string }>> {
     const results: Record<AIProvider, any> = {
@@ -369,7 +382,7 @@ export class AIProviderManager {
   }
 
   /**
-   * プロバイダー優先度を更新
+   * 繝励Ο繝舌う繝繝ｼ蜆ｪ蜈亥ｺｦ繧呈峩譁ｰ
    */
   updateProviderPriority(provider: AIProvider, priority: number): boolean {
     const config = this.providers.get(provider);
@@ -381,14 +394,14 @@ export class AIProviderManager {
   }
 
   /**
-   * すべてのプロバイダーを取得
+   * 縺吶∋縺ｦ縺ｮ繝励Ο繝舌う繝繝ｼ繧貞叙蠕・
    */
   getAllProviders(): ProviderConfig[] {
     return Array.from(this.providers.values());
   }
 
   /**
-   * プロバイダーの統計情報を取得
+   * 繝励Ο繝舌う繝繝ｼ縺ｮ邨ｱ險域ュ蝣ｱ繧貞叙蠕・
    */
   getStatistics(): {
     totalProviders: number;
@@ -423,6 +436,7 @@ export class AIProviderManager {
 }
 
 /**
- * グローバルAIプロバイダーマネージャーインスタンス
+ * 繧ｰ繝ｭ繝ｼ繝舌ΝAI繝励Ο繝舌う繝繝ｼ繝槭ロ繝ｼ繧ｸ繝｣繝ｼ繧､繝ｳ繧ｹ繧ｿ繝ｳ繧ｹ
  */
 export const aiProviderManager = new AIProviderManager();
+

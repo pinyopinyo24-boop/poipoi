@@ -66,6 +66,7 @@ export class CodeEvolutionEngine {
     } catch (error) {
       for (const filePath of Array.from(backups.keys())) {
         const original = backups.get(filePath)!;
+        await fs.writeFile(filePath, original, "utf8");
       }
 
       return {
@@ -89,6 +90,8 @@ export class CodeEvolutionEngine {
     return absolutePath;
   }
 }
+
+
 
 
 
