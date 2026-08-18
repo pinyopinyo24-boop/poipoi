@@ -52,7 +52,7 @@ export class CodeEvolutionEngine {
         await fs.writeFile(filePath, current.replace(change.oldCode, change.newCode), "utf8");
       }
 
-      await execFileAsync(process.platform === "win32" ? "cmd.exe" : normalizeCommand(testCommand[0]), process.platform === "win32" ? ["/c", normalizeCommand(testCommand[0]), ...testCommand.slice(1)] : testCommand.slice(1), {
+      await execFileAsync(process.platform === "win32" ? "cmd.exe" : normalizeCommand(testCommand[0]), process.platform === "win32" ? (testCommand[0].toLowerCase() === "cmd.exe" ? testCommand.slice(1) : ["/c", normalizeCommand(testCommand[0]), ...testCommand.slice(1)]) : testCommand.slice(1), {
         cwd: this.projectRoot,
         maxBuffer: 20 * 1024 * 1024,
       });
@@ -90,6 +90,7 @@ export class CodeEvolutionEngine {
     return absolutePath;
   }
 }
+
 
 
 
