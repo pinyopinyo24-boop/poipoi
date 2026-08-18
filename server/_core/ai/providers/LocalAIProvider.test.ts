@@ -11,7 +11,7 @@ describe('LocalAIProvider', () => {
     const models = await provider.getModels();
 
     expect(models).toHaveLength(1);
-    expect(models[0].id).toBe('local-model');
+    expect(models[0].id).toBe('qwen2.5-coder:7b');
     expect(models[0].provider).toBe('local');
   });
 
@@ -72,3 +72,4 @@ describe('LocalAIProvider', () => {
     await expect(provider.validateConfig()).resolves.toBe(true);
   });
 });
+

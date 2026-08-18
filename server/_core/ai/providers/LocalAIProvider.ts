@@ -10,7 +10,7 @@
 export class LocalAIProvider extends BaseAIProvider {
   private models: AIModel[] = [
     {
-      id: 'local-model',
+      id: 'qwen2.5-coder:7b',
       name: 'Poipoi Local Model',
       provider: 'local',
       contextWindow: 32768,
@@ -30,7 +30,7 @@ export class LocalAIProvider extends BaseAIProvider {
 
   async invoke(messages: AIMessage[], options?: AIInvokeOptions): Promise<AIResponse> {
     const requestId = this.generateRequestId();
-    const model = options?.model || 'local-model';
+    const model = options?.model || 'qwen2.5-coder:7b';
 
     try {
       const response = await globalThis.fetch(
@@ -117,3 +117,4 @@ export class LocalAIProvider extends BaseAIProvider {
     return status.isAvailable;
   }
 }
+
