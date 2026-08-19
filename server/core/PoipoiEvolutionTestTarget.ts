@@ -1,1 +1,1 @@
-﻿export const POIPOI_EVOLUTION_TEST = "after";
+export const POIPOI_EVOLUTION_TEST: string = "after";
