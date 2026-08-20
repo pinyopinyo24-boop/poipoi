@@ -123,56 +123,15 @@ function extractJson(text: string): AIChange[] {
 }
 
 async function invokeAI(messages: unknown[]): Promise<string> {
-  const manager = aiProviderManager as any;
+  const manager = aiProviderManager as {
+    invoke?: (messages: unknown[]) => Promise<string>;
+  };
 
-  const methods = [
-    "invoke",
-    "generate",
-    "chat",
-    "complete",
-    "execute"
-  ];
-
-  for (const method of methods) {
-    if (typeof manager[method] !== "function") continue;
-
-    try {
-      const result = await manager[method](messages);
-
-      if (typeof result === "string" && result.trim()) {
-        return result;
-      }
-
-      if (
-        result &&
-        typeof result.content === "string" &&
-        result.content.trim()
-      ) {
-        return result.content;
-      }
-
-      if (
-        result &&
-        typeof result.message?.content === "string" &&
-        result.message.content.trim()
-      ) {
-        return result.message.content;
-      }
-
-      if (
-        result &&
-        typeof result.choices?.[0]?.message?.content === "string"
-      ) {
-        return result.choices[0].message.content;
-      }
-    } catch {
-      // 次の既存APIを試す
-    }
+  if (typeof manager.invoke !== "function") {
+    throw new Error("AIProviderManager.invoke() が利用できません");
   }
 
-  throw new Error(
-    "AIProviderManagerに利用可能なAI実行APIがありません"
-  );
+  return await manager.invoke(messages);
 }
 
 function findRelevantTests(targetPath: string): string[] {
@@ -432,3 +391,4 @@ main().catch((error: unknown) => {
   );
   process.exit(1);
 });
+

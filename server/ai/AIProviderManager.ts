@@ -433,10 +433,62 @@ export class AIProviderManager {
         : 0,
     };
   }
+
+  /**
+   * Execute an AI request through the selected provider.
+   */
+  async invoke(messages: unknown[]): Promise<string> {
+    const config = this.selectBestProvider();
+
+    if (!config) {
+      throw new Error("利用可能なAI Providerがありません");
+    }
+
+    if (config.provider === "gemini") {
+      const { GeminiProvider } = await import("../_core/ai/providers/GeminiProvider");
+      const provider = new GeminiProvider(config.apiKey);
+
+      const response = await provider.invoke(messages as any[], {
+        model: config.model,
+        maxTokens: config.maxTokens,
+        temperature: config.temperature,
+      });
+
+      if (!response?.content?.trim()) {
+        throw new Error("Geminiから空の応答が返されました");
+      }
+
+      return response.content;
+    }
+
+    if (config.provider === "local") {
+      const { LocalAIProvider } = await import("../_core/ai/providers/LocalAIProvider");
+      const provider = new LocalAIProvider(config.apiUrl);
+
+      const response = await provider.invoke(messages as any[], {
+        model: config.model,
+        maxTokens: config.maxTokens,
+        temperature: config.temperature,
+      });
+
+      if (!response?.content?.trim()) {
+        throw new Error("Local AIから空の応答が返されました");
+      }
+
+      return response.content;
+    }
+
+    throw new Error(
+      `Provider ${config.provider} のinvoke実装はまだ接続されていません`
+    );
+  }
 }
 
 /**
  * 繧ｰ繝ｭ繝ｼ繝舌ΝAI繝励Ο繝舌う繝繝ｼ繝槭ロ繝ｼ繧ｸ繝｣繝ｼ繧､繝ｳ繧ｹ繧ｿ繝ｳ繧ｹ
  */
 export const aiProviderManager = new AIProviderManager();
+
+
+
 
