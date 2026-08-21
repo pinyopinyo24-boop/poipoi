@@ -16,6 +16,15 @@ export interface CodeTaskResult {
 }
 
 export class PoipoiCodeAgent {
+  private static instance: PoipoiCodeAgent | null = null;
+
+  static getInstance(): PoipoiCodeAgent {
+    if (!PoipoiCodeAgent.instance) {
+      PoipoiCodeAgent.instance = new PoipoiCodeAgent();
+    }
+    return PoipoiCodeAgent.instance;
+  }
+
   private readonly root = process.cwd();
 
   private safePath(path: string): string {
@@ -141,7 +150,8 @@ export class PoipoiCodeAgent {
         tested: true
       };
     } catch (error) {
-      for (const [absolute, previous] of backups) {
+      for (const absolute of Array.from(backups.keys())) {
+        const previous = backups.get(absolute)!;
         if (previous === null) {
           if (existsSync(absolute)) unlinkSync(absolute);
         } else {
