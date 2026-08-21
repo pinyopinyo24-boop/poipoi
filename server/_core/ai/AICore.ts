@@ -1,4 +1,4 @@
-/**
+﻿/**
  * AICore - Main AI integration hub
  * Provides unified interface for AI operations across PoiPoi OS
  */
@@ -6,6 +6,7 @@
 import { IAIProvider, AIProviderType, AIProviderStatus } from './providers/AIProvider';
 import { ChatGPTProvider } from './providers/ChatGPTProvider';
 import { GeminiProvider } from './providers/GeminiProvider';
+import { LocalAIProvider } from './providers/LocalAIProvider';
 import { AgentManager, AgentManagerConfig, WorkflowStep, WorkflowResult } from './AgentManager';
 import { BaseAgent, AgentType, AgentStatus, AgentExecutionResult } from './agents/BaseAgent';
 import { getConnectionMonitor } from './ProviderConnectionMonitor';
@@ -64,7 +65,7 @@ export class AICore {
       }
 
       // Get primary provider or use first available
-      let primaryProvider = this.providers.get(this.config.primaryProvider);
+      let primaryProvider = this.providers.get('local');
       if (!primaryProvider && this.providers.size > 0) {
         console.warn(`[AICore] Primary provider '${this.config.primaryProvider}' not available, using first available`);
         primaryProvider = Array.from(this.providers.values())[0];
@@ -72,10 +73,10 @@ export class AICore {
 
       if (!primaryProvider) {
         console.warn('[AICore] No providers configured, using demo mode');
-        // Use Gemini as fallback with demo key
-        primaryProvider = new GeminiProvider('demo-key');
-        this.providers.set('gemini', primaryProvider);
-        this.connectionMonitor.registerProvider('Gemini', 'demo', false);
+        // Use Ollama as local fallback
+        primaryProvider = new LocalAIProvider(process.env.LOCAL_AI_URL || 'http://localhost:11434');
+        this.providers.set('local', primaryProvider);
+        this.connectionMonitor.registerProvider('Local', 'real', true);
       }
 
       // Skip validation for demo mode
@@ -319,3 +320,4 @@ export async function shutdownAICore(): Promise<void> {
     globalAICore = null;
   }
 }
+
