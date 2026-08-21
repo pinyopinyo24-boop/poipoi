@@ -49,7 +49,38 @@ export class PoipoiCodeAgent {
     return absolute;
   }
 
-  private extractJson(text: string): { changes: CodeChange[] } {
+  private extractJson(text: string): any {
+    let normalized = text.trim();
+
+    normalized = normalized
+      .replace(/^\`\`\`(?:json|typescript|ts)?\s*/i, "")
+      .replace(/\s*\`\`\`$/i, "")
+      .trim();
+
+    try {
+      return JSON.parse(normalized);
+    } catch {
+      const objectStart = normalized.indexOf("{");
+      const objectEnd = normalized.lastIndexOf("}");
+
+      if (objectStart < 0 || objectEnd <= objectStart) {
+        throw new Error("LLM_RESPONSE_JSON_PARSE_FAILED");
+      }
+
+      const candidate = normalized.slice(objectStart, objectEnd + 1);
+
+      try {
+        return JSON.parse(candidate);
+      } catch {
+        const repaired = candidate
+          .replace(/"content"\s*:\s*`([\s\S]*?)`/g, (_, content) => {
+            return JSON.stringify("content") + ": " + JSON.stringify(content);
+          });
+
+        return JSON.parse(repaired);
+      }
+    }
+  } {
     const cleaned = text
       .replace(/```json/gi, "")
       .replace(/```/g, "")
