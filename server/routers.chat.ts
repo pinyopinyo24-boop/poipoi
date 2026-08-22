@@ -1,13 +1,14 @@
-/**
- * Chat Router - ポイポイAI チャットルーター
- * ChatCore v1.0とのtRPC統合
+﻿/**
+ * Chat Router - 繝昴う繝昴うAI 繝√Ε繝・ヨ繝ｫ繝ｼ繧ｿ繝ｼ
+ * ChatCore v1.0縺ｨ縺ｮtRPC邨ｱ蜷・
  */
 
 import { router, protectedProcedure, publicProcedure } from './_core/trpc';
 import { z } from 'zod';
 import { ChatCoreManager } from './core/ChatCoreManager';
+import { PoipoiCodeAgent } from './core/PoipoiCodeAgent';
 
-// シングルトンインスタンス
+// 繧ｷ繝ｳ繧ｰ繝ｫ繝医Φ繧､繝ｳ繧ｹ繧ｿ繝ｳ繧ｹ
 let chatCoreManager: ChatCoreManager | null = null;
 
 function getChatCoreManager(): ChatCoreManager {
@@ -64,8 +65,8 @@ function getChatCoreManager(): ChatCoreManager {
 
 export const chatRouter = router({
   /**
-   * メッセージを処理
-   * publicProcedure: ログインなしでも使用可能 (モバイルアプリ対応)
+   * 繝｡繝・そ繝ｼ繧ｸ繧貞・逅・
+   * publicProcedure: 繝ｭ繧ｰ繧､繝ｳ縺ｪ縺励〒繧ゆｽｿ逕ｨ蜿ｯ閭ｽ (繝｢繝舌う繝ｫ繧｢繝励Μ蟇ｾ蠢・
    */
   processMessage: publicProcedure
     .input(
@@ -77,6 +78,24 @@ export const chatRouter = router({
     )
     .mutation(async ({ input, ctx }) => {
       const manager = getChatCoreManager();
+      const codeRequest =
+        /(?:実装|追加|修正|変更|作成|開発|コード).*(?:して|してください|したい|お願い)/.test(
+          input.message
+        );
+
+      if (codeRequest) {
+        const result = await PoipoiCodeAgent.getInstance().execute(input.message);
+
+        return {
+          message: result.success
+            ? result.changes?.map((c: any) => 実装完了: ).join("\n") ||
+              "コード実装が完了しました。"
+            : コード実装に失敗しました: ,
+          session: null,
+          relatedMemories: [],
+          reasoning: null,
+        };
+      }
 
       try {
         const response = await manager.processMessage(
@@ -98,7 +117,7 @@ export const chatRouter = router({
     }),
 
   /**
-   * セッション情報を取得
+   * 繧ｻ繝・す繝ｧ繝ｳ諠・ｱ繧貞叙蠕・
    */
   getSession: protectedProcedure
     .input(
@@ -123,7 +142,7 @@ export const chatRouter = router({
     }),
 
   /**
-   * セッションメッセージを取得
+   * 繧ｻ繝・す繝ｧ繝ｳ繝｡繝・そ繝ｼ繧ｸ繧貞叙蠕・
    */
   getMessages: protectedProcedure
     .input(
@@ -151,7 +170,7 @@ export const chatRouter = router({
     }),
 
   /**
-   * セッションを作成
+   * 繧ｻ繝・す繝ｧ繝ｳ繧剃ｽ懈・
    */
   createSession: protectedProcedure
     .input(
@@ -166,7 +185,7 @@ export const chatRouter = router({
       try {
         const session = await manager.createSession(
           input.userId,
-          input.title || 'チャットセッション'
+          input.title || '繝√Ε繝・ヨ繧ｻ繝・す繝ｧ繝ｳ'
         );
 
         return session;
@@ -177,7 +196,7 @@ export const chatRouter = router({
     }),
 
   /**
-   * セッションを削除
+   * 繧ｻ繝・す繝ｧ繝ｳ繧貞炎髯､
    */
   deleteSession: protectedProcedure
     .input(
@@ -199,7 +218,7 @@ export const chatRouter = router({
     }),
 
   /**
-   * ユーザーのセッション一覧を取得
+   * 繝ｦ繝ｼ繧ｶ繝ｼ縺ｮ繧ｻ繝・す繝ｧ繝ｳ荳隕ｧ繧貞叙蠕・
    */
   getUserSessions: protectedProcedure
     .input(
@@ -221,7 +240,7 @@ export const chatRouter = router({
     }),
 
   /**
-   * チャット統計を取得
+   * 繝√Ε繝・ヨ邨ｱ險医ｒ蜿門ｾ・
    */
   getStatistics: protectedProcedure
     .input(
@@ -241,3 +260,5 @@ export const chatRouter = router({
       }
     }),
 });
+
+
