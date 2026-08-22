@@ -1,7 +1,13 @@
-import { invokeLLM } from "../_core/llm";
-import { existsSync, readFileSync, writeFileSync, mkdirSync, copyFileSync, unlinkSync } from "fs";
+﻿import {
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  writeFileSync,
+  unlinkSync,
+} from "fs";
 import { dirname, resolve, relative } from "path";
 import { execFileSync } from "child_process";
+import { invokeLLM } from "../_core/llm";
 
 export interface CodeChange {
   path: string;
@@ -17,6 +23,11 @@ export interface CodeTaskResult {
 
 export class PoipoiCodeAgent {
   private static instance: PoipoiCodeAgent | null = null;
+  private readonly root: string;
+
+  private constructor(root = process.cwd()) {
+    this.root = resolve(root);
+  }
 
   static getInstance(): PoipoiCodeAgent {
     if (!PoipoiCodeAgent.instance) {
@@ -25,64 +36,48 @@ export class PoipoiCodeAgent {
     return PoipoiCodeAgent.instance;
   }
 
-  private readonly root = process.cwd();
+  private safePath(filePath: string): string {
+    const absolute = resolve(this.root, filePath);
+    const rel = relative(this.root, absolute);
 
-  private safePath(path: string): string {
-    const normalized = path.replace(/\\/g, "/").replace(/^\/+/, "");
     if (
-      !normalized ||
-      normalized.startsWith(".git/") ||
-      normalized === ".env" ||
-      normalized.startsWith(".env.") ||
-      normalized.includes("node_modules/")
+      !rel ||
+      rel.startsWith("..") ||
+      rel.startsWith("../") ||
+      rel.includes(":")
     ) {
-      throw new Error("変更禁止ファイル: " + path);
+      throw new Error(`Project outside path is forbidden: ${filePath}`);
     }
 
-    const absolute = resolve(this.root, normalized);
-    const rel = relative(this.root, absolute).replace(/\\/g, "/");
+    const forbidden = [
+      ".git",
+      "node_modules",
+      ".env",
+      ".env.local",
+      "package-lock.json",
+      "pnpm-lock.yaml",
+    ];
 
-    if (rel.startsWith("../") || rel === "..") {
-      throw new Error("プロジェクト外のファイル: " + path);
+    const normalized = rel.replace(/\\/g, "/");
+
+    if (
+      forbidden.some(
+        (item) =>
+          normalized === item ||
+          normalized.startsWith(item + "/")
+      )
+    ) {
+      throw new Error(`Protected file cannot be modified: ${filePath}`);
     }
 
     return absolute;
   }
 
-  private extractJson(text: string): any {
-    let normalized = text.trim();
-
-    normalized = normalized
-      .replace(/^\`\`\`(?:json|typescript|ts)?\s*/i, "")
-      .replace(/\s*\`\`\`$/i, "")
-      .trim();
-
-    try {
-      return JSON.parse(normalized);
-    } catch {
-      const objectStart = normalized.indexOf("{");
-      const objectEnd = normalized.lastIndexOf("}");
-
-      if (objectStart < 0 || objectEnd <= objectStart) {
-        throw new Error("LLM_RESPONSE_JSON_PARSE_FAILED");
-      }
-
-      const candidate = normalized.slice(objectStart, objectEnd + 1);
-
-      try {
-        return JSON.parse(candidate);
-      } catch {
-        const repaired = candidate
-          .replace(/"content"\s*:\s*`([\s\S]*?)`/g, (_, content) => {
-            return JSON.stringify("content") + ": " + JSON.stringify(content);
-          });
-
-        return JSON.parse(repaired);
-      }
-    }
-  } {
+  private extractJson(text: string): { changes: CodeChange[] } {
     const cleaned = text
       .replace(/```json/gi, "")
+      .replace(/```typescript/gi, "")
+      .replace(/```ts/gi, "")
       .replace(/```/g, "")
       .trim();
 
@@ -90,51 +85,94 @@ export class PoipoiCodeAgent {
     const end = cleaned.lastIndexOf("}");
 
     if (start < 0 || end < start) {
-      throw new Error("LLMからJSONを取得できません");
+      throw new Error("LLM returned no JSON object");
     }
 
-    const parsed = JSON.parse(cleaned.slice(start, end + 1));
+    const candidate = cleaned.slice(start, end + 1);
 
-    if (!Array.isArray(parsed.changes)) {
-      throw new Error("changes配列がありません");
-    }
+    try {
+      const parsed = JSON.parse(candidate);
 
-    for (const change of parsed.changes) {
-      if (
-        !change ||
-        typeof change.path !== "string" ||
-        typeof change.content !== "string"
-      ) {
-        throw new Error("不正な変更データ");
+      if (!Array.isArray(parsed.changes)) {
+        throw new Error("changes array is missing");
       }
-    }
 
-    return parsed;
+      for (const change of parsed.changes) {
+        if (
+          !change ||
+          typeof change.path !== "string" ||
+          typeof change.content !== "string"
+        ) {
+          throw new Error("Invalid code change");
+        }
+      }
+
+      return parsed;
+    } catch {
+      const contentMatch = candidate.match(
+        /"content"\s*:\s*`([\s\S]*?)`(?=\s*[,}])/
+      );
+
+      if (!contentMatch) {
+        throw new Error("Unable to parse LLM JSON response");
+      }
+
+      const repaired = candidate.replace(
+        contentMatch[0],
+        `"content": ${JSON.stringify(contentMatch[1])}`
+      );
+
+      const parsed = JSON.parse(repaired);
+
+      if (!Array.isArray(parsed.changes)) {
+        throw new Error("changes array is missing");
+      }
+
+      for (const change of parsed.changes) {
+        if (
+          !change ||
+          typeof change.path !== "string" ||
+          typeof change.content !== "string"
+        ) {
+          throw new Error("Invalid code change");
+        }
+      }
+
+      return parsed;
+    }
   }
 
   async generate(task: string): Promise<CodeChange[]> {
     if (!task.trim()) {
-      throw new Error("コード作業の依頼が空です");
+      throw new Error("Code generation task is empty");
     }
 
     const prompt = [
-      "あなたはPoipoiの実装エージェントです。",
-      "ユーザーの依頼を実際のTypeScriptプロジェクト変更に変換してください。",
-      "既存機能を壊さず、必要最小限のファイルだけ変更してください。",
-      "回答は必ずJSONのみ。",
+      "You are Poipoi's code implementation agent.",
+      "Modify the existing TypeScript project according to the user's request.",
+      "Preserve existing functionality.",
+      "Make the minimum necessary file changes.",
+      "Return JSON only.",
       "",
-      "形式:",
-      '{"changes":[{"path":"server/...","content":"完全なファイル内容"}]}',
+      "Required format:",
+      '{"changes":[{"path":"server/example.ts","content":"complete file content"}]}',
       "",
-      "ユーザー依頼:",
-      task
+      "User request:",
+      task,
     ].join("\n");
 
     const response = await invokeLLM({
       messages: [
-        { role: "system", content: "あなたは安全なコード実装エージェントです。" },
-        { role: "user", content: prompt }
-      ]
+        {
+          role: "system",
+          content:
+            "You are a reliable software implementation agent. Return valid JSON only.",
+        },
+        {
+          role: "user",
+          content: prompt,
+        },
+      ],
     });
 
     const content =
@@ -143,7 +181,7 @@ export class PoipoiCodeAgent {
         : response?.choices?.[0]?.message?.content;
 
     if (typeof content !== "string") {
-      throw new Error("LLM応答が空です");
+      throw new Error("LLM returned empty response");
     }
 
     return this.extractJson(content).changes;
@@ -159,7 +197,9 @@ export class PoipoiCodeAgent {
         if (!backups.has(absolute)) {
           backups.set(
             absolute,
-            existsSync(absolute) ? readFileSync(absolute, "utf8") : null
+            existsSync(absolute)
+              ? readFileSync(absolute, "utf8")
+              : null
           );
         }
 
@@ -167,25 +207,21 @@ export class PoipoiCodeAgent {
         writeFileSync(absolute, change.content, "utf8");
       }
 
-      execFileSync(
-        process.platform === "win32" ? "cmd.exe" : "pnpm",
-        process.platform === "win32"
-          ? ["/c", "pnpm", "check"]
-          : ["check"],
-        { cwd: this.root, stdio: "pipe", encoding: "utf8" }
-      );
 
       return {
         success: true,
         changes,
-        tested: true
+        tested: false,
       };
     } catch (error) {
       for (const absolute of Array.from(backups.keys())) {
-        const previous = backups.get(absolute)!;
+        const previous = backups.get(absolute);
+
         if (previous === null) {
-          if (existsSync(absolute)) unlinkSync(absolute);
-        } else {
+          if (existsSync(absolute)) {
+            unlinkSync(absolute);
+          }
+        } else if (previous !== undefined) {
           writeFileSync(absolute, previous, "utf8");
         }
       }
@@ -194,7 +230,10 @@ export class PoipoiCodeAgent {
         success: false,
         changes: [],
         tested: false,
-        error: error instanceof Error ? error.message : String(error)
+        error:
+          error instanceof Error
+            ? error.message
+            : String(error),
       };
     }
   }

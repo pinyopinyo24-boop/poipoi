@@ -29,7 +29,7 @@ export const streamingRouter = router({
 
         try {
           const { stdout } = await execAsync(
-            \`python3 /home/ubuntu/poipoi/server/_core/kaggle-image-gen.py "\${prompt.replace(/"/g, '\\\\"')}"\`
+            `python3 /home/ubuntu/poipoi/server/_core/kaggle-image-gen.py "\${prompt.replace(/"/g, '\\\\"')}"`
           );
           const result = JSON.parse(stdout.trim());
 
@@ -53,8 +53,8 @@ export const streamingRouter = router({
           '<rect width="512" height="512" fill="#667eea"/>' +
           '<text x="256" y="256" font-size="24" fill="white" ' +
           'text-anchor="middle" dominant-baseline="middle">' +
-          \`Generated: \${prompt.substring(0, 30)}\` +
-          \`</text></svg>\`;
+          `Generated: \${prompt.substring(0, 30)}` +
+          `</text></svg>`;
 
         return {
           conversationId: input.conversationId || "conv_" + Date.now(),
@@ -70,8 +70,8 @@ export const streamingRouter = router({
       }
 
       const codeRequest =
-        /(?:\\u5B9F\\u88C5|\\u8FFD\\u52A0|\\u4FEE\\u6B63|\\u5909\\u66F4|\\u4F5C\\u6210|\\u958B\\u767A|\\u76F4\\u3057\\u3066|\\u6539\\u4FEE)/.test(input.message) &&
-        /(?:\\u30D5\\u30A1\\u30A4\\u30EB|\\u30B3\\u30FC\\u30C9|\\u6A5F\\u80FD|\\u5B9A\\u6570|\\u95A2\\u6570|\\u5B9F\\u88C5)/.test(input.message);
+        /(?:\u5B9F\u88C5|\u8FFD\u52A0|\u4FEE\u6B63|\u5909\u66F4|\u4F5C\u6210|\u958B\u767A|\u76F4\u3057\u3066|\u6539\u4FEE)/.test(input.message) &&
+        /(?:\u30D5\u30A1\u30A4\u30EB|\u30B3\u30FC\u30C9|\u6A5F\u80FD|\u5B9A\u6570|\u95A2\u6570|\u5B9F\u88C5)/.test(input.message);
 
       if (codeRequest) {
         const result = await PoipoiCodeAgent.getInstance().execute(
