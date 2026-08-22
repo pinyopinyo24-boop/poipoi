@@ -3,6 +3,7 @@ import { z } from "zod";
 import { invokeLLM } from "./_core/llm";
 import { exec } from "child_process";
 import { promisify } from "util";
+import { PoipoiCodeAgent } from "./core/PoipoiCodeAgent";
 
 const execAsync = promisify(exec);
 
@@ -18,62 +19,93 @@ export const streamingRouter = router({
   chat: publicProcedure
     .input(
       z.object({
-        message: z.string().describe("ユーザーのメッセージ"),
-        conversationId: z.string().optional().describe("会話ID"),
+        message: z.string(),
+        conversationId: z.string().optional(),
       })
     )
     .mutation(async ({ input }) => {
-      // Check if message is an image generation command
-      if (input.message.toLowerCase().startsWith('/imagine ')) {
-        // Extract the prompt
+      if (input.message.toLowerCase().startsWith("/imagine ")) {
         const prompt = input.message.substring(9).trim();
-        
+
         try {
-          // Use the Kaggle image generation script
-          const { stdout } = await execAsync(`python3 /home/ubuntu/poipoi/server/_core/kaggle-image-gen.py "${prompt.replace(/"/g, '\\"')}"`);
+          const { stdout } = await execAsync(
+            \`python3 /home/ubuntu/poipoi/server/_core/kaggle-image-gen.py "\${prompt.replace(/"/g, '\\\\"')}"\`
+          );
           const result = JSON.parse(stdout.trim());
-          
+
           if (result.success && result.image) {
             return {
-              conversationId: input.conversationId || `conv_${Date.now()}`,
-              tokens: [`[IMAGE]`],
-              fullText: `[IMAGE]`,
+              conversationId: input.conversationId || "conv_" + Date.now(),
+              tokens: ["[IMAGE]"],
+              fullText: "[IMAGE]",
               tokenCount: 1,
               isImage: true,
               imageData: result.image,
-              prompt: prompt,
+              prompt,
             };
           }
         } catch (error) {
           console.error("Image generation error:", error);
         }
-        
-        // Fallback to placeholder SVG
-        const svgImage = `<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512">
-          <defs>
-            <linearGradient id="grad" x1="0%" y1="0%" x2="100%" y2="100%">
-              <stop offset="0%" style="stop-color:#667eea;stop-opacity:1" />
-              <stop offset="100%" style="stop-color:#764ba2;stop-opacity:1" />
-            </linearGradient>
-          </defs>
-          <rect width="512" height="512" fill="url(#grad)"/>
-          <text x="256" y="256" font-size="24" fill="white" text-anchor="middle" dominant-baseline="middle" font-family="Arial">
-            Generated: ${prompt.substring(0, 30)}${prompt.length > 30 ? '...' : ''}
-          </text>
-        </svg>`;
-        
+
+        const svgImage =
+          '<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512">' +
+          '<rect width="512" height="512" fill="#667eea"/>' +
+          '<text x="256" y="256" font-size="24" fill="white" ' +
+          'text-anchor="middle" dominant-baseline="middle">' +
+          \`Generated: \${prompt.substring(0, 30)}\` +
+          \`</text></svg>\`;
+
         return {
-          conversationId: input.conversationId || `conv_${Date.now()}`,
-          tokens: [`[IMAGE]`],
-          fullText: `[IMAGE]`,
+          conversationId: input.conversationId || "conv_" + Date.now(),
+          tokens: ["[IMAGE]"],
+          fullText: "[IMAGE]",
           tokenCount: 1,
           isImage: true,
-          imageData: `data:image/svg+xml;base64,${Buffer.from(svgImage).toString('base64')}`,
-          prompt: prompt,
+          imageData:
+            "data:image/svg+xml;base64," +
+            Buffer.from(svgImage).toString("base64"),
+          prompt,
         };
       }
-      
-      // Regular chat message
+
+      const codeRequest =
+        /(?:\\u5B9F\\u88C5|\\u8FFD\\u52A0|\\u4FEE\\u6B63|\\u5909\\u66F4|\\u4F5C\\u6210|\\u958B\\u767A|\\u76F4\\u3057\\u3066|\\u6539\\u4FEE)/.test(input.message) &&
+        /(?:\\u30D5\\u30A1\\u30A4\\u30EB|\\u30B3\\u30FC\\u30C9|\\u6A5F\\u80FD|\\u5B9A\\u6570|\\u95A2\\u6570|\\u5B9F\\u88C5)/.test(input.message);
+
+      if (codeRequest) {
+        const result = await PoipoiCodeAgent.getInstance().execute(
+          input.message
+        );
+
+        let text = "Code implementation failed.";
+
+        if (result.success) {
+          if (result.changes && result.changes.length > 0) {
+            text = result.changes
+              .map((change) => "Implementation complete: " + change.path)
+              .join("\\n");
+          } else {
+            text = "Code implementation completed.";
+          }
+        } else if (result.error) {
+          text = "Code implementation failed: " + result.error;
+        }
+
+        const tokens = text.split(/(\\s+)/);
+
+        return {
+          conversationId: input.conversationId || "conv_" + Date.now(),
+          tokens,
+          fullText: text,
+          tokenCount: tokens.length,
+          isImage: false,
+          codeAgent: true,
+          success: result.success,
+          changes: result.changes || [],
+        };
+      }
+
       const response = await invokeLLM({
         messages: [
           {
@@ -87,12 +119,11 @@ export const streamingRouter = router({
         ],
       });
 
-      // トークンごとに分割して返す
       const text = response.choices?.[0]?.message?.content || "";
-      const tokens = text.split(/(\s+)/);
+      const tokens = text.split(/(\\s+)/);
 
       return {
-        conversationId: input.conversationId || `conv_${Date.now()}`,
+        conversationId: input.conversationId || "conv_" + Date.now(),
         tokens,
         fullText: text,
         tokenCount: tokens.length,
@@ -100,10 +131,6 @@ export const streamingRouter = router({
       };
     }),
 
-  /**
-   * ストリーミング分析
-   * テキスト分析をリアルタイムで返す
-   */
   analyze: publicProcedure
     .input(
       z.object({
