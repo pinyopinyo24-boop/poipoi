@@ -1,4 +1,6 @@
 /**
+
+import { PoipoiCodeAgent } from "./PoipoiCodeAgent";
  * ChatCoreManager - ポイポイAI チャットコア
  * AIが実際に会話可能にするコア実装
  */
@@ -43,6 +45,18 @@ export interface ChatResponse {
 }
 
 export class ChatCoreManager {
+  private isCodeImplementationRequest(message: string): boolean {
+    return /(?:実装|追加|修正|変更|作成|開発|コード).*(?:して|してください|したい|お願い)/.test(message);
+  }
+
+  private async executeCodeImplementationRequest(message: string): Promise<string> {
+    const result = await PoipoiCodeAgent.getInstance().execute(message);
+    if (!result.success) {
+      return `コード実装に失敗しました: ${result.error ?? "不明なエラー"}`;
+    }
+    return JSON.stringify(result, null, 2);
+  }
+
   private chatService: ChatService;
   private messageProcessingService: MessageProcessingService;
   private contextAwarenessService: ContextAwarenessService;
