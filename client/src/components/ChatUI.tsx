@@ -103,7 +103,18 @@ export const ChatUI: React.FC<ChatUIProps> = ({ sessionId, onSessionChange }) =>
       };
 
       // アシスタントメッセージを追加
-      setMessages((prev) => [...prev, userMsg, response.message]);
+      const assistantMsg: ChatMessage =
+        typeof response.message === "string"
+          ? {
+              id: "msg_" + Date.now() + "_assistant",
+              userId: typeof user.id === "string" ? user.id : "",
+              role: "assistant",
+              content: response.message,
+              timestamp: Math.floor(Date.now()),
+            }
+          : response.message;
+
+      setMessages((prev) => [...prev, userMsg, assistantMsg]);
       if (response.session) {
         setCurrentSession(response.session);
         onSessionChange?.(response.session);

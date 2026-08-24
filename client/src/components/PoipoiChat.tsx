@@ -151,19 +151,30 @@ export const PoipoiChat: React.FC<PoipoiChatProps> = ({
       };
 
       // アシスタントメッセージを追加
-      setMessages((prev) => [...prev, userMsg, response.message]);
+      const assistantMsg: ChatMessage =
+        typeof response.message === "string"
+          ? {
+              id: "msg_" + Date.now() + "_assistant",
+              userId: typeof user.id === "string" ? user.id : "",
+              role: "assistant",
+              content: response.message,
+              timestamp: Math.floor(Date.now()),
+            }
+          : response.message;
+
+      setMessages((prev) => [...prev, userMsg, assistantMsg]);
       if (response.session) {
         setCurrentSession(response.session);
         onSessionChange?.(response.session);
       }
 
       // Manager状態を更新
-      if (response.message.metadata && response.message.metadata.managerUsed) {
-        const managers = response.message.metadata.managerUsed;
+      if (assistantMsg.metadata && assistantMsg.metadata.managerUsed) {
+        const managers = assistantMsg.metadata.managerUsed;
         setManagerStates((prev) => ({
           ...prev,
           ...managers.reduce(
-            (acc, manager) => ({
+            (acc: Record<string, any>, manager: string) => ({
               ...acc,
               [manager]: { active: true, lastUsed: Date.now() },
             }),
