@@ -1,4 +1,4 @@
-import { router, publicProcedure } from './_core/trpc';
+﻿import { router, publicProcedure } from './_core/trpc';
 import { z } from 'zod';
 import { ChatCoreManager } from './core/ChatCoreManager';
 import { PoipoiCodeAgent } from './core/PoipoiCodeAgent';
@@ -136,7 +136,7 @@ export const chatRouter = router({
       })
     )
     .mutation(async ({ input }) =>
-      getChatCoreManager().createSession(input.userId)
+      getChatCoreManager().createSession(input.userId, "新しいチャット")
     ),
 
   deleteSession: publicProcedure
@@ -167,6 +167,8 @@ export const chatRouter = router({
       })
     )
     .query(async ({ input }) =>
-      getChatCoreManager().getStatistics(input.userId)
+      getChatCoreManager().getChatStatistics(input.userId)
     ),
 });
+
+

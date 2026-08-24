@@ -1,8 +1,9 @@
+﻿import { PoipoiCodeAgent } from "./PoipoiCodeAgent";
 /**
 
 import { PoipoiCodeAgent } from "./PoipoiCodeAgent";
- * ChatCoreManager - ポイポイAI チャットコア
- * AIが実際に会話可能にするコア実装
+ * ChatCoreManager - 繝昴う繝昴うAI 繝√Ε繝・ヨ繧ｳ繧｢
+ * AI縺悟ｮ滄圀縺ｫ莨夊ｩｱ蜿ｯ閭ｽ縺ｫ縺吶ｋ繧ｳ繧｢螳溯｣・
  */
 
 import { MemoryIntelligenceAIManager } from './MemoryIntelligenceAIManager';
@@ -46,13 +47,13 @@ export interface ChatResponse {
 
 export class ChatCoreManager {
   private isCodeImplementationRequest(message: string): boolean {
-    return /(?:実装|追加|修正|変更|作成|開発|コード).*(?:して|してください|したい|お願い)/.test(message);
+    return /修正|改善|変更|作成|コード/.test(message);
   }
 
   private async executeCodeImplementationRequest(message: string): Promise<string> {
     const result = await PoipoiCodeAgent.getInstance().execute(message);
     if (!result.success) {
-      return `コード実装に失敗しました: ${result.error ?? "不明なエラー"}`;
+      return `繧ｳ繝ｼ繝牙ｮ溯｣・↓螟ｱ謨励＠縺ｾ縺励◆: ${result.error ?? "荳肴・縺ｪ繧ｨ繝ｩ繝ｼ"}`;
     }
     return JSON.stringify(result, null, 2);
   }
@@ -82,14 +83,14 @@ export class ChatCoreManager {
   }
 
   /**
-   * チャットメッセージを処理して応答を生成
+   * 繝√Ε繝・ヨ繝｡繝・そ繝ｼ繧ｸ繧貞・逅・＠縺ｦ蠢懃ｭ斐ｒ逕滓・
    */
   async processMessage(
     userId: string,
     sessionId: string,
     userMessage: string
   ): Promise<ChatResponse> {
-    // 1. ユーザーメッセージを保存
+    // 1. 繝ｦ繝ｼ繧ｶ繝ｼ繝｡繝・そ繝ｼ繧ｸ繧剃ｿ晏ｭ・
     const userMsg: ChatMessage = {
       id: `msg_${Date.now()}_${Math.random().toString(36).substr(2, 9)}_user`,
       userId,
@@ -100,26 +101,26 @@ export class ChatCoreManager {
 
     await this.chatRepository.saveMessage(userMsg, sessionId);
 
-    // 2. コンテキスト取得（メモリから関連情報を取得）
+    // 2. 繧ｳ繝ｳ繝・く繧ｹ繝亥叙蠕暦ｼ医Γ繝｢繝ｪ縺九ｉ髢｢騾｣諠・ｱ繧貞叙蠕暦ｼ・
     const context = await this.contextAwarenessService.getContext(
       userId,
       userMessage
     );
 
-    // 3. メッセージ処理（推論・エージェント活用）
+    // 3. 繝｡繝・そ繝ｼ繧ｸ蜃ｦ逅・ｼ域耳隲悶・繧ｨ繝ｼ繧ｸ繧ｧ繝ｳ繝域ｴｻ逕ｨ・・
     const processedResult = await this.messageProcessingService.processMessage(
       userMessage,
       context
     );
 
-    // 4. 応答生成
+    // 4. 蠢懃ｭ皮函謌・
     const responseContent = await this.generateResponse(
       userMessage,
       processedResult,
       context
     );
 
-    // 5. 応答メッセージを作成
+    // 5. 蠢懃ｭ斐Γ繝・そ繝ｼ繧ｸ繧剃ｽ懈・
     const assistantMsg: ChatMessage = {
       id: `msg_${Date.now()}_${Math.random().toString(36).substr(2, 9)}_assistant`,
       userId,
@@ -136,12 +137,12 @@ export class ChatCoreManager {
 
     await this.chatRepository.saveMessage(assistantMsg, sessionId);
 
-    // 6. メモリに会話を保存
+    // 6. 繝｡繝｢繝ｪ縺ｫ莨夊ｩｱ繧剃ｿ晏ｭ・
     if (this.memoryManager && typeof (this.memoryManager as any).saveConversation === 'function') {
       await (this.memoryManager as any).saveConversation(userId, [userMsg, assistantMsg]);
     }
 
-    // 7. 監査ログ
+    // 7. 逶｣譟ｻ繝ｭ繧ｰ
     await this.auditManager.log({
       action: 'chat_message_processed',
       userId,
@@ -152,7 +153,7 @@ export class ChatCoreManager {
       },
     });
 
-    // 8. セッション情報を取得
+    // 8. 繧ｻ繝・す繝ｧ繝ｳ諠・ｱ繧貞叙蠕・
     const sessionData = await this.chatRepository.getSession(sessionId);
     const session = sessionData || {
       id: sessionId,
@@ -172,7 +173,7 @@ export class ChatCoreManager {
   }
 
   /**
-   * 応答を生成
+   * 蠢懃ｭ斐ｒ逕滓・
    */
   private async generateResponse(
     userMessage: string,
@@ -180,7 +181,7 @@ export class ChatCoreManager {
     context: any
   ): Promise<string> {
     try {
-      // LLM APIを呼び出し
+      // LLM API繧貞他縺ｳ蜃ｺ縺・
       if (processedResult.isManufacturingRelated) {
         const manufacturingAnalysis = await this.manufacturingManager.analyzeProduction(processedResult.manufacturingData || {});
         return this.formatManufacturingResponse(userMessage, manufacturingAnalysis);
@@ -200,8 +201,8 @@ export class ChatCoreManager {
     } catch (error) {
       console.error("[ChatCoreManager][LLM ERROR]", error);
       
-      // フォールバック: 従来の応答生成
-      // 製造業関連の質問の場合
+      // 繝輔か繝ｼ繝ｫ繝舌ャ繧ｯ: 蠕捺擂縺ｮ蠢懃ｭ皮函謌・
+      // 陬ｽ騾讌ｭ髢｢騾｣縺ｮ雉ｪ蝠上・蝣ｴ蜷・
       if (processedResult.isManufacturingRelated) {
         const manufacturingAnalysis =
           await this.manufacturingManager.analyzeProduction(
@@ -213,40 +214,51 @@ export class ChatCoreManager {
         );
       }
 
-      // 推論が必要な場合
+      // 謗ｨ隲悶′蠢・ｦ√↑蝣ｴ蜷・
       if (processedResult.requiresReasoning) {
         return processedResult.reasoning;
       }
 
-      // 通常の応答
+      // 騾壼ｸｸ縺ｮ蠢懃ｭ・
       return this.formatStandardResponse(userMessage, processedResult, context);
     }
   }
 
   /**
-   * 製造業関連の応答をフォーマット
+   * 陬ｽ騾讌ｭ髢｢騾｣縺ｮ蠢懃ｭ斐ｒ繝輔か繝ｼ繝槭ャ繝・
    */
   private formatManufacturingResponse(
     userMessage: string,
     analysis: any
   ): string {
-    return `製造業分析結果:\n${JSON.stringify(analysis, null, 2)}`;
+    return `陬ｽ騾讌ｭ蛻・梵邨先棡:\n${JSON.stringify(analysis, null, 2)}`;
   }
 
   /**
-   * 標準的な応答をフォーマット
+   * 讓呎ｺ也噪縺ｪ蠢懃ｭ斐ｒ繝輔か繝ｼ繝槭ャ繝・
    */
   private formatStandardResponse(
     userMessage: string,
     processedResult: any,
     context: any
   ): string {
-    return `ご質問ありがとうございます。\n\n${processedResult.response || 'お答えします。'}`;
+    return `お問い合わせありがとうございます。\n\n${processedResult.response || "回答を生成できませんでした。"}`;
   }
 
   /**
-   * チャットセッションを作成
+   * 繝√Ε繝・ヨ繧ｻ繝・す繝ｧ繝ｳ繧剃ｽ懈・
    */
+  async getSession(userId: string, sessionId: string): Promise<any> {
+    return this.chatRepository.getSession(sessionId);
+  }
+
+  async getMessages(userId: string, sessionId: string): Promise<any[]> {
+    return this.chatRepository.getMessages(sessionId);
+  }
+
+  async getStatistics(userId: string): Promise<any> {
+    return this.getChatStatistics(userId);
+  }
   async createSession(userId: string, title: string): Promise<ChatSession> {
     const session: ChatSession = {
       id: `session_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
@@ -259,7 +271,7 @@ export class ChatCoreManager {
 
     await this.chatRepository.saveSession(session);
 
-    // 監査ログ
+    // 逶｣譟ｻ繝ｭ繧ｰ
     await this.auditManager.log({
       action: 'chat_session_created',
       userId,
@@ -270,7 +282,7 @@ export class ChatCoreManager {
   }
 
   /**
-   * チャット履歴を取得
+   * 繝√Ε繝・ヨ螻･豁ｴ繧貞叙蠕・
    */
   async getChatHistory(
     userId: string,
@@ -281,17 +293,17 @@ export class ChatCoreManager {
   }
 
   /**
-   * ユーザーのセッション一覧を取得
+   * 繝ｦ繝ｼ繧ｶ繝ｼ縺ｮ繧ｻ繝・す繝ｧ繝ｳ荳隕ｧ繧貞叙蠕・
    */
   async getUserSessions(userId: string): Promise<ChatSession[]> {
     return await this.chatRepository.getUserSessions(userId);
   }
 
   /**
-   * セッションを削除
+   * 繧ｻ繝・す繝ｧ繝ｳ繧貞炎髯､
    */
   async deleteSession(userId: string, sessionId: string): Promise<void> {
-    // 承認が必要
+    // 謇ｿ隱阪′蠢・ｦ・
     const approval = await this.approvalManager.requestApproval({
       action: 'delete_chat_session',
       userId,
@@ -304,7 +316,7 @@ export class ChatCoreManager {
 
     await this.chatRepository.deleteSession(sessionId);
 
-    // 監査ログ
+    // 逶｣譟ｻ繝ｭ繧ｰ
     await this.auditManager.log({
       action: 'chat_session_deleted',
       userId,
@@ -313,9 +325,12 @@ export class ChatCoreManager {
   }
 
   /**
-   * チャット統計を取得
+   * 繝√Ε繝・ヨ邨ｱ險医ｒ蜿門ｾ・
    */
   async getChatStatistics(userId: string): Promise<any> {
     return await this.chatRepository.getUserStatistics(userId);
   }
 }
+
+
+
