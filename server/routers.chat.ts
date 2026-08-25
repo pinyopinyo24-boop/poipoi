@@ -133,10 +133,11 @@ export const chatRouter = router({
     .input(
       z.object({
         userId: z.string(),
+        title: z.string().optional(),
       })
     )
     .mutation(async ({ input }) =>
-      getChatCoreManager().createSession(input.userId, "チャットセッション")
+      getChatCoreManager().createSession(input.userId, input.title || "チャットセッション")
     ),
 
   deleteSession: publicProcedure
@@ -170,6 +171,9 @@ export const chatRouter = router({
       getChatCoreManager().getChatStatistics(input.userId)
     ),
 });
+
+
+
 
 
 
