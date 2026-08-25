@@ -136,7 +136,7 @@ export const chatRouter = router({
       })
     )
     .mutation(async ({ input }) =>
-      getChatCoreManager().createSession(input.userId, "新しいチャット")
+      getChatCoreManager().createSession(input.userId, "チャットセッション")
     ),
 
   deleteSession: publicProcedure
@@ -170,5 +170,7 @@ export const chatRouter = router({
       getChatCoreManager().getChatStatistics(input.userId)
     ),
 });
+
+
 
 
