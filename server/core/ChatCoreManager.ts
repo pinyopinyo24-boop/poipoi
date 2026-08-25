@@ -249,41 +249,22 @@ export class ChatCoreManager {
    * 繝√Ε繝・ヨ繧ｻ繝・す繝ｧ繝ｳ繧剃ｽ懈・
    */
   async getSession(userId: string, sessionId: string): Promise<any> {
-    return this.chatRepository.getSession(sessionId);
-  }
+    const session = await this.chatRepository.getSession(sessionId);
+    const messages = session
+      ? await this.chatRepository.getMessages(sessionId, 50)
+      : [];
 
-  async getMessages(userId: string, sessionId: string): Promise<any[]> {
-    return this.chatRepository.getMessages(sessionId);
-  }
-
-  async getStatistics(userId: string): Promise<any> {
-    return this.getChatStatistics(userId);
-  }
-  async createSession(userId: string, title: string): Promise<ChatSession> {
-    const session: ChatSession = {
-      id: `session_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
-      userId,
-      title,
-      createdAt: Date.now(),
-      updatedAt: Date.now(),
-      messageCount: 0,
+    return {
+      ...(session || {
+        id: sessionId,
+        userId,
+        title: 'チャットセッション',
+        createdAt: new Date(),
+        messageCount: 0,
+      }),
+      messages,
     };
-
-    await this.chatRepository.saveSession(session);
-
-    // 逶｣譟ｻ繝ｭ繧ｰ
-    await this.auditManager.log({
-      action: 'chat_session_created',
-      userId,
-      details: { sessionId: session.id, title },
-    });
-
-    return session;
   }
-
-  /**
-   * 繝√Ε繝・ヨ螻･豁ｴ繧貞叙蠕・
-   */
   async getChatHistory(
     userId: string,
     sessionId: string,
@@ -327,6 +308,7 @@ export class ChatCoreManager {
     return await this.chatRepository.getUserStatistics(userId);
   }
 }
+
 
 
 
