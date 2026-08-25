@@ -302,8 +302,7 @@ export class ChatCoreManager {
   /**
    * 繧ｻ繝・す繝ｧ繝ｳ繧貞炎髯､
    */
-  async deleteSession(userId: string, sessionId: string): Promise<void> {
-    // 謇ｿ隱阪′蠢・ｦ・
+  async deleteSession(userId: string, sessionId: string): Promise<{ success: boolean }> {
     const approval = await this.approvalManager.requestApproval({
       action: 'delete_chat_session',
       userId,
@@ -316,21 +315,26 @@ export class ChatCoreManager {
 
     await this.chatRepository.deleteSession(sessionId);
 
-    // 逶｣譟ｻ繝ｭ繧ｰ
     await this.auditManager.log({
       action: 'chat_session_deleted',
       userId,
       details: { sessionId },
     });
-  }
 
-  /**
-   * 繝√Ε繝・ヨ邨ｱ險医ｒ蜿門ｾ・
-   */
+    return { success: true };
+  }
   async getChatStatistics(userId: string): Promise<any> {
     return await this.chatRepository.getUserStatistics(userId);
   }
 }
+
+
+
+
+
+
+
+
 
 
 
