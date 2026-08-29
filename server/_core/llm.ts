@@ -132,12 +132,9 @@ const DEFAULT_MODEL = "gemini-2.0-flash";
  */
 export async function invokeLLM(request: LLMRequest): Promise<LLMResponse> {
   const baseUrl = process.env.LOCAL_AI_URL || "http://localhost:11434";
-  const model = "qwen2.5-coder:7b";
+  const model = "qwen2.5:7b";
 
   const messages = request.messages || [];
-  const prompt = messages
-    .map((m) => `${m.role}: ${m.content ?? ""}`)
-    .join("\n");
 
   console.log("[LLM REQUEST] Local AI", {
     model,
@@ -146,12 +143,12 @@ export async function invokeLLM(request: LLMRequest): Promise<LLMResponse> {
   });
 
   try {
-    const response = await fetch(`${baseUrl}/api/generate`, {
+    const response = await fetch(`${baseUrl}/v1/chat/completions`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         model,
-        prompt,
+        messages,
         stream: false,
       }),
     });
@@ -164,23 +161,22 @@ export async function invokeLLM(request: LLMRequest): Promise<LLMResponse> {
     const data = await response.json();
 
     return {
-      id: `local-${Date.now()}`,
+      id: data.id || `local-${Date.now()}`,
       object: "chat.completion",
       created: Math.floor(Date.now() / 1000),
-      model,
+      model: data.model || model,
       choices: [{
         index: 0,
         message: {
           role: "assistant",
-          content: data.response || "",
+          content: data.choices?.[0]?.message?.content || "",
         },
-        finish_reason: "stop",
+        finish_reason: data.choices?.[0]?.finish_reason || "stop",
       }],
       usage: {
-        prompt_tokens: data.prompt_eval_count || 0,
-        completion_tokens: data.eval_count || 0,
-        total_tokens:
-          (data.prompt_eval_count || 0) + (data.eval_count || 0),
+        prompt_tokens: data.usage?.prompt_tokens || 0,
+        completion_tokens: data.usage?.completion_tokens || 0,
+        total_tokens: data.usage?.total_tokens || 0,
       },
     };
   } catch (error) {
@@ -191,7 +187,7 @@ export async function invokeLLM(request: LLMRequest): Promise<LLMResponse> {
       id: `local-error-${Date.now()}`,
       object: "chat.completion",
       created: Math.floor(Date.now() / 1000),
-      model,
+      model: model,
       choices: [{
         index: 0,
         message: {
@@ -254,5 +250,7 @@ export async function listLLMModels(): Promise<{ data: LLMModel[] }> {
     };
   }
 }
+
+
 
 
