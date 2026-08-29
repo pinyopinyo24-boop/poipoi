@@ -152,13 +152,13 @@ describe('Chat Router', () => {
 
       const result = await caller.createSession({
         userId: 'user-123',
-        title: '繝・せ繝医そ繝・す繝ｧ繝ｳ',
+        title: 'テストセッション',
       });
 
       expect(result).toBeDefined();
       expect(result.id).toBeDefined();
       expect(result.userId).toBe('user-123');
-      expect(result.title).toBe('チャットセッション');
+      expect(result.title).toBe('テストセッション');
       expect(result.createdAt).toBeDefined();
     });
 
@@ -289,7 +289,7 @@ describe('Chat Router', () => {
       // 1. Create session
       const session = await caller.createSession({
         userId: 'user-123',
-        title: '繝・せ繝医そ繝・す繝ｧ繝ｳ',
+        title: 'テストセッション',
       });
 
       expect(session.id).toBeDefined();
@@ -478,6 +478,8 @@ describe('Chat Router', () => {
     });
   });
 });
+
+
 
 
 
