@@ -248,12 +248,28 @@ function validateChanges(
       );
     }
 
-    safePath(filePath);
+    const absolutePath = safePath(filePath);
+    const code = fs.readFileSync(absolutePath, "utf8");
+    const target = item.target.trim();
 
-    const code = fs.readFileSync(
-      safePath(filePath),
-      "utf8"
-    );
+    if (!target) {
+      throw new Error(`変更対象が空です: ${filePath}`);
+    }
+
+    const lines = code.split(/\r?\n/);
+    const matches = lines
+      .map((line: string, index: number) => ({
+        line,
+        index,
+        trimmed: line.trim()
+      }))
+      .filter(x => x.trimmed === target);
+
+    if (matches.length !== 1) {
+      throw new Error(
+        `変更対象行を一意に特定できません: ${filePath} / ${target} / ${matches.length}件`
+      );
+    }
 
     if (!item.newCode.trim()) {
       throw new Error(`新しいコードが空です: ${filePath}`);
@@ -269,22 +285,10 @@ function validateChanges(
       );
     }
 
-    const target = item.target.trim();
-
-    const matches = code
-      .split(/\r?\n/)
-      .filter(line => line.includes(target));
-
-    if (matches.length !== 1) {
-      throw new Error(
-        `変更対象を一意に特定できません: ${filePath} / ${target} / ${matches.length}件`
-      );
-    }
-
     return {
       filePath,
-      oldCode: matches[0],
-      newCode: item.newCode,
+      oldCode: matches[0].line,
+      newCode: item.newCode.trim(),
       reason: item.reason
     };
   });
