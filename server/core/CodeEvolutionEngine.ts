@@ -55,15 +55,15 @@ export class CodeEvolutionEngine {
       const command = normalizeCommand(testCommand[0]);
       const args = testCommand.slice(1);
 
-      if (process.platform === "win32" && command.toLowerCase().endsWith(".cmd")) {
-        await execFileAsync(
-          "cmd.exe",
-          ["/d", "/s", "/c", `"${command}" ${args.map(arg => `"${arg.replace(/"/g, '""')}"`).join(" ")}`],
-          {
-            cwd: this.projectRoot,
-            maxBuffer: 20 * 1024 * 1024,
-          }
-        );
+      if (process.platform === "win32") {
+        const commandLine = [command, ...args]
+          .map(arg => /\s/.test(arg) ? `"${arg.replace(/"/g, '\"')}"` : arg)
+          .join(" ");
+
+        await execFileAsync("cmd.exe", ["/d", "/s", "/c", commandLine], {
+          cwd: this.projectRoot,
+          maxBuffer: 20 * 1024 * 1024,
+        });
       } else {
         await execFileAsync(command, args, {
           cwd: this.projectRoot,
