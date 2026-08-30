@@ -271,7 +271,7 @@ async function main() {
         "pnpm check"
       ];
 
-  const messages = [
+  const messages: { role: string; content: string }[] = [
     {
       role: "system",
       content:
