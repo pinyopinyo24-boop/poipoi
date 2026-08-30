@@ -200,6 +200,17 @@ function extractJson(text: string): AIChange[] {
 
   throw new Error("AI応答に有効なJSON変更内容がありません");
 }
+async function invokeAI(messages: unknown[]): Promise<string> {
+  const manager = aiProviderManager as {
+    invoke?: (messages: unknown[]) => Promise<string>;
+  };
+
+  if (typeof manager.invoke !== "function") {
+    throw new Error("AIProviderManager.invoke() が利用できません");
+  }
+
+  return await manager.invoke(messages);
+}
 function findRelevantTests(targetPath: string): string[] {
   const directory = path.dirname(targetPath);
   const base = path.basename(
