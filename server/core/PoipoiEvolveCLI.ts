@@ -79,16 +79,22 @@ function extractTarget(request: string): string {
 }
 
 function extractJson(text: string): AIChange[] {
-  const match = text.match(/\[[\s\S]*\]/);
+  const cleaned = text
+    .replace(/```json/gi, "")
+    .replace(/```/g, "")
+    .trim();
 
-  if (!match) {
+  const start = cleaned.indexOf("[");
+  const end = cleaned.lastIndexOf("]");
+
+  if (start < 0 || end < start) {
     throw new Error("AI応答にJSON配列がありません");
   }
 
   let parsed: unknown;
 
   try {
-    parsed = JSON.parse(match[0]);
+    parsed = JSON.parse(cleaned.slice(start, end + 1));
   } catch {
     throw new Error("AI応答のJSON解析に失敗しました");
   }
@@ -117,7 +123,7 @@ function extractJson(text: string): AIChange[] {
       filePath: value.filePath,
       target: value.target,
       newCode: value.newCode,
-      reason: value.reason
+      reason: value.reason,
     };
   });
 }
