@@ -379,7 +379,8 @@ async function main() {
     }
   }
 
-  const aiChanges = extractJson(aiText);
+  console.log("AI_RAW_RESPONSE:", JSON.stringify(aiText));
+    const aiChanges = extractJson(aiText);
 
   if (
     aiChanges.some(
