@@ -58,7 +58,16 @@ export class LocalAIProvider extends BaseAIProvider {
         );
       }
 
-      const data = await response.json() as any;
+      const raw = await response.text();
+      let data: any;
+      try {
+        data = JSON.parse(raw.trim());
+      } catch {
+        const lines = raw.split(/\r?\n/).map(line => line.trim()).filter(Boolean);
+        const last = lines[lines.length - 1];
+        if (!last) throw new Error("Local AI response is empty");
+        data = JSON.parse(last);
+      }
 
       return {
         id: requestId,
