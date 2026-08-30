@@ -1,4 +1,4 @@
-﻿import fs from "fs/promises";
+﻿import fs from "fs";
 import path from "path";
 import { execFileSync } from "child_process";
 import { CodeEvolutionEngine, CodeChange } from "./CodeEvolutionEngine";
