@@ -242,49 +242,42 @@ function validateChanges(
   return changes.map(item => {
     const filePath = item.filePath.replace(/\\/g, "/");
 
-    safePath(filePath);
-
-    if (!/^[A-Za-z_$][A-Za-z0-9_$]*$/.test(item.target)) {
+    if (filePath !== targetPath) {
       throw new Error(
-        `安全な識別子ではありません: ${item.target}`
+        `AIが対象外ファイルを変更しようとしました: ${filePath}`
       );
     }
+
+    safePath(filePath);
 
     const code = fs.readFileSync(
       safePath(filePath),
       "utf8"
     );
 
-    const escaped = item.target.replace(
-      /[.*+?^${}()|[\]\\]/g,
-      "\\$&"
-    );
+    if (!item.newCode.trim()) {
+      throw new Error(`新しいコードが空です: ${filePath}`);
+    }
 
-    const regex = new RegExp(
-      `\\b${escaped}\\b`
-    );
+    if (
+      item.newCode.includes("process.env.") ||
+      item.newCode.includes("API_KEY") ||
+      item.newCode.includes("SECRET")
+    ) {
+      throw new Error(
+        `秘密情報を含む可能性がある変更を拒否しました: ${filePath}`
+      );
+    }
+
+    const target = item.target.trim();
 
     const matches = code
       .split(/\r?\n/)
-      .filter((line: string) => regex.test(line));
+      .filter(line => line.includes(target));
 
     if (matches.length !== 1) {
       throw new Error(
-        `変更対象を一意に特定できません: ${filePath} / ${item.target} / ${matches.length}件`
-      );
-    }
-
-    if (!item.newCode.trim()) {
-      throw new Error(
-        `新しいコードが空です: ${filePath}`
-      );
-    }
-
-    if (item.newCode.includes("process.env.") ||
-        item.newCode.includes("API_KEY") ||
-        item.newCode.includes("SECRET")) {
-      throw new Error(
-        `秘密情報を含む可能性がある変更を拒否しました: ${filePath}`
+        `変更対象を一意に特定できません: ${filePath} / ${target} / ${matches.length}件`
       );
     }
 
@@ -296,7 +289,6 @@ function validateChanges(
     };
   });
 }
-
 async function main() {
   const request = process.argv.slice(2).join(" ").trim();
 
