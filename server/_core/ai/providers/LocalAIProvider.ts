@@ -34,7 +34,7 @@ export class LocalAIProvider extends BaseAIProvider {
 
     try {
       const response = await globalThis.fetch(
-        `${this.apiUrl}/v1/chat/completions`,
+        `${this.apiUrl}/api/chat`,
         {
           method: 'POST',
           headers: {
@@ -44,7 +44,7 @@ export class LocalAIProvider extends BaseAIProvider {
             model,
             messages,
             temperature: options?.temperature ?? 0.7,
-            max_tokens: options?.maxTokens ?? 2048,
+            num_predict: options?.maxTokens ?? 2048,
             top_p: options?.topP ?? 0.9,
           }),
         }
@@ -63,7 +63,7 @@ export class LocalAIProvider extends BaseAIProvider {
         id: requestId,
         provider: 'local',
         model,
-        content: data.choices?.[0]?.message?.content || '',
+        content: data.message?.content || data.choices?.[0]?.message?.content || '',
         usage: {
           promptTokens: data.usage?.prompt_tokens || 0,
           completionTokens: data.usage?.completion_tokens || 0,
