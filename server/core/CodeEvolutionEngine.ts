@@ -52,13 +52,24 @@ export class CodeEvolutionEngine {
         await fs.writeFile(filePath, current.replace(change.oldCode, change.newCode), "utf8");
       }
 
-      const command = process.platform === "win32" && testCommand[0] === "pnpm" ? "pnpm.cmd" : testCommand[0];
+      const command = normalizeCommand(testCommand[0]);
       const args = testCommand.slice(1);
 
-      await execFileAsync(command, args, {
-        cwd: this.projectRoot,
-        maxBuffer: 20 * 1024 * 1024,
-      });
+      if (process.platform === "win32" && command.toLowerCase().endsWith(".cmd")) {
+        await execFileAsync(
+          "cmd.exe",
+          ["/d", "/s", "/c", `"${command}" ${args.map(arg => `"${arg.replace(/"/g, '""')}"`).join(" ")}`],
+          {
+            cwd: this.projectRoot,
+            maxBuffer: 20 * 1024 * 1024,
+          }
+        );
+      } else {
+        await execFileAsync(command, args, {
+          cwd: this.projectRoot,
+          maxBuffer: 20 * 1024 * 1024,
+        });
+      }
       return {
         success: true,
         changedFiles: changes.map(function (change) { return change.filePath; }),
