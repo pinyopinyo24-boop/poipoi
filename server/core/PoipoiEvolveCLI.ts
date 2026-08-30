@@ -178,7 +178,15 @@ async function invokeAI(messages: unknown[]): Promise<string> {
     throw new Error("AIProviderManager.invoke() が利用できません");
   }
 
-  return await manager.invoke(messages);
+  const result = await manager.invoke([
+    ...(messages as any[]),
+    {
+      role: "system",
+      content:
+        "必ず有効なJSON配列だけを返してください。Markdown、```、説明文は禁止です。形式: [{\"filePath\":\"対象ファイル\",\"target\":\"識別子\",\"newCode\":\"置換後コード\",\"reason\":\"理由\"}]"
+    }
+  ]);
+  return result;
 }
 
 function findRelevantTests(targetPath: string): string[] {
