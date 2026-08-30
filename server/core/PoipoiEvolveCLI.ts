@@ -85,7 +85,7 @@ function extractJson(text: string): AIChange[] {
     .trim();
 
   const start = cleaned.indexOf("[");
-  const end = cleaned.lastIndexOf("]");
+  const end = cleaned.indexOf("]", start);
 
   if (start < 0 || end < start) {
     throw new Error("AI応答にJSON配列がありません");
