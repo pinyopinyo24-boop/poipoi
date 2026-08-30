@@ -44,7 +44,7 @@ export class LocalAIProvider extends BaseAIProvider {
             model,
             messages,
             temperature: options?.temperature ?? 0.7,
-            num_predict: options?.maxTokens ?? 2048,
+            num_predict: options?.maxTokens ?? 2048,`r`n            format: "json",
             stream: false,
             top_p: options?.topP ?? 0.9,
           }),
