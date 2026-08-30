@@ -132,7 +132,7 @@ const DEFAULT_MODEL = "gemini-2.0-flash";
  */
 export async function invokeLLM(request: LLMRequest): Promise<LLMResponse> {
   const baseUrl = process.env.LOCAL_AI_URL || "http://localhost:11434";
-  const model = "qwen2.5:7b";
+  const model = "qwen2.5-coder:7b";
 
   const messages = request.messages || [];
 
@@ -143,7 +143,7 @@ export async function invokeLLM(request: LLMRequest): Promise<LLMResponse> {
   });
 
   try {
-    const response = await fetch(`${baseUrl}/v1/chat/completions`, {
+    const response = await fetch(`${baseUrl}/api/chat`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -158,7 +158,16 @@ export async function invokeLLM(request: LLMRequest): Promise<LLMResponse> {
       throw new Error(`Local AI error: ${response.status} - ${errorData}`);
     }
 
-    const data = await response.json();
+    const rawText = await response.text();
+
+let data: any;
+try {
+  data = JSON.parse(rawText);
+} catch {
+  throw new Error(
+    `Local AIがJSON以外を返しました: ${rawText.slice(0, 500)}`
+  );
+}
 
     return {
       id: data.id || `local-${Date.now()}`,
@@ -169,9 +178,9 @@ export async function invokeLLM(request: LLMRequest): Promise<LLMResponse> {
         index: 0,
         message: {
           role: "assistant",
-          content: data.choices?.[0]?.message?.content || "",
+          content: data.message?.content || "",
         },
-        finish_reason: data.choices?.[0]?.finish_reason || "stop",
+        finish_reason: "stop" || "stop",
       }],
       usage: {
         prompt_tokens: data.usage?.prompt_tokens || 0,
@@ -250,6 +259,7 @@ export async function listLLMModels(): Promise<{ data: LLMModel[] }> {
     };
   }
 }
+
 
 
 
