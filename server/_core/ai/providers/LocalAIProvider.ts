@@ -45,6 +45,7 @@ export class LocalAIProvider extends BaseAIProvider {
             messages,
             temperature: options?.temperature ?? 0.7,
             num_predict: options?.maxTokens ?? 2048,
+            stream: false,
             top_p: options?.topP ?? 0.9,
           }),
         }
@@ -117,4 +118,3 @@ export class LocalAIProvider extends BaseAIProvider {
     return status.isAvailable;
   }
 }
-
