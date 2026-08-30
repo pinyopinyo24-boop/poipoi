@@ -1,4 +1,4 @@
-﻿import { execFile } from "child_process";
+import { execFile } from "child_process";
 import { promisify } from "util";
 import fs from "fs/promises";
 import path from "path";
@@ -52,11 +52,13 @@ export class CodeEvolutionEngine {
         await fs.writeFile(filePath, current.replace(change.oldCode, change.newCode), "utf8");
       }
 
-      await execFileAsync(process.platform === "win32" ? "cmd.exe" : normalizeCommand(testCommand[0]), process.platform === "win32" ? (testCommand[0].toLowerCase() === "cmd.exe" ? testCommand.slice(1) : ["/c", normalizeCommand(testCommand[0]), ...testCommand.slice(1)]) : testCommand.slice(1), {
+      const command = process.platform === "win32" && testCommand[0] === "pnpm" ? "pnpm.cmd" : testCommand[0];
+      const args = testCommand.slice(1);
+
+      await execFileAsync(command, args, {
         cwd: this.projectRoot,
         maxBuffer: 20 * 1024 * 1024,
       });
-
       return {
         success: true,
         changedFiles: changes.map(function (change) { return change.filePath; }),
