@@ -20,7 +20,7 @@ export class LocalAIProvider extends BaseAIProvider {
     },
   ];
 
-  constructor(apiUrl: string = process.env.LOCAL_AI_URL || 'http://localhost:8000') {
+  constructor(apiUrl: string = process.env.LOCAL_AI_URL || 'http://localhost:11434') {
     super('local', '', apiUrl.replace(/\/$/, ''));
   }
 
