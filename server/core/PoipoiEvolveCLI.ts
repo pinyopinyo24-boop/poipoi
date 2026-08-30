@@ -255,7 +255,7 @@ async function main() {
         "cmd.exe",
         "/c",
         `pnpm check && pnpm exec vitest run ${tests
-          .map(x => `"${path.relative(ROOT, x).replace(/\\/g, "/")}"`)
+          .map(x => `"${path.relative(ROOT, x)}"`)
           .join(" ")}`
       ]
     : [
