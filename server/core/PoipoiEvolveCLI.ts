@@ -6,7 +6,7 @@ import { aiProviderManager } from "../ai/AIProviderManager";
 
 type AIChange = {
   filePath: string;
-  target: string;
+  oldCode: string;
   newCode: string;
   reason: string;
 };
@@ -79,119 +79,51 @@ function extractTarget(request: string): string {
 }
 
 function extractJson(text: string): AIChange[] {
-  const cleaned = text
-    .replace(/```json/gi, "")
-    .replace(/```/g, "")
-    .trim();
-
-  const candidates: string[] = [];
-
-  const arrayStart = cleaned.indexOf("[");
-  if (arrayStart >= 0) {
-    let depth = 0;
-    let inString = false;
-    let escaped = false;
-
-    for (let i = arrayStart; i < cleaned.length; i++) {
-      const ch = cleaned[i];
-
-      if (inString) {
-        if (escaped) escaped = false;
-        else if (ch === "\\") escaped = true;
-        else if (ch === '"') inString = false;
-        continue;
-      }
-
-      if (ch === '"') inString = true;
-      else if (ch === "[") depth++;
-      else if (ch === "]") {
-        depth--;
-        if (depth === 0) {
-          candidates.push(cleaned.slice(arrayStart, i + 1));
-          break;
-        }
-      }
-    }
-  }
-
-  const objectStart = cleaned.indexOf("{");
-  if (objectStart >= 0) {
-    let depth = 0;
-    let inString = false;
-    let escaped = false;
-
-    for (let i = objectStart; i < cleaned.length; i++) {
-      const ch = cleaned[i];
-
-      if (inString) {
-        if (escaped) escaped = false;
-        else if (ch === "\\") escaped = true;
-        else if (ch === '"') inString = false;
-        continue;
-      }
-
-      if (ch === '"') inString = true;
-      else if (ch === "{") depth++;
-      else if (ch === "}") {
-        depth--;
-        if (depth === 0) {
-          candidates.push(cleaned.slice(objectStart, i + 1));
-          break;
-        }
-      }
-    }
-  }
+  const candidates = [
+    text.trim(),
+    text.replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/i, "").trim()
+  ];
 
   for (const candidate of candidates) {
     try {
-      const parsed = JSON.parse(candidate) as unknown;
+      const parsed = JSON.parse(candidate);
 
-      if (Array.isArray(parsed) && parsed.length > 0) {
-        return parsed.map((item, index) => {
-          if (!item || typeof item !== "object") {
-            throw new Error(`AI変更 #${index + 1} が不正です`);
-          }
+      const normalize = (value: unknown, index: number): AIChange => {
+        if (!value || typeof value !== "object") {
+          throw new Error(`AI変更 #${index + 1} の形式が不正です`);
+        }
 
-          const value = item as Record<string, unknown>;
+        const item = value as Record<string, unknown>;
 
-          if (
-            typeof value.filePath !== "string" ||
-            typeof value.target !== "string" ||
-            typeof value.newCode !== "string" ||
-            typeof value.reason !== "string"
-          ) {
-            throw new Error(`AI変更 #${index + 1} の形式が不正です`);
-          }
+        if (
+          typeof item.filePath !== "string" ||
+          typeof item.oldCode !== "string" ||
+          typeof item.newCode !== "string" ||
+          typeof item.reason !== "string"
+        ) {
+          throw new Error(`AI変更 #${index + 1} の形式が不正です`);
+        }
 
-          return {
-            filePath: value.filePath,
-            target: value.target,
-            newCode: value.newCode,
-            reason: value.reason,
-          };
-        });
+        return {
+          filePath: item.filePath,
+          oldCode: item.oldCode,
+          newCode: item.newCode,
+          reason: item.reason,
+        };
+      };
+
+      if (Array.isArray(parsed)) {
+        return parsed.map(normalize);
       }
 
       if (parsed && typeof parsed === "object") {
         const value = parsed as Record<string, unknown>;
 
-        if (
-          typeof value.filePath === "string" &&
-          typeof value.target === "string" &&
-          typeof value.newCode === "string" &&
-          typeof value.reason === "string"
-        ) {
-          return [{
-            filePath: value.filePath,
-            target: value.target,
-            newCode: value.newCode,
-            reason: value.reason,
-          }];
+        if (Array.isArray(value.changes)) {
+          return value.changes.map(normalize);
         }
 
-        if (Array.isArray(value.changes)) {
-          return extractJson(JSON.stringify(value.changes));
-        }
+        return [normalize(value, 0)];
       }
     } catch {
       continue;
@@ -241,44 +173,38 @@ function validateChanges(
 ): CodeChange[] {
   return changes.map(item => {
     const filePath = item.filePath.replace(/\\/g, "/");
+    const absolutePath = safePath(filePath);
 
     if (filePath !== targetPath) {
       throw new Error(
-        `AIが対象外ファイルを変更しようとしました: ${filePath}`
+        `変更対象外のファイルです: ${filePath}`
       );
     }
 
-    const absolutePath = safePath(filePath);
     const code = fs.readFileSync(absolutePath, "utf8");
-    const target = item.target.trim();
+    const oldCode = item.oldCode.trim();
+    const newCode = item.newCode.trim();
 
-    if (!target) {
-      throw new Error(`変更対象が空です: ${filePath}`);
+    if (!oldCode) {
+      throw new Error(`置換対象コードが空です: ${filePath}`);
     }
 
-    const lines = code.split(/\r?\n/);
-    const matches = lines
-      .map((line: string, index: number) => ({
-        line,
-        index,
-        trimmed: line.trim()
-      }))
-      .filter(x => x.trimmed === target);
+    const occurrences = code.split(oldCode).length - 1;
 
-    if (matches.length !== 1) {
+    if (occurrences !== 1) {
       throw new Error(
-        `変更対象行を一意に特定できません: ${filePath} / ${target} / ${matches.length}件`
+        `置換対象コードを一意に特定できません: ${filePath} / ${occurrences}件`
       );
     }
 
-    if (!item.newCode.trim()) {
+    if (!newCode) {
       throw new Error(`新しいコードが空です: ${filePath}`);
     }
 
     if (
-      item.newCode.includes("process.env.") ||
-      item.newCode.includes("API_KEY") ||
-      item.newCode.includes("SECRET")
+      newCode.includes("process.env.") ||
+      newCode.includes("API_KEY") ||
+      newCode.includes("SECRET")
     ) {
       throw new Error(
         `秘密情報を含む可能性がある変更を拒否しました: ${filePath}`
@@ -287,8 +213,8 @@ function validateChanges(
 
     return {
       filePath,
-      oldCode: matches[0].line,
-      newCode: item.newCode.trim(),
+      oldCode,
+      newCode,
       reason: item.reason
     };
   });
