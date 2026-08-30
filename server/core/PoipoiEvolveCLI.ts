@@ -1,4 +1,4 @@
-﻿import fs from "fs";
+import fs from "fs";
 import path from "path";
 import { execFileSync } from "child_process";
 import { CodeEvolutionEngine, CodeChange } from "./CodeEvolutionEngine";
@@ -144,10 +144,11 @@ async function invokeAI(messages: unknown[]): Promise<string> {
   return await manager.invoke(messages);
 }
 function findRelevantTests(targetPath: string): string[] {
-  const directory = path.dirname(targetPath);
+  const absoluteTarget = safePath(targetPath);
+  const directory = path.dirname(absoluteTarget);
   const base = path.basename(
-    targetPath,
-    path.extname(targetPath)
+    absoluteTarget,
+    path.extname(absoluteTarget)
   );
 
   const candidates = [
@@ -157,16 +158,8 @@ function findRelevantTests(targetPath: string): string[] {
     path.join(directory, `${base}.spec.tsx`)
   ];
 
-  return candidates.filter(file => {
-    try {
-      fs.accessSync(file);
-      return true;
-    } catch {
-      return false;
-    }
-  });
+  return candidates.filter(file => fs.existsSync(file));
 }
-
 function validateChanges(
   changes: AIChange[],
   targetPath: string
@@ -391,9 +384,3 @@ main().catch((error: unknown) => {
   );
   process.exit(1);
 });
-
-
-
-
-
-
