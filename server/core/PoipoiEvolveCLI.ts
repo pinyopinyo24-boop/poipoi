@@ -262,7 +262,7 @@ async function main() {
         "cmd.exe",
         "/c",
         `pnpm check && pnpm exec vitest run ${tests
-          .map(x => `"${path.relative(ROOT, x)}"`)
+          .map(x => `"${path.relative(ROOT, x).replace(/\\/g, "/")}"`)
           .join(" ")}`
       ]
     : [
@@ -391,5 +391,9 @@ main().catch((error: unknown) => {
   );
   process.exit(1);
 });
+
+
+
+
 
 
