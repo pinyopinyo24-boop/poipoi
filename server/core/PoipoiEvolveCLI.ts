@@ -84,110 +84,121 @@ function extractJson(text: string): AIChange[] {
     .replace(/```/g, "")
     .trim();
 
-  const start = cleaned.indexOf("[");
-  if (start < 0) {
-    throw new Error("AI応答にJSON配列がありません");
+  const candidates: string[] = [];
+
+  const arrayStart = cleaned.indexOf("[");
+  if (arrayStart >= 0) {
+    let depth = 0;
+    let inString = false;
+    let escaped = false;
+
+    for (let i = arrayStart; i < cleaned.length; i++) {
+      const ch = cleaned[i];
+
+      if (inString) {
+        if (escaped) escaped = false;
+        else if (ch === "\\") escaped = true;
+        else if (ch === '"') inString = false;
+        continue;
+      }
+
+      if (ch === '"') inString = true;
+      else if (ch === "[") depth++;
+      else if (ch === "]") {
+        depth--;
+        if (depth === 0) {
+          candidates.push(cleaned.slice(arrayStart, i + 1));
+          break;
+        }
+      }
+    }
   }
 
-  let end = -1;
-  let depth = 0;
-  let inString = false;
-  let escaped = false;
+  const objectStart = cleaned.indexOf("{");
+  if (objectStart >= 0) {
+    let depth = 0;
+    let inString = false;
+    let escaped = false;
 
-  for (let i = start; i < cleaned.length; i++) {
-    const ch = cleaned[i];
+    for (let i = objectStart; i < cleaned.length; i++) {
+      const ch = cleaned[i];
 
-    if (inString) {
-      if (escaped) {
-        escaped = false;
-      } else if (ch === "\\") {
-        escaped = true;
-      } else if (ch === '"') {
-        inString = false;
+      if (inString) {
+        if (escaped) escaped = false;
+        else if (ch === "\\") escaped = true;
+        else if (ch === '"') inString = false;
+        continue;
       }
+
+      if (ch === '"') inString = true;
+      else if (ch === "{") depth++;
+      else if (ch === "}") {
+        depth--;
+        if (depth === 0) {
+          candidates.push(cleaned.slice(objectStart, i + 1));
+          break;
+        }
+      }
+    }
+  }
+
+  for (const candidate of candidates) {
+    try {
+      const parsed = JSON.parse(candidate) as unknown;
+
+      if (Array.isArray(parsed) && parsed.length > 0) {
+        return parsed.map((item, index) => {
+          if (!item || typeof item !== "object") {
+            throw new Error(`AI変更 #${index + 1} が不正です`);
+          }
+
+          const value = item as Record<string, unknown>;
+
+          if (
+            typeof value.filePath !== "string" ||
+            typeof value.target !== "string" ||
+            typeof value.newCode !== "string" ||
+            typeof value.reason !== "string"
+          ) {
+            throw new Error(`AI変更 #${index + 1} の形式が不正です`);
+          }
+
+          return {
+            filePath: value.filePath,
+            target: value.target,
+            newCode: value.newCode,
+            reason: value.reason,
+          };
+        });
+      }
+
+      if (parsed && typeof parsed === "object") {
+        const value = parsed as Record<string, unknown>;
+
+        if (
+          typeof value.filePath === "string" &&
+          typeof value.target === "string" &&
+          typeof value.newCode === "string" &&
+          typeof value.reason === "string"
+        ) {
+          return [{
+            filePath: value.filePath,
+            target: value.target,
+            newCode: value.newCode,
+            reason: value.reason,
+          }];
+        }
+
+        if (Array.isArray(value.changes)) {
+          return extractJson(JSON.stringify(value.changes));
+        }
+      }
+    } catch {
       continue;
     }
-
-    if (ch === '"') {
-      inString = true;
-    } else if (ch === "[") {
-      depth++;
-    } else if (ch === "]") {
-      depth--;
-      if (depth === 0) {
-        end = i + 1;
-        break;
-      }
-    }
   }
 
-  if (end < 0) {
-    throw new Error("AI応答のJSON配列が不完全です");
-  }
-
-  let parsed: unknown;
-
-  try {
-    parsed = JSON.parse(cleaned.slice(start, end));
-  } catch (error) {
-    throw new Error(
-      `AI応答のJSON解析に失敗しました: ${
-        error instanceof Error ? error.message : String(error)
-      }`
-    );
-  }
-
-  if (!Array.isArray(parsed)) {
-    throw new Error("AI応答がJSON配列ではありません");
-  }
-
-  if (parsed.length === 0) {
-    throw new Error("AI変更内容が空です");
-  }
-
-  return parsed.map((item, index) => {
-    if (!item || typeof item !== "object") {
-      throw new Error(`AI変更 #${index + 1} が不正です`);
-    }
-
-    const value = item as Record<string, unknown>;
-
-    if (
-      typeof value.filePath !== "string" ||
-      typeof value.target !== "string" ||
-      typeof value.newCode !== "string" ||
-      typeof value.reason !== "string"
-    ) {
-      throw new Error(`AI変更 #${index + 1} の形式が不正です`);
-    }
-
-    return {
-      filePath: value.filePath,
-      target: value.target,
-      newCode: value.newCode,
-      reason: value.reason,
-    };
-  });
-}
-async function invokeAI(messages: unknown[]): Promise<string> {
-  const manager = aiProviderManager as {
-    invoke?: (messages: unknown[]) => Promise<string>;
-  };
-
-  if (typeof manager.invoke !== "function") {
-    throw new Error("AIProviderManager.invoke() が利用できません");
-  }
-
-  const jsonInstruction = {
-    role: "system",
-    content:
-      '必ず有効なJSON配列だけを返してください。説明文、Markdown、```は禁止です。必ず1件以上返してください。形式: [{"filePath":"対象ファイル","target":"識別子","newCode":"置換後コード","reason":"理由"}]'
-  };
-
-  return await manager.invoke([
-    jsonInstruction,
-    ...(messages as any[])
-  ]);
+  throw new Error("AI応答に有効なJSON変更内容がありません");
 }
 function findRelevantTests(targetPath: string): string[] {
   const directory = path.dirname(targetPath);
