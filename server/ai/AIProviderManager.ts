@@ -100,7 +100,7 @@ export class AIProviderManager {
         provider: 'local',
         apiKey: 'local',
         apiUrl: process.env.LOCAL_AI_URL || 'http://localhost:3000',
-        model: 'local-model',
+        model: 'qwen2.5-coder:7b',
         maxTokens: 2048,
         temperature: 0.7,
         enabled: true,
@@ -488,6 +488,7 @@ export class AIProviderManager {
  * 繧ｰ繝ｭ繝ｼ繝舌ΝAI繝励Ο繝舌う繝繝ｼ繝槭ロ繝ｼ繧ｸ繝｣繝ｼ繧､繝ｳ繧ｹ繧ｿ繝ｳ繧ｹ
  */
 export const aiProviderManager = new AIProviderManager();
+
 
 
 
