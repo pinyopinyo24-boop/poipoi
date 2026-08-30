@@ -150,7 +150,7 @@ function findRelevantTests(targetPath: string): string[] {
 
   return candidates.filter(file => {
     try {
-      require("fs").accessSync(file);
+      fs.accessSync(file);
       return true;
     } catch {
       return false;
@@ -173,7 +173,7 @@ function validateChanges(
       );
     }
 
-    const code = require("fs").readFileSync(
+    const code = fs.readFileSync(
       safePath(filePath),
       "utf8"
     );
@@ -391,4 +391,5 @@ main().catch((error: unknown) => {
   );
   process.exit(1);
 });
+
 
