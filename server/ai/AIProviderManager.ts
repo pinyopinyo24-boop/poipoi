@@ -99,7 +99,7 @@ export class AIProviderManager {
       {
         provider: 'local',
         apiKey: 'local',
-        apiUrl: process.env.LOCAL_AI_URL || 'http://localhost:3000',
+        apiUrl: process.env.LOCAL_AI_URL || 'http://localhost:11434',
         model: 'qwen2.5-coder:7b',
         maxTokens: 2048,
         temperature: 0.7,
