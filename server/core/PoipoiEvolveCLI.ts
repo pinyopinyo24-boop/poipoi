@@ -252,18 +252,16 @@ async function main() {
 
   const testCommand = tests.length
     ? [
-        "cmd.exe",
-        "/c",
-        `pnpm check && pnpm exec vitest run ${tests
-          .map(x => `"${path.relative(ROOT, x)}"`)
-          .join(" ")}`
+        "pnpm",
+        "exec",
+        "vitest",
+        "run",
+        ...tests.map(x => path.relative(ROOT, x).replace(/\\/g, "/"))
       ]
     : [
-        "cmd.exe",
-        "/c",
-        "pnpm check"
+        "pnpm",
+        "check"
       ];
-
   const messages: { role: string; content: string }[] = [
     {
       role: "system",
