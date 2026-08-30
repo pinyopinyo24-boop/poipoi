@@ -180,7 +180,7 @@ try {
           role: "assistant",
           content: data.message?.content || "",
         },
-        finish_reason: "stop" || "stop",
+        finish_reason: "stop",
       }],
       usage: {
         prompt_tokens: data.usage?.prompt_tokens || 0,
