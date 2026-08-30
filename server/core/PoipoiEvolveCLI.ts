@@ -85,21 +85,63 @@ function extractJson(text: string): AIChange[] {
     .trim();
 
   const start = cleaned.indexOf("[");
-  const end = cleaned.indexOf("]", start);
-
-  if (start < 0 || end < start) {
+  if (start < 0) {
     throw new Error("AI応答にJSON配列がありません");
+  }
+
+  let end = -1;
+  let depth = 0;
+  let inString = false;
+  let escaped = false;
+
+  for (let i = start; i < cleaned.length; i++) {
+    const ch = cleaned[i];
+
+    if (inString) {
+      if (escaped) {
+        escaped = false;
+      } else if (ch === "\\") {
+        escaped = true;
+      } else if (ch === '"') {
+        inString = false;
+      }
+      continue;
+    }
+
+    if (ch === '"') {
+      inString = true;
+    } else if (ch === "[") {
+      depth++;
+    } else if (ch === "]") {
+      depth--;
+      if (depth === 0) {
+        end = i + 1;
+        break;
+      }
+    }
+  }
+
+  if (end < 0) {
+    throw new Error("AI応答のJSON配列が不完全です");
   }
 
   let parsed: unknown;
 
   try {
-    parsed = JSON.parse(cleaned.slice(start, end + 1));
-  } catch {
-    throw new Error("AI応答のJSON解析に失敗しました");
+    parsed = JSON.parse(cleaned.slice(start, end));
+  } catch (error) {
+    throw new Error(
+      `AI応答のJSON解析に失敗しました: ${
+        error instanceof Error ? error.message : String(error)
+      }`
+    );
   }
 
-  if (!Array.isArray(parsed) || parsed.length === 0) {
+  if (!Array.isArray(parsed)) {
+    throw new Error("AI応答がJSON配列ではありません");
+  }
+
+  if (parsed.length === 0) {
     throw new Error("AI変更内容が空です");
   }
 
@@ -127,19 +169,6 @@ function extractJson(text: string): AIChange[] {
     };
   });
 }
-
-async function invokeAI(messages: unknown[]): Promise<string> {
-  const manager = aiProviderManager as {
-    invoke?: (messages: unknown[]) => Promise<string>;
-  };
-
-  if (typeof manager.invoke !== "function") {
-    throw new Error("AIProviderManager.invoke() が利用できません");
-  }
-
-  return await manager.invoke(messages);
-}
-
 function findRelevantTests(targetPath: string): string[] {
   const directory = path.dirname(targetPath);
   const base = path.basename(
