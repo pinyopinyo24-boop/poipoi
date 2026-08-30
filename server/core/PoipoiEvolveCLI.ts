@@ -241,7 +241,7 @@ async function main() {
 
   console.log(`対象: ${targetPath}`);
 
-  const currentCode = await fs.readFile(
+  const currentCode = fs.readFileSync(
     absoluteTarget,
     "utf8"
   );
