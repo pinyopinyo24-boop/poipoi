@@ -45,6 +45,18 @@ export class CodeEvolutionEngine {
           throw new Error("変更対象コードが見つかりません: " + change.filePath);
         }
 
+        if (
+          change.newCode.includes("export const export const") ||
+          change.newCode.includes("export default export default") ||
+          change.newCode.includes("import import ") ||
+          change.newCode.includes("class class ") ||
+          change.newCode.includes("function function ")
+        ) {
+          throw new Error(
+            "AI生成コードに不正な重複構文があります: " + change.filePath
+          );
+        }
+
         if (count > 1) {
           throw new Error("変更対象コードが複数あります: " + change.filePath);
         }
