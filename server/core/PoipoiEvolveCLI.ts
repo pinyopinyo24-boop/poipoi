@@ -208,6 +208,29 @@ function validateChanges(
       );
     }
 
+    if (newCode === oldCode) {
+      throw new Error(`AI生成コードに変更がありません: ${filePath}`);
+    }
+
+    const forbiddenGeneratedPatterns = [
+      "export const export const",
+      "export default export default",
+      "import import ",
+      "class class ",
+      "function function ",
+      "interface interface ",
+      "type type ",
+      "const const ",
+      "let let ",
+      "var var ",
+    ];
+
+    if (forbiddenGeneratedPatterns.some(pattern => newCode.includes(pattern))) {
+      throw new Error(
+        `AI生成コードに不正な重複構文があります: ${filePath}`
+      );
+    }
+
     if (!newCode) {
       throw new Error(`新しいコードが空です: ${filePath}`);
     }
