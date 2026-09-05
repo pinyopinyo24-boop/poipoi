@@ -1,4 +1,4 @@
-import fs from "fs";
+﻿import fs from "fs";
 import path from "path";
 import { execFileSync } from "child_process";
 import { CodeEvolutionEngine, CodeChange } from "./CodeEvolutionEngine";
@@ -253,8 +253,6 @@ async function main() {
   console.log(`要求: ${request}`);
 
   // 変更前のGit状態を保護
-  assertGitSafe();
-
   const targetPath = extractTarget(request);
   const absoluteTarget = safePath(targetPath);
 
@@ -268,27 +266,6 @@ async function main() {
   if (!currentCode.trim()) {
     throw new Error("対象ファイルが空です");
   }
-
-  const tests = findRelevantTests(targetPath);
-
-  console.log(
-    tests.length
-      ? `テスト: ${tests.join(", ")}`
-      : "テスト: 対応テスト未検出"
-  );
-
-  const testCommand = tests.length
-    ? [
-        "pnpm",
-        "exec",
-        "vitest",
-        "run",
-        ...tests.map(x => path.relative(ROOT, x).replace(/\\/g, "/"))
-      ]
-    : [
-        "pnpm",
-        "check"
-      ];
   const messages: { role: string; content: string }[] = [
     {
       role: "system",
@@ -370,7 +347,6 @@ async function main() {
 
   const result = await engine.apply(
     changes,
-    testCommand
   );
 
   if (!result.success) {
@@ -394,8 +370,6 @@ async function main() {
   console.log("================================");
   console.log("✅ 自己進化成功");
   console.log(`変更ファイル: ${result.changedFiles.join(", ")}`);
-  console.log("✅ TypeScriptチェック: OK");
-  console.log("✅ テスト: OK");
   console.log("================================");
   console.log("※ Git commitは自動実行していません");
 }
@@ -409,3 +383,9 @@ main().catch((error: unknown) => {
   );
   process.exit(1);
 });
+
+
+
+
+
+

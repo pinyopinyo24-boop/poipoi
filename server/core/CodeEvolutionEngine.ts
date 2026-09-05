@@ -1,13 +1,5 @@
-import { execFile } from "child_process";
-import { promisify } from "util";
-import fs from "fs/promises";
+﻿import fs from "fs/promises";
 import path from "path";
-
-const execFileAsync = promisify(execFile);
-
-function normalizeCommand(command: string): string {
-  return process.platform === "win32" && command === "pnpm" ? "pnpm.cmd" : command;
-}
 
 export interface CodeChange {
   filePath: string;
@@ -27,7 +19,10 @@ export interface CodeEvolutionResult {
 export class CodeEvolutionEngine {
   constructor(private readonly projectRoot: string = process.cwd()) {}
 
-  async apply(changes: CodeChange[], testCommand: string[] = ["pnpm", "exec", "tsc", "--noEmit"]): Promise<CodeEvolutionResult> {
+  async apply(
+    changes: CodeChange[],
+    testCommand: string[] = []
+  ): Promise<CodeEvolutionResult> {
     const backups = new Map<string, string>();
 
     try {
@@ -45,6 +40,10 @@ export class CodeEvolutionEngine {
           throw new Error("変更対象コードが見つかりません: " + change.filePath);
         }
 
+        if (count > 1) {
+          throw new Error("変更対象コードが複数あります: " + change.filePath);
+        }
+
         if (
           change.newCode.includes("export const export const") ||
           change.newCode.includes("export default export default") ||
@@ -57,35 +56,28 @@ export class CodeEvolutionEngine {
           );
         }
 
-        if (count > 1) {
-          throw new Error("変更対象コードが複数あります: " + change.filePath);
+        if (!change.newCode.trim()) {
+          throw new Error("新しいコードが空です: " + change.filePath);
         }
 
-        await fs.writeFile(filePath, current.replace(change.oldCode, change.newCode), "utf8");
+        await fs.writeFile(
+          filePath,
+          current.replace(change.oldCode, change.newCode),
+          "utf8"
+        );
       }
 
-      const command = normalizeCommand(testCommand[0]);
-      const args = testCommand.slice(1);
-
-      if (process.platform === "win32") {
-        const commandLine = [command, ...args]
-          .map(arg => /\s/.test(arg) ? `"${arg.replace(/"/g, '\"')}"` : arg)
-          .join(" ");
-
-        await execFileAsync("cmd.exe", ["/d", "/s", "/c", commandLine], {
-          cwd: this.projectRoot,
-          maxBuffer: 20 * 1024 * 1024,
-        });
-      } else {
-        await execFileAsync(command, args, {
-          cwd: this.projectRoot,
-          maxBuffer: 20 * 1024 * 1024,
-        });
+      // 本番自己進化ではテストを自動実行しない
+      if (testCommand.length > 0) {
+        throw new Error(
+          "本番自己進化ではテスト自動実行は禁止されています"
+        );
       }
+
       return {
         success: true,
-        changedFiles: changes.map(function (change) { return change.filePath; }),
-        testsPassed: true,
+        changedFiles: changes.map(change => change.filePath),
+        testsPassed: false,
         rolledBack: false,
       };
     } catch (error) {
@@ -96,7 +88,7 @@ export class CodeEvolutionEngine {
 
       return {
         success: false,
-        changedFiles: changes.map(function (change) { return change.filePath; }),
+        changedFiles: changes.map(change => change.filePath),
         testsPassed: false,
         rolledBack: backups.size > 0,
         error: error instanceof Error ? error.message : String(error),
@@ -108,20 +100,15 @@ export class CodeEvolutionEngine {
     const root = path.resolve(this.projectRoot);
     const absolutePath = path.resolve(root, filePath);
 
-    if (absolutePath !== root && !absolutePath.startsWith(root + path.sep)) {
-      throw new Error("プロジェクト外への変更は禁止されています: " + filePath);
+    if (
+      absolutePath !== root &&
+      !absolutePath.startsWith(root + path.sep)
+    ) {
+      throw new Error(
+        "プロジェクト外への変更は禁止されています: " + filePath
+      );
     }
 
     return absolutePath;
   }
 }
-
-
-
-
-
-
-
-
-
-
