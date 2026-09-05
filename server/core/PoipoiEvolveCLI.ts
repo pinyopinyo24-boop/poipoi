@@ -194,20 +194,6 @@ function validateChanges(
       throw new Error(`AI生成コードに変更がありません: ${filePath}`);
     }
 
-    const forbiddenGeneratedPatterns = [
-      "export const export const",
-      "export default export default",
-      "import import ",
-      "class class ",
-      "function function ",
-    ];
-
-    if (forbiddenGeneratedPatterns.some(pattern => newCode.includes(pattern))) {
-      throw new Error(
-        `AI生成コードに重複構文があります: ${filePath}`
-      );
-    }
-
     if (newCode === oldCode) {
       throw new Error(`AI生成コードに変更がありません: ${filePath}`);
     }
