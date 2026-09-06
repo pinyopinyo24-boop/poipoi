@@ -13,7 +13,7 @@ import { ChatService } from '../services/ChatService';
 import { MessageProcessingService } from '../services/MessageProcessingService';
 import { ContextAwarenessService } from '../services/ContextAwarenessService';
 import { ChatRepository } from '../repositories/ChatRepository';
-import { invokeLLM } from '../_core/llm';
+import { aiProviderManager } from '../ai/AIProviderManager';
 
 export interface ChatMessage {
   id: string;
