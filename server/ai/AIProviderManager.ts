@@ -104,7 +104,7 @@ export class AIProviderManager {
         maxTokens: 2048,
         temperature: 0.7,
         enabled: true,
-        priority: 4,
+        priority: 1,
         timeout: 60000,
         retryCount: 1,
       },
