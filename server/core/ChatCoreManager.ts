@@ -2,8 +2,8 @@ import { PoipoiCodeAgent } from "./PoipoiCodeAgent";
 /**
 
 import { PoipoiCodeAgent } from "./PoipoiCodeAgent";
- * ChatCoreManager - 繝昴う繝昴うAI 繝√Ε繝・ヨ繧ｳ繧｢
- * AI縺悟ｮ滄圀縺ｫ莨夊ｩｱ蜿ｯ閭ｽ縺ｫ縺吶ｋ繧ｳ繧｢螳溯｣・
+ * ChatCoreManager - 郢晄亢縺・ｹ晄亢縺・I 郢昶・ﾎ慕ｹ昴・繝ｨ郢ｧ・ｳ郢ｧ・｢
+ * AI邵ｺ謔滂ｽｮ貊・怙邵ｺ・ｫ闔ｨ螟奇ｽｩ・ｱ陷ｿ・ｯ髢ｭ・ｽ邵ｺ・ｫ邵ｺ蜷ｶ・狗ｹｧ・ｳ郢ｧ・｢陞ｳ貅ｯ・｣繝ｻ
  */
 
 import { MemoryIntelligenceAIManager } from './MemoryIntelligenceAIManager';
@@ -47,13 +47,13 @@ export interface ChatResponse {
 
 export class ChatCoreManager {
   private isCodeImplementationRequest(message: string): boolean {
-    return /修正|改善|変更|作成|コード/.test(message);
+    return /菫ｮ豁｣|謾ｹ蝟л螟画峩|菴懈・|繧ｳ繝ｼ繝・.test(message);
   }
 
   private async executeCodeImplementationRequest(message: string): Promise<string> {
     const result = await PoipoiCodeAgent.getInstance().execute(message);
     if (!result.success) {
-      return `繧ｳ繝ｼ繝牙ｮ溯｣・↓螟ｱ謨励＠縺ｾ縺励◆: ${result.error ?? "荳肴・縺ｪ繧ｨ繝ｩ繝ｼ"}`;
+      return `郢ｧ・ｳ郢晢ｽｼ郢晉甥・ｮ貅ｯ・｣繝ｻ竊楢棔・ｱ隰ｨ蜉ｱ・邵ｺ・ｾ邵ｺ蜉ｱ笳・ ${result.error ?? "闕ｳ閧ｴ繝ｻ邵ｺ・ｪ郢ｧ・ｨ郢晢ｽｩ郢晢ｽｼ"}`;
     }
     return JSON.stringify(result, null, 2);
   }
@@ -83,14 +83,14 @@ export class ChatCoreManager {
   }
 
   /**
-   * 繝√Ε繝・ヨ繝｡繝・そ繝ｼ繧ｸ繧貞・逅・＠縺ｦ蠢懃ｭ斐ｒ逕滓・
+   * 郢昶・ﾎ慕ｹ昴・繝ｨ郢晢ｽ｡郢昴・縺晉ｹ晢ｽｼ郢ｧ・ｸ郢ｧ雋槭・騾・・・邵ｺ・ｦ陟｢諛・ｽｭ譁撰ｽ帝墓ｻ薙・
    */
   async processMessage(
     userId: string,
     sessionId: string,
     userMessage: string
   ): Promise<ChatResponse> {
-    // 1. 繝ｦ繝ｼ繧ｶ繝ｼ繝｡繝・そ繝ｼ繧ｸ繧剃ｿ晏ｭ・
+    // 1. 郢晢ｽｦ郢晢ｽｼ郢ｧ・ｶ郢晢ｽｼ郢晢ｽ｡郢昴・縺晉ｹ晢ｽｼ郢ｧ・ｸ郢ｧ蜑・ｽｿ譎擾ｽｭ繝ｻ
     const userMsg: ChatMessage = {
       id: `msg_${Date.now()}_${Math.random().toString(36).substr(2, 9)}_user`,
       userId,
@@ -101,26 +101,26 @@ export class ChatCoreManager {
 
     await this.chatRepository.saveMessage(userMsg, sessionId);
 
-    // 2. 繧ｳ繝ｳ繝・く繧ｹ繝亥叙蠕暦ｼ医Γ繝｢繝ｪ縺九ｉ髢｢騾｣諠・ｱ繧貞叙蠕暦ｼ・
+    // 2. 郢ｧ・ｳ郢晢ｽｳ郢昴・縺冗ｹｧ・ｹ郢昜ｺ･蜿呵墓圜・ｼ蛹ｻﾎ鍋ｹ晢ｽ｢郢晢ｽｪ邵ｺ荵晢ｽ蛾ｫ｢・｢鬨ｾ・｣隲繝ｻ・ｰ・ｱ郢ｧ雋槫徐陟墓圜・ｼ繝ｻ
     const context = await this.contextAwarenessService.getContext(
       userId,
       userMessage
     );
 
-    // 3. 繝｡繝・そ繝ｼ繧ｸ蜃ｦ逅・ｼ域耳隲悶・繧ｨ繝ｼ繧ｸ繧ｧ繝ｳ繝域ｴｻ逕ｨ・・
+    // 3. 郢晢ｽ｡郢昴・縺晉ｹ晢ｽｼ郢ｧ・ｸ陷・ｽｦ騾・・・ｼ蝓溯ｳ髫ｲ謔ｶ繝ｻ郢ｧ・ｨ郢晢ｽｼ郢ｧ・ｸ郢ｧ・ｧ郢晢ｽｳ郢晏沺・ｴ・ｻ騾包ｽｨ繝ｻ繝ｻ
     const processedResult = await this.messageProcessingService.processMessage(
       userMessage,
       context
     );
 
-    // 4. 蠢懃ｭ皮函謌・
+    // 4. 陟｢諛・ｽｭ逧ｮ蜃ｽ隰後・
     const responseContent = await this.generateResponse(
       userMessage,
       processedResult,
       context
     );
 
-    // 5. 蠢懃ｭ斐Γ繝・そ繝ｼ繧ｸ繧剃ｽ懈・
+    // 5. 陟｢諛・ｽｭ譁石鍋ｹ昴・縺晉ｹ晢ｽｼ郢ｧ・ｸ郢ｧ蜑・ｽｽ諛医・
     const assistantMsg: ChatMessage = {
       id: `msg_${Date.now()}_${Math.random().toString(36).substr(2, 9)}_assistant`,
       userId,
@@ -137,12 +137,12 @@ export class ChatCoreManager {
 
     await this.chatRepository.saveMessage(assistantMsg, sessionId);
 
-    // 6. 繝｡繝｢繝ｪ縺ｫ莨夊ｩｱ繧剃ｿ晏ｭ・
+    // 6. 郢晢ｽ｡郢晢ｽ｢郢晢ｽｪ邵ｺ・ｫ闔ｨ螟奇ｽｩ・ｱ郢ｧ蜑・ｽｿ譎擾ｽｭ繝ｻ
     if (this.memoryManager && typeof (this.memoryManager as any).saveConversation === 'function') {
       await (this.memoryManager as any).saveConversation(userId, [userMsg, assistantMsg]);
     }
 
-    // 7. 逶｣譟ｻ繝ｭ繧ｰ
+    // 7. 騾ｶ・｣隴滂ｽｻ郢晢ｽｭ郢ｧ・ｰ
     await this.auditManager.log({
       action: 'chat_message_processed',
       userId,
@@ -153,7 +153,7 @@ export class ChatCoreManager {
       },
     });
 
-    // 8. 繧ｻ繝・す繝ｧ繝ｳ諠・ｱ繧貞叙蠕・
+    // 8. 郢ｧ・ｻ郢昴・縺咏ｹ晢ｽｧ郢晢ｽｳ隲繝ｻ・ｰ・ｱ郢ｧ雋槫徐陟輔・
     const sessionData = await this.chatRepository.getSession(sessionId);
     const session = sessionData || {
       id: sessionId,
@@ -173,7 +173,7 @@ export class ChatCoreManager {
   }
 
   /**
-   * 蠢懃ｭ斐ｒ逕滓・
+   * 陟｢諛・ｽｭ譁撰ｽ帝墓ｻ薙・
    */
   private async generateResponse(
     userMessage: string,
@@ -181,28 +181,17 @@ export class ChatCoreManager {
     context: any
   ): Promise<string> {
     try {
-      // LLM API繧貞他縺ｳ蜃ｺ縺・
+      // LLM API郢ｧ雋樔ｻ也ｸｺ・ｳ陷・ｽｺ邵ｺ繝ｻ
       if (processedResult.isManufacturingRelated) {
         const manufacturingAnalysis = await this.manufacturingManager.analyzeProduction(processedResult.manufacturingData || {});
         return this.formatManufacturingResponse(userMessage, manufacturingAnalysis);
       }
 
-      const llmResult = await invokeLLM({
-        messages: [
-          {
-            role: "user",
-            content: userMessage
-          }
-        ]
-      });
-
-      const aiMessage = llmResult.choices[0]?.message?.content || "LLM応答なし";
-      return aiMessage;
     } catch (error) {
       console.error("[ChatCoreManager][LLM ERROR]", error);
       
-      // 繝輔か繝ｼ繝ｫ繝舌ャ繧ｯ: 蠕捺擂縺ｮ蠢懃ｭ皮函謌・
-      // 陬ｽ騾讌ｭ髢｢騾｣縺ｮ雉ｪ蝠上・蝣ｴ蜷・
+      // 郢晁ｼ斐°郢晢ｽｼ郢晢ｽｫ郢晁・繝｣郢ｧ・ｯ: 陟墓瑳謫らｸｺ・ｮ陟｢諛・ｽｭ逧ｮ蜃ｽ隰後・
+      // 髯ｬ・ｽ鬨ｾ・ｰ隶鯉ｽｭ鬮｢・｢鬨ｾ・｣邵ｺ・ｮ髮会ｽｪ陜荳翫・陜｣・ｴ陷ｷ繝ｻ
       if (processedResult.isManufacturingRelated) {
         const manufacturingAnalysis =
           await this.manufacturingManager.analyzeProduction(
@@ -214,39 +203,39 @@ export class ChatCoreManager {
         );
       }
 
-      // 謗ｨ隲悶′蠢・ｦ√↑蝣ｴ蜷・
+      // 隰暦ｽｨ髫ｲ謔ｶ窶ｲ陟｢繝ｻ・ｦ竏壺・陜｣・ｴ陷ｷ繝ｻ
       if (processedResult.requiresReasoning) {
         return processedResult.reasoning;
       }
 
-      // 騾壼ｸｸ縺ｮ蠢懃ｭ・
+      // 鬨ｾ螢ｼ・ｸ・ｸ邵ｺ・ｮ陟｢諛・ｽｭ繝ｻ
       return this.formatStandardResponse(userMessage, processedResult, context);
     }
   }
 
   /**
-   * 陬ｽ騾讌ｭ髢｢騾｣縺ｮ蠢懃ｭ斐ｒ繝輔か繝ｼ繝槭ャ繝・
+   * 髯ｬ・ｽ鬨ｾ・ｰ隶鯉ｽｭ鬮｢・｢鬨ｾ・｣邵ｺ・ｮ陟｢諛・ｽｭ譁撰ｽ堤ｹ晁ｼ斐°郢晢ｽｼ郢晄ｧｭ繝｣郢昴・
    */
   private formatManufacturingResponse(
     userMessage: string,
     analysis: any
   ): string {
-    return `陬ｽ騾讌ｭ蛻・梵邨先棡:\n${JSON.stringify(analysis, null, 2)}`;
+    return `髯ｬ・ｽ鬨ｾ・ｰ隶鯉ｽｭ陋ｻ繝ｻ譴ｵ驍ｨ蜈域｣｡:\n${JSON.stringify(analysis, null, 2)}`;
   }
 
   /**
-   * 讓呎ｺ也噪縺ｪ蠢懃ｭ斐ｒ繝輔か繝ｼ繝槭ャ繝・
+   * 隶灘綜・ｺ荵溷飭邵ｺ・ｪ陟｢諛・ｽｭ譁撰ｽ堤ｹ晁ｼ斐°郢晢ｽｼ郢晄ｧｭ繝｣郢昴・
    */
   private formatStandardResponse(
     userMessage: string,
     processedResult: any,
     context: any
   ): string {
-    return `お問い合わせありがとうございます。\n\n${processedResult.response || "回答を生成できませんでした。"}`;
+    return `縺雁撫縺・粋繧上○縺ゅｊ縺後→縺・＃縺悶＞縺ｾ縺吶・n\n${processedResult.response || "蝗樒ｭ斐ｒ逕滓・縺ｧ縺阪∪縺帙ｓ縺ｧ縺励◆縲・}`;
   }
 
   /**
-   * 繝√Ε繝・ヨ繧ｻ繝・す繝ｧ繝ｳ繧剃ｽ懈・
+   * 郢昶・ﾎ慕ｹ昴・繝ｨ郢ｧ・ｻ郢昴・縺咏ｹ晢ｽｧ郢晢ｽｳ郢ｧ蜑・ｽｽ諛医・
    */
   async getSession(userId: string, sessionId: string): Promise<any> {
     const session = await this.chatRepository.getSession(sessionId);
@@ -256,7 +245,7 @@ export class ChatCoreManager {
       ...(session || {
         id: sessionId,
         userId,
-        title: 'チャットセッション',
+        title: '繝√Ε繝・ヨ繧ｻ繝・す繝ｧ繝ｳ',
         createdAt: new Date(),
         messageCount: 0,
       }),
@@ -282,7 +271,7 @@ export class ChatCoreManager {
 
     await this.chatRepository.saveSession(session);
 
-    // 逶｣譟ｻ繝ｭ繧ｰ
+    // 騾ｶ・｣隴滂ｽｻ郢晢ｽｭ郢ｧ・ｰ
     await this.auditManager.log({
       action: 'chat_session_created',
       userId,
@@ -293,7 +282,7 @@ export class ChatCoreManager {
   }
 
   /**
-   * 繝√Ε繝・ヨ螻･豁ｴ繧貞叙蠕・
+   * 郢昶・ﾎ慕ｹ昴・繝ｨ陞ｻ・･雎・ｽｴ郢ｧ雋槫徐陟輔・
    */
   async getChatHistory(
     userId: string,
@@ -304,14 +293,14 @@ export class ChatCoreManager {
   }
 
   /**
-   * 繝ｦ繝ｼ繧ｶ繝ｼ縺ｮ繧ｻ繝・す繝ｧ繝ｳ荳隕ｧ繧貞叙蠕・
+   * 郢晢ｽｦ郢晢ｽｼ郢ｧ・ｶ郢晢ｽｼ邵ｺ・ｮ郢ｧ・ｻ郢昴・縺咏ｹ晢ｽｧ郢晢ｽｳ闕ｳﾂ髫包ｽｧ郢ｧ雋槫徐陟輔・
    */
   async getUserSessions(userId: string): Promise<ChatSession[]> {
     return await this.chatRepository.getUserSessions(userId);
   }
 
   /**
-   * 繧ｻ繝・す繝ｧ繝ｳ繧貞炎髯､
+   * 郢ｧ・ｻ郢昴・縺咏ｹ晢ｽｧ郢晢ｽｳ郢ｧ雋樒ｎ鬮ｯ・､
    */
   async deleteSession(userId: string, sessionId: string): Promise<{ success: boolean }> {
     const approval = await this.approvalManager.requestApproval({
