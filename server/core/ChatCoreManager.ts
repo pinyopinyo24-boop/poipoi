@@ -188,8 +188,8 @@ export class ChatCoreManager {
       }
 
       const aiMessage = await aiProviderManager.invoke([
-        {
-          role: "user",
+        { role: "system", content: "あなたはポイポイのローカルAIです。日本語で回答してください。" },
+        { role: "user", content: userMessage }
           content: userMessage
         }
       ]);
