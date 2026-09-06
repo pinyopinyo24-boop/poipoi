@@ -2,8 +2,8 @@ import { PoipoiCodeAgent } from "./PoipoiCodeAgent";
 /**
 
 import { PoipoiCodeAgent } from "./PoipoiCodeAgent";
- * ChatCoreManager - 郢晄亢縺・ｹ晄亢縺・I 郢昶・ﾎ慕ｹ昴・繝ｨ郢ｧ・ｳ郢ｧ・｢
- * AI邵ｺ謔滂ｽｮ貊・怙邵ｺ・ｫ闔ｨ螟奇ｽｩ・ｱ陷ｿ・ｯ髢ｭ・ｽ邵ｺ・ｫ邵ｺ蜷ｶ・狗ｹｧ・ｳ郢ｧ・｢陞ｳ貅ｯ・｣繝ｻ
+ * ChatCoreManager - 鬩幢ｽ｢隴弱・・ｺ・｢驍ｵ・ｺ郢晢ｽｻ繝ｻ・ｹ隴弱・・ｺ・｢驍ｵ・ｺ郢晢ｽｻI 鬩幢ｽ｢隴擾ｽｶ郢晢ｽｻ繝ｻ蜿悶・繝ｻ・ｹ隴擾ｽｴ郢晢ｽｻ驛｢譎｢・ｽ・ｨ鬩幢ｽ｢繝ｻ・ｧ郢晢ｽｻ繝ｻ・ｳ鬩幢ｽ｢繝ｻ・ｧ郢晢ｽｻ繝ｻ・｢
+ * AI鬩搾ｽｵ繝ｻ・ｺ髫ｰ逍ｲ・ｻ繧托ｽｽ・ｽ繝ｻ・ｮ髮狗ｿｫ繝ｻ隲､蜥弱＠繝ｻ・ｺ郢晢ｽｻ繝ｻ・ｫ鬮｣雋ｻ・ｽ・ｨ髯樊ｺｷ・･繝ｻ・ｽ・ｽ繝ｻ・ｩ郢晢ｽｻ繝ｻ・ｱ鬮ｯ・ｷ繝ｻ・ｿ郢晢ｽｻ繝ｻ・ｯ鬯ｮ・｢繝ｻ・ｭ郢晢ｽｻ繝ｻ・ｽ鬩搾ｽｵ繝ｻ・ｺ郢晢ｽｻ繝ｻ・ｫ鬩搾ｽｵ繝ｻ・ｺ髯ｷ・ｷ繝ｻ・ｶ郢晢ｽｻ霑｢證ｦ・ｽ・ｹ繝ｻ・ｧ郢晢ｽｻ繝ｻ・ｳ鬩幢ｽ｢繝ｻ・ｧ郢晢ｽｻ繝ｻ・｢鬮ｯ讖ｸ・ｽ・ｳ髮九・・ｽ・ｯ郢晢ｽｻ繝ｻ・｣驛｢譎｢・ｽ・ｻ
  */
 
 import { MemoryIntelligenceAIManager } from './MemoryIntelligenceAIManager';
@@ -47,13 +47,13 @@ export interface ChatResponse {
 
 export class ChatCoreManager {
   private isCodeImplementationRequest(message: string): boolean {
-    return /菫ｮ豁｣|謾ｹ蝟л螟画峩|菴懈・|繧ｳ繝ｼ繝・/.test(message);
+    return /髣厄ｽｫ繝ｻ・ｮ髮弱・・ｽ・｣|髫ｰ・ｾ繝ｻ・ｹ髯懈ｸ呻ｽｻ髯樊ｺｽ蛻､陝ｲ・ｩ|髣厄ｽｴ隲帛現繝ｻ|驛｢・ｧ繝ｻ・ｳ驛｢譎｢・ｽ・ｼ驛｢譏ｴ繝ｻ/.test(message);
   }
 
   private async executeCodeImplementationRequest(message: string): Promise<string> {
     const result = await PoipoiCodeAgent.getInstance().execute(message);
     if (!result.success) {
-      return `郢ｧ・ｳ郢晢ｽｼ郢晉甥・ｮ貅ｯ・｣繝ｻ竊楢棔・ｱ隰ｨ蜉ｱ・邵ｺ・ｾ邵ｺ蜉ｱ笳・ ${result.error ?? "闕ｳ閧ｴ繝ｻ邵ｺ・ｪ郢ｧ・ｨ郢晢ｽｩ郢晢ｽｼ"}`;
+      return `鬩幢ｽ｢繝ｻ・ｧ郢晢ｽｻ繝ｻ・ｳ鬩幢ｽ｢隴趣ｽ｢繝ｻ・ｽ繝ｻ・ｼ鬩幢ｽ｢隴手・讚ｨ郢晢ｽｻ繝ｻ・ｮ髮九・・ｽ・ｯ郢晢ｽｻ繝ｻ・｣驛｢譎｢・ｽ・ｻ驕ｶ鬆托ｽ･・｢隴ｽ譁舌・繝ｻ・ｱ鬮ｫ・ｰ繝ｻ・ｨ髯ｷ莨夲ｽｽ・ｱ郢晢ｽｻ繝ｻ・ｰ鬩搾ｽｵ繝ｻ・ｺ郢晢ｽｻ繝ｻ・ｾ鬩搾ｽｵ繝ｻ・ｺ髯ｷ莨夲ｽｽ・ｱ髫ｨ・ｳ郢晢ｽｻ ${result.error ?? "鬮｣蛹・ｽｽ・ｳ鬮｢・ｧ繝ｻ・ｴ驛｢譎｢・ｽ・ｻ鬩搾ｽｵ繝ｻ・ｺ郢晢ｽｻ繝ｻ・ｪ鬩幢ｽ｢繝ｻ・ｧ郢晢ｽｻ繝ｻ・ｨ鬩幢ｽ｢隴趣ｽ｢繝ｻ・ｽ繝ｻ・ｩ鬩幢ｽ｢隴趣ｽ｢繝ｻ・ｽ繝ｻ・ｼ"}`;
     }
     return JSON.stringify(result, null, 2);
   }
@@ -83,14 +83,14 @@ export class ChatCoreManager {
   }
 
   /**
-   * 郢昶・ﾎ慕ｹ昴・繝ｨ郢晢ｽ｡郢昴・縺晉ｹ晢ｽｼ郢ｧ・ｸ郢ｧ雋槭・騾・・・邵ｺ・ｦ陟｢諛・ｽｭ譁撰ｽ帝墓ｻ薙・
+   * 鬩幢ｽ｢隴擾ｽｶ郢晢ｽｻ繝ｻ蜿悶・繝ｻ・ｹ隴擾ｽｴ郢晢ｽｻ驛｢譎｢・ｽ・ｨ鬩幢ｽ｢隴趣ｽ｢繝ｻ・ｽ繝ｻ・｡鬩幢ｽ｢隴擾ｽｴ郢晢ｽｻ驍ｵ・ｺ隴惹ｼ夲ｽｽ・ｹ隴趣ｽ｢繝ｻ・ｽ繝ｻ・ｼ鬩幢ｽ｢繝ｻ・ｧ郢晢ｽｻ繝ｻ・ｸ鬩幢ｽ｢繝ｻ・ｧ鬮ｮ蛹ｺ・ｧ・ｭ郢晢ｽｻ鬯ｨ・ｾ郢晢ｽｻ郢晢ｽｻ郢晢ｽｻ繝ｻ・ｰ鬩搾ｽｵ繝ｻ・ｺ郢晢ｽｻ繝ｻ・ｦ鬮ｯ貊ゑｽｽ・｢髫ｲ蟶吶・繝ｻ・ｽ繝ｻ・ｭ髫ｴ竏ｵ閻ｸ繝ｻ・ｽ陝ｶ謨鳴陟・屮・ｽ・ｻ髦ｮ蜷ｶ繝ｻ
    */
   async processMessage(
     userId: string,
     sessionId: string,
     userMessage: string
   ): Promise<ChatResponse> {
-    // 1. 郢晢ｽｦ郢晢ｽｼ郢ｧ・ｶ郢晢ｽｼ郢晢ｽ｡郢昴・縺晉ｹ晢ｽｼ郢ｧ・ｸ郢ｧ蜑・ｽｿ譎擾ｽｭ繝ｻ
+    // 1. 鬩幢ｽ｢隴趣ｽ｢繝ｻ・ｽ繝ｻ・ｦ鬩幢ｽ｢隴趣ｽ｢繝ｻ・ｽ繝ｻ・ｼ鬩幢ｽ｢繝ｻ・ｧ郢晢ｽｻ繝ｻ・ｶ鬩幢ｽ｢隴趣ｽ｢繝ｻ・ｽ繝ｻ・ｼ鬩幢ｽ｢隴趣ｽ｢繝ｻ・ｽ繝ｻ・｡鬩幢ｽ｢隴擾ｽｴ郢晢ｽｻ驍ｵ・ｺ隴惹ｼ夲ｽｽ・ｹ隴趣ｽ｢繝ｻ・ｽ繝ｻ・ｼ鬩幢ｽ｢繝ｻ・ｧ郢晢ｽｻ繝ｻ・ｸ鬩幢ｽ｢繝ｻ・ｧ髯ｷ莉｣繝ｻ繝ｻ・ｽ繝ｻ・ｿ髫ｴ蜿門ｾ励・・ｽ繝ｻ・ｭ驛｢譎｢・ｽ・ｻ
     const userMsg: ChatMessage = {
       id: `msg_${Date.now()}_${Math.random().toString(36).substr(2, 9)}_user`,
       userId,
@@ -101,26 +101,26 @@ export class ChatCoreManager {
 
     await this.chatRepository.saveMessage(userMsg, sessionId);
 
-    // 2. 郢ｧ・ｳ郢晢ｽｳ郢昴・縺冗ｹｧ・ｹ郢昜ｺ･蜿呵墓圜・ｼ蛹ｻﾎ鍋ｹ晢ｽ｢郢晢ｽｪ邵ｺ荵晢ｽ蛾ｫ｢・｢鬨ｾ・｣隲繝ｻ・ｰ・ｱ郢ｧ雋槫徐陟墓圜・ｼ繝ｻ
+    // 2. 鬩幢ｽ｢繝ｻ・ｧ郢晢ｽｻ繝ｻ・ｳ鬩幢ｽ｢隴趣ｽ｢繝ｻ・ｽ繝ｻ・ｳ鬩幢ｽ｢隴擾ｽｴ郢晢ｽｻ驍ｵ・ｺ陷證ｦ・ｽ・ｹ繝ｻ・ｧ郢晢ｽｻ繝ｻ・ｹ鬩幢ｽ｢隴乗・・ｽ・ｺ繝ｻ・･髯ｷ・ｿ陷ｻ・ｵ繝ｻ・ｰ陟・§諠ｧ郢晢ｽｻ繝ｻ・ｼ髯具ｽｹ繝ｻ・ｻ繝ｻ譛ｱ雎ｪ繝ｻ・ｹ隴趣ｽ｢繝ｻ・ｽ繝ｻ・｢鬩幢ｽ｢隴趣ｽ｢繝ｻ・ｽ繝ｻ・ｪ鬩搾ｽｵ繝ｻ・ｺ髣包ｽｵ隴趣ｽ｢繝ｻ・ｽ髯具ｽｾ繝ｻ・ｫ繝ｻ・｢郢晢ｽｻ繝ｻ・｢鬯ｯ・ｨ繝ｻ・ｾ郢晢ｽｻ繝ｻ・｣鬮ｫ・ｲ繝ｻ・ｰ驛｢譎｢・ｽ・ｻ郢晢ｽｻ繝ｻ・ｰ郢晢ｽｻ繝ｻ・ｱ鬩幢ｽ｢繝ｻ・ｧ鬮ｮ蛹ｺ・ｧ・ｫ陟募ｮ｣霎ｧ陟・§諠ｧ郢晢ｽｻ繝ｻ・ｼ驛｢譎｢・ｽ・ｻ
     const context = await this.contextAwarenessService.getContext(
       userId,
       userMessage
     );
 
-    // 3. 郢晢ｽ｡郢昴・縺晉ｹ晢ｽｼ郢ｧ・ｸ陷・ｽｦ騾・・・ｼ蝓溯ｳ髫ｲ謔ｶ繝ｻ郢ｧ・ｨ郢晢ｽｼ郢ｧ・ｸ郢ｧ・ｧ郢晢ｽｳ郢晏沺・ｴ・ｻ騾包ｽｨ繝ｻ繝ｻ
+    // 3. 鬩幢ｽ｢隴趣ｽ｢繝ｻ・ｽ繝ｻ・｡鬩幢ｽ｢隴擾ｽｴ郢晢ｽｻ驍ｵ・ｺ隴惹ｼ夲ｽｽ・ｹ隴趣ｽ｢繝ｻ・ｽ繝ｻ・ｼ鬩幢ｽ｢繝ｻ・ｧ郢晢ｽｻ繝ｻ・ｸ鬮ｯ・ｷ郢晢ｽｻ繝ｻ・ｽ繝ｻ・ｦ鬯ｨ・ｾ郢晢ｽｻ郢晢ｽｻ郢晢ｽｻ繝ｻ・ｼ髯懈瑳・ｺ・ｯ・つ繝ｻ・ｳ鬯ｮ・ｫ繝ｻ・ｲ髫ｰ雋ｻ・ｽ・ｶ驛｢譎｢・ｽ・ｻ鬩幢ｽ｢繝ｻ・ｧ郢晢ｽｻ繝ｻ・ｨ鬩幢ｽ｢隴趣ｽ｢繝ｻ・ｽ繝ｻ・ｼ鬩幢ｽ｢繝ｻ・ｧ郢晢ｽｻ繝ｻ・ｸ鬩幢ｽ｢繝ｻ・ｧ郢晢ｽｻ繝ｻ・ｧ鬩幢ｽ｢隴趣ｽ｢繝ｻ・ｽ繝ｻ・ｳ鬩幢ｽ｢隴惹ｹ暦ｽｲ・ｺ郢晢ｽｻ繝ｻ・ｴ郢晢ｽｻ繝ｻ・ｻ鬯ｨ・ｾ陋ｹ繝ｻ・ｽ・ｽ繝ｻ・ｨ驛｢譎｢・ｽ・ｻ驛｢譎｢・ｽ・ｻ
     const processedResult = await this.messageProcessingService.processMessage(
       userMessage,
       context
     );
 
-    // 4. 陟｢諛・ｽｭ逧ｮ蜃ｽ隰後・
+    // 4. 鬮ｯ貊ゑｽｽ・｢髫ｲ蟶吶・繝ｻ・ｽ繝ｻ・ｭ鬨ｾ・ｧ繝ｻ・ｮ髯ｷ繝ｻ・ｽ・ｽ鬮ｫ・ｰ陟募ｾ後・
     const responseContent = await this.generateResponse(
       userMessage,
       processedResult,
       context
     );
 
-    // 5. 陟｢諛・ｽｭ譁石鍋ｹ昴・縺晉ｹ晢ｽｼ郢ｧ・ｸ郢ｧ蜑・ｽｽ諛医・
+    // 5. 鬮ｯ貊ゑｽｽ・｢髫ｲ蟶吶・繝ｻ・ｽ繝ｻ・ｭ髫ｴ竏ｫ豬ｹ鬪ｰ蜈ｷ・ｽ・ｹ隴擾ｽｴ郢晢ｽｻ驍ｵ・ｺ隴惹ｼ夲ｽｽ・ｹ隴趣ｽ｢繝ｻ・ｽ繝ｻ・ｼ鬩幢ｽ｢繝ｻ・ｧ郢晢ｽｻ繝ｻ・ｸ鬩幢ｽ｢繝ｻ・ｧ髯ｷ莉｣繝ｻ繝ｻ・ｽ繝ｻ・ｽ髫ｲ蟶帷樟郢晢ｽｻ
     const assistantMsg: ChatMessage = {
       id: `msg_${Date.now()}_${Math.random().toString(36).substr(2, 9)}_assistant`,
       userId,
@@ -137,12 +137,12 @@ export class ChatCoreManager {
 
     await this.chatRepository.saveMessage(assistantMsg, sessionId);
 
-    // 6. 郢晢ｽ｡郢晢ｽ｢郢晢ｽｪ邵ｺ・ｫ闔ｨ螟奇ｽｩ・ｱ郢ｧ蜑・ｽｿ譎擾ｽｭ繝ｻ
+    // 6. 鬩幢ｽ｢隴趣ｽ｢繝ｻ・ｽ繝ｻ・｡鬩幢ｽ｢隴趣ｽ｢繝ｻ・ｽ繝ｻ・｢鬩幢ｽ｢隴趣ｽ｢繝ｻ・ｽ繝ｻ・ｪ鬩搾ｽｵ繝ｻ・ｺ郢晢ｽｻ繝ｻ・ｫ鬮｣雋ｻ・ｽ・ｨ髯樊ｺｷ・･繝ｻ・ｽ・ｽ繝ｻ・ｩ郢晢ｽｻ繝ｻ・ｱ鬩幢ｽ｢繝ｻ・ｧ髯ｷ莉｣繝ｻ繝ｻ・ｽ繝ｻ・ｿ髫ｴ蜿門ｾ励・・ｽ繝ｻ・ｭ驛｢譎｢・ｽ・ｻ
     if (this.memoryManager && typeof (this.memoryManager as any).saveConversation === 'function') {
       await (this.memoryManager as any).saveConversation(userId, [userMsg, assistantMsg]);
     }
 
-    // 7. 騾ｶ・｣隴滂ｽｻ郢晢ｽｭ郢ｧ・ｰ
+    // 7. 鬯ｨ・ｾ繝ｻ・ｶ郢晢ｽｻ繝ｻ・｣鬮ｫ・ｴ雋翫ｑ・ｽ・ｽ繝ｻ・ｻ鬩幢ｽ｢隴趣ｽ｢繝ｻ・ｽ繝ｻ・ｭ鬩幢ｽ｢繝ｻ・ｧ郢晢ｽｻ繝ｻ・ｰ
     await this.auditManager.log({
       action: 'chat_message_processed',
       userId,
@@ -153,7 +153,7 @@ export class ChatCoreManager {
       },
     });
 
-    // 8. 郢ｧ・ｻ郢昴・縺咏ｹ晢ｽｧ郢晢ｽｳ隲繝ｻ・ｰ・ｱ郢ｧ雋槫徐陟輔・
+    // 8. 鬩幢ｽ｢繝ｻ・ｧ郢晢ｽｻ繝ｻ・ｻ鬩幢ｽ｢隴擾ｽｴ郢晢ｽｻ驍ｵ・ｺ陷･謫ｾ・ｽ・ｹ隴趣ｽ｢繝ｻ・ｽ繝ｻ・ｧ鬩幢ｽ｢隴趣ｽ｢繝ｻ・ｽ繝ｻ・ｳ鬮ｫ・ｲ繝ｻ・ｰ驛｢譎｢・ｽ・ｻ郢晢ｽｻ繝ｻ・ｰ郢晢ｽｻ繝ｻ・ｱ鬩幢ｽ｢繝ｻ・ｧ鬮ｮ蛹ｺ・ｧ・ｫ陟募ｮ｣霎ｧ髴域鱒繝ｻ
     const sessionData = await this.chatRepository.getSession(sessionId);
     const session = sessionData || {
       id: sessionId,
@@ -173,7 +173,7 @@ export class ChatCoreManager {
   }
 
   /**
-   * 陟｢諛・ｽｭ譁撰ｽ帝墓ｻ薙・
+   * 鬮ｯ貊ゑｽｽ・｢髫ｲ蟶吶・繝ｻ・ｽ繝ｻ・ｭ髫ｴ竏ｵ閻ｸ繝ｻ・ｽ陝ｶ謨鳴陟・屮・ｽ・ｻ髦ｮ蜷ｶ繝ｻ
    */
   private async generateResponse(
     userMessage: string,
@@ -181,25 +181,25 @@ export class ChatCoreManager {
     context: any
   ): Promise<string> {
     try {
-      // LLM API郢ｧ雋樔ｻ也ｸｺ・ｳ陷・ｽｺ邵ｺ繝ｻ
+      // LLM API鬩幢ｽ｢繝ｻ・ｧ鬮ｮ蛹ｺ・ｨ雋ｻ・ｽ・ｻ闕ｵ貊ゑｽｽ・ｸ繝ｻ・ｺ郢晢ｽｻ繝ｻ・ｳ鬮ｯ・ｷ郢晢ｽｻ繝ｻ・ｽ繝ｻ・ｺ鬩搾ｽｵ繝ｻ・ｺ驛｢譎｢・ｽ・ｻ
       if (processedResult.isManufacturingRelated) {
         const manufacturingAnalysis = await this.manufacturingManager.analyzeProduction(processedResult.manufacturingData || {});
         return this.formatManufacturingResponse(userMessage, manufacturingAnalysis);
       }
 
       const aiMessage = await aiProviderManager.invoke([
-        { role: "system", content: "あなたはポイポイのローカルAIです。日本語で回答してください。" },
-        { role: "user", content: userMessage }
-          content: userMessage
-        }
+        {
+          role: "system",
+          content: "あなたはポイポイのローカルAIです。日本語で回答してください。",
+        },
+        {
+          role: "user",
+          content: userMessage,
+        },
       ]);
-
-      return aiMessage || "LLM応答なし";
-    } catch (error) {
-      console.error("[ChatCoreManager][LLM ERROR]", error);
       
-      // 郢晁ｼ斐°郢晢ｽｼ郢晢ｽｫ郢晁・繝｣郢ｧ・ｯ: 陟墓瑳謫らｸｺ・ｮ陟｢諛・ｽｭ逧ｮ蜃ｽ隰後・
-      // 髯ｬ・ｽ鬨ｾ・ｰ隶鯉ｽｭ鬮｢・｢鬨ｾ・｣邵ｺ・ｮ髮会ｽｪ陜荳翫・陜｣・ｴ陷ｷ繝ｻ
+      // 鬩幢ｽ｢隴弱・・ｽ・ｼ隴・搨・ｰ鬩幢ｽ｢隴趣ｽ｢繝ｻ・ｽ繝ｻ・ｼ鬩幢ｽ｢隴趣ｽ｢繝ｻ・ｽ繝ｻ・ｫ鬩幢ｽ｢隴寂・繝ｻ驛｢譎｢・ｽ・｣鬩幢ｽ｢繝ｻ・ｧ郢晢ｽｻ繝ｻ・ｯ: 鬮ｯ貅ｷ・｢骰玖｢夜垈・ｫ郢ｧ莨夲ｽｽ・ｸ繝ｻ・ｺ郢晢ｽｻ繝ｻ・ｮ鬮ｯ貊ゑｽｽ・｢髫ｲ蟶吶・繝ｻ・ｽ繝ｻ・ｭ鬨ｾ・ｧ繝ｻ・ｮ髯ｷ繝ｻ・ｽ・ｽ鬮ｫ・ｰ陟募ｾ後・
+      // 鬯ｮ・ｯ繝ｻ・ｬ郢晢ｽｻ繝ｻ・ｽ鬯ｯ・ｨ繝ｻ・ｾ郢晢ｽｻ繝ｻ・ｰ鬮ｫ・ｶ鬲・ｼ夲ｽｽ・ｽ繝ｻ・ｭ鬯ｯ・ｮ繝ｻ・｢郢晢ｽｻ繝ｻ・｢鬯ｯ・ｨ繝ｻ・ｾ郢晢ｽｻ繝ｻ・｣鬩搾ｽｵ繝ｻ・ｺ郢晢ｽｻ繝ｻ・ｮ鬯ｮ・ｮ闔ｨ螟ｲ・ｽ・ｽ繝ｻ・ｪ鬮ｯ諛ｶ・｣・ｰ髣包ｽｳ驗呻ｽｫ郢晢ｽｻ鬮ｯ諛ｶ・ｽ・｣郢晢ｽｻ繝ｻ・ｴ鬮ｯ・ｷ繝ｻ・ｷ驛｢譎｢・ｽ・ｻ
       if (processedResult.isManufacturingRelated) {
         const manufacturingAnalysis =
           await this.manufacturingManager.analyzeProduction(
@@ -211,39 +211,39 @@ export class ChatCoreManager {
         );
       }
 
-      // 隰暦ｽｨ髫ｲ謔ｶ窶ｲ陟｢繝ｻ・ｦ竏壺・陜｣・ｴ陷ｷ繝ｻ
+      // 鬮ｫ・ｰ隴会ｽｦ繝ｻ・ｽ繝ｻ・ｨ鬯ｮ・ｫ繝ｻ・ｲ髫ｰ雋ｻ・ｽ・ｶ驕ｯ・ｶ繝ｻ・ｲ鬮ｯ貊ゑｽｽ・｢驛｢譎｢・ｽ・ｻ郢晢ｽｻ繝ｻ・ｦ驕ｶ荳橸ｽ｣・ｺ郢晢ｽｻ鬮ｯ諛ｶ・ｽ・｣郢晢ｽｻ繝ｻ・ｴ鬮ｯ・ｷ繝ｻ・ｷ驛｢譎｢・ｽ・ｻ
       if (processedResult.requiresReasoning) {
         return processedResult.reasoning;
       }
 
-      // 鬨ｾ螢ｼ・ｸ・ｸ邵ｺ・ｮ陟｢諛・ｽｭ繝ｻ
+      // 鬯ｯ・ｨ繝ｻ・ｾ髯橸ｽ｢繝ｻ・ｼ郢晢ｽｻ繝ｻ・ｸ郢晢ｽｻ繝ｻ・ｸ鬩搾ｽｵ繝ｻ・ｺ郢晢ｽｻ繝ｻ・ｮ鬮ｯ貊ゑｽｽ・｢髫ｲ蟶吶・繝ｻ・ｽ繝ｻ・ｭ驛｢譎｢・ｽ・ｻ
       return this.formatStandardResponse(userMessage, processedResult, context);
     }
   }
 
   /**
-   * 髯ｬ・ｽ鬨ｾ・ｰ隶鯉ｽｭ鬮｢・｢鬨ｾ・｣邵ｺ・ｮ陟｢諛・ｽｭ譁撰ｽ堤ｹ晁ｼ斐°郢晢ｽｼ郢晄ｧｭ繝｣郢昴・
+   * 鬯ｮ・ｯ繝ｻ・ｬ郢晢ｽｻ繝ｻ・ｽ鬯ｯ・ｨ繝ｻ・ｾ郢晢ｽｻ繝ｻ・ｰ鬮ｫ・ｶ鬲・ｼ夲ｽｽ・ｽ繝ｻ・ｭ鬯ｯ・ｮ繝ｻ・｢郢晢ｽｻ繝ｻ・｢鬯ｯ・ｨ繝ｻ・ｾ郢晢ｽｻ繝ｻ・｣鬩搾ｽｵ繝ｻ・ｺ郢晢ｽｻ繝ｻ・ｮ鬮ｯ貊ゑｽｽ・｢髫ｲ蟶吶・繝ｻ・ｽ繝ｻ・ｭ髫ｴ竏ｵ閻ｸ繝ｻ・ｽ陜｣・､繝ｻ・ｹ隴弱・・ｽ・ｼ隴・搨・ｰ鬩幢ｽ｢隴趣ｽ｢繝ｻ・ｽ繝ｻ・ｼ鬩幢ｽ｢隴弱・・ｽ・ｧ繝ｻ・ｭ驛｢譎｢・ｽ・｣鬩幢ｽ｢隴擾ｽｴ郢晢ｽｻ
    */
   private formatManufacturingResponse(
     userMessage: string,
     analysis: any
   ): string {
-    return `髯ｬ・ｽ鬨ｾ・ｰ隶鯉ｽｭ陋ｻ繝ｻ譴ｵ驍ｨ蜈域｣｡:\n${JSON.stringify(analysis, null, 2)}`;
+    return `鬯ｮ・ｯ繝ｻ・ｬ郢晢ｽｻ繝ｻ・ｽ鬯ｯ・ｨ繝ｻ・ｾ郢晢ｽｻ繝ｻ・ｰ鬮ｫ・ｶ鬲・ｼ夲ｽｽ・ｽ繝ｻ・ｭ鬮ｯ蜈ｷ・ｽ・ｻ驛｢譎｢・ｽ・ｻ髫ｴ・ｴ繝ｻ・ｵ鬯ｩ謳ｾ・ｽ・ｨ髯ｷ莠･豐ｺ繝ｻ・｣繝ｻ・｡:\n${JSON.stringify(analysis, null, 2)}`;
   }
 
   /**
-   * 隶灘綜・ｺ荵溷飭邵ｺ・ｪ陟｢諛・ｽｭ譁撰ｽ堤ｹ晁ｼ斐°郢晢ｽｼ郢晄ｧｭ繝｣郢昴・
+   * 鬮ｫ・ｶ霓｣蛟｡・ｶ諛翫・繝ｻ・ｺ髣包ｽｵ雋・ｽｷ鬯滂ｽｭ鬩搾ｽｵ繝ｻ・ｺ郢晢ｽｻ繝ｻ・ｪ鬮ｯ貊ゑｽｽ・｢髫ｲ蟶吶・繝ｻ・ｽ繝ｻ・ｭ髫ｴ竏ｵ閻ｸ繝ｻ・ｽ陜｣・､繝ｻ・ｹ隴弱・・ｽ・ｼ隴・搨・ｰ鬩幢ｽ｢隴趣ｽ｢繝ｻ・ｽ繝ｻ・ｼ鬩幢ｽ｢隴弱・・ｽ・ｧ繝ｻ・ｭ驛｢譎｢・ｽ・｣鬩幢ｽ｢隴擾ｽｴ郢晢ｽｻ
    */
   private formatStandardResponse(
     userMessage: string,
     processedResult: any,
     context: any
   ): string {
-    return `お問い合わせありがとうございます。\n\n${processedResult.response || "回答を生成できませんでした。"}`;
+    return `邵ｺ髮∵牒邵ｺ繝ｻ邊狗ｹｧ荳岩雷邵ｺ繧・ｽ顔ｸｺ蠕娯・邵ｺ繝ｻ・・ｸｺ謔ｶ・樒ｸｺ・ｾ邵ｺ蜷ｶﾂ繝ｻn\n${processedResult.response || "陜玲ｨ抵ｽｭ譁撰ｽ帝墓ｻ薙・邵ｺ・ｧ邵ｺ髦ｪ竏ｪ邵ｺ蟶呻ｽ鍋ｸｺ・ｧ邵ｺ蜉ｱ笳・ｸｲ繝ｻ}`;
   }
 
   /**
-   * 郢昶・ﾎ慕ｹ昴・繝ｨ郢ｧ・ｻ郢昴・縺咏ｹ晢ｽｧ郢晢ｽｳ郢ｧ蜑・ｽｽ諛医・
+   * 鬩幢ｽ｢隴擾ｽｶ郢晢ｽｻ繝ｻ蜿悶・繝ｻ・ｹ隴擾ｽｴ郢晢ｽｻ驛｢譎｢・ｽ・ｨ鬩幢ｽ｢繝ｻ・ｧ郢晢ｽｻ繝ｻ・ｻ鬩幢ｽ｢隴擾ｽｴ郢晢ｽｻ驍ｵ・ｺ陷･謫ｾ・ｽ・ｹ隴趣ｽ｢繝ｻ・ｽ繝ｻ・ｧ鬩幢ｽ｢隴趣ｽ｢繝ｻ・ｽ繝ｻ・ｳ鬩幢ｽ｢繝ｻ・ｧ髯ｷ莉｣繝ｻ繝ｻ・ｽ繝ｻ・ｽ髫ｲ蟶帷樟郢晢ｽｻ
    */
   async getSession(userId: string, sessionId: string): Promise<any> {
     const session = await this.chatRepository.getSession(sessionId);
@@ -253,7 +253,7 @@ export class ChatCoreManager {
       ...(session || {
         id: sessionId,
         userId,
-        title: '繝√Ε繝・ヨ繧ｻ繝・す繝ｧ繝ｳ',
+        title: '驛｢譏ｶ繝ｻ・取・・ｹ譏ｴ繝ｻ郢晢ｽｨ驛｢・ｧ繝ｻ・ｻ驛｢譏ｴ繝ｻ邵ｺ蜥擾ｽｹ譎｢・ｽ・ｧ驛｢譎｢・ｽ・ｳ',
         createdAt: new Date(),
         messageCount: 0,
       }),
@@ -279,7 +279,7 @@ export class ChatCoreManager {
 
     await this.chatRepository.saveSession(session);
 
-    // 騾ｶ・｣隴滂ｽｻ郢晢ｽｭ郢ｧ・ｰ
+    // 鬯ｨ・ｾ繝ｻ・ｶ郢晢ｽｻ繝ｻ・｣鬮ｫ・ｴ雋翫ｑ・ｽ・ｽ繝ｻ・ｻ鬩幢ｽ｢隴趣ｽ｢繝ｻ・ｽ繝ｻ・ｭ鬩幢ｽ｢繝ｻ・ｧ郢晢ｽｻ繝ｻ・ｰ
     await this.auditManager.log({
       action: 'chat_session_created',
       userId,
@@ -290,7 +290,7 @@ export class ChatCoreManager {
   }
 
   /**
-   * 郢昶・ﾎ慕ｹ昴・繝ｨ陞ｻ・･雎・ｽｴ郢ｧ雋槫徐陟輔・
+   * 鬩幢ｽ｢隴擾ｽｶ郢晢ｽｻ繝ｻ蜿悶・繝ｻ・ｹ隴擾ｽｴ郢晢ｽｻ驛｢譎｢・ｽ・ｨ鬮ｯ讖ｸ・ｽ・ｻ郢晢ｽｻ繝ｻ・･鬮ｮ蠑ｱ繝ｻ繝ｻ・ｽ繝ｻ・ｴ鬩幢ｽ｢繝ｻ・ｧ鬮ｮ蛹ｺ・ｧ・ｫ陟募ｮ｣霎ｧ髴域鱒繝ｻ
    */
   async getChatHistory(
     userId: string,
@@ -301,14 +301,14 @@ export class ChatCoreManager {
   }
 
   /**
-   * 郢晢ｽｦ郢晢ｽｼ郢ｧ・ｶ郢晢ｽｼ邵ｺ・ｮ郢ｧ・ｻ郢昴・縺咏ｹ晢ｽｧ郢晢ｽｳ闕ｳﾂ髫包ｽｧ郢ｧ雋槫徐陟輔・
+   * 鬩幢ｽ｢隴趣ｽ｢繝ｻ・ｽ繝ｻ・ｦ鬩幢ｽ｢隴趣ｽ｢繝ｻ・ｽ繝ｻ・ｼ鬩幢ｽ｢繝ｻ・ｧ郢晢ｽｻ繝ｻ・ｶ鬩幢ｽ｢隴趣ｽ｢繝ｻ・ｽ繝ｻ・ｼ鬩搾ｽｵ繝ｻ・ｺ郢晢ｽｻ繝ｻ・ｮ鬩幢ｽ｢繝ｻ・ｧ郢晢ｽｻ繝ｻ・ｻ鬩幢ｽ｢隴擾ｽｴ郢晢ｽｻ驍ｵ・ｺ陷･謫ｾ・ｽ・ｹ隴趣ｽ｢繝ｻ・ｽ繝ｻ・ｧ鬩幢ｽ｢隴趣ｽ｢繝ｻ・ｽ繝ｻ・ｳ鬮｣蛹・ｽｽ・ｳ繝ｻ縺､ﾂ鬯ｮ・ｫ陋ｹ繝ｻ・ｽ・ｽ繝ｻ・ｧ鬩幢ｽ｢繝ｻ・ｧ鬮ｮ蛹ｺ・ｧ・ｫ陟募ｮ｣霎ｧ髴域鱒繝ｻ
    */
   async getUserSessions(userId: string): Promise<ChatSession[]> {
     return await this.chatRepository.getUserSessions(userId);
   }
 
   /**
-   * 郢ｧ・ｻ郢昴・縺咏ｹ晢ｽｧ郢晢ｽｳ郢ｧ雋樒ｎ鬮ｯ・､
+   * 鬩幢ｽ｢繝ｻ・ｧ郢晢ｽｻ繝ｻ・ｻ鬩幢ｽ｢隴擾ｽｴ郢晢ｽｻ驍ｵ・ｺ陷･謫ｾ・ｽ・ｹ隴趣ｽ｢繝ｻ・ｽ繝ｻ・ｧ鬩幢ｽ｢隴趣ｽ｢繝ｻ・ｽ繝ｻ・ｳ鬩幢ｽ｢繝ｻ・ｧ鬮ｮ蛹ｺ・ｨ謚ｵ・ｽ譛ｱ・ｬ・ｮ繝ｻ・ｯ郢晢ｽｻ繝ｻ・､
    */
   async deleteSession(userId: string, sessionId: string): Promise<{ success: boolean }> {
     const approval = await this.approvalManager.requestApproval({
