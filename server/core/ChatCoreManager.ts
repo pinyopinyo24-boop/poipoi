@@ -239,7 +239,7 @@ export class ChatCoreManager {
     processedResult: any,
     context: any
   ): string {
-    return `縺雁撫縺・粋繧上○縺ゅｊ縺後→縺・＃縺悶＞縺ｾ縺吶・n\n${processedResult.response || "蝗樒ｭ斐ｒ逕滓・縺ｧ縺阪∪縺帙ｓ縺ｧ縺励◆縲・}`;
+    return `お問い合わせありがとうございます。\n\n${processedResult.response || "回答を生成できませんでした。"}`;
   }
 
   /**
