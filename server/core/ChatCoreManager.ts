@@ -1,4 +1,4 @@
-﻿import { PoipoiCodeAgent } from "./PoipoiCodeAgent";
+import { PoipoiCodeAgent } from "./PoipoiCodeAgent";
 /**
 
 import { PoipoiCodeAgent } from "./PoipoiCodeAgent";
@@ -194,7 +194,7 @@ export class ChatCoreManager {
         }
       ]);
 
-      return aiMessage || "LLM蠢懃ｭ斐↑縺・;
+      return aiMessage || "LLM応答なし";
     } catch (error) {
       console.error("[ChatCoreManager][LLM ERROR]", error);
       
