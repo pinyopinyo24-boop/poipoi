@@ -47,7 +47,7 @@ export interface ChatResponse {
 
 export class ChatCoreManager {
   private isCodeImplementationRequest(message: string): boolean {
-    return /菫ｮ豁｣|謾ｹ蝟л螟画峩|菴懈・|繧ｳ繝ｼ繝・.test(message);
+    return /菫ｮ豁｣|謾ｹ蝟л螟画峩|菴懈・|繧ｳ繝ｼ繝・/.test(message);
   }
 
   private async executeCodeImplementationRequest(message: string): Promise<string> {
