@@ -1,4 +1,4 @@
-﻿/**
+/**
  * AI Provider Manager
  * 隍・焚AI繝励Ο繝舌う繝繝ｼ邂｡逅・
  */
@@ -300,11 +300,19 @@ export class AIProviderManager {
    */
   selectBestProvider(): ProviderConfig | undefined {
     const enabledProviders = this.getEnabledProviders();
+
     if (enabledProviders.length === 0) {
       return undefined;
     }
 
-    // 蜆ｪ蜈亥ｺｦ縺梧怙繧るｫ倥＞繝励Ο繝舌う繝繝ｼ繧定ｿ斐☆
+    const localProvider = enabledProviders.find(
+      provider => provider.provider === "local"
+    );
+
+    if (localProvider) {
+      return localProvider;
+    }
+
     return enabledProviders[0];
   }
 
