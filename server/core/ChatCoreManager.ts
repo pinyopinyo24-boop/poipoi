@@ -1,4 +1,4 @@
-import { PoipoiCodeAgent } from "./PoipoiCodeAgent";
+﻿import { PoipoiCodeAgent } from "./PoipoiCodeAgent";
 /**
 
 import { PoipoiCodeAgent } from "./PoipoiCodeAgent";
@@ -187,6 +187,14 @@ export class ChatCoreManager {
         return this.formatManufacturingResponse(userMessage, manufacturingAnalysis);
       }
 
+      const aiMessage = await aiProviderManager.invoke([
+        {
+          role: "user",
+          content: userMessage
+        }
+      ]);
+
+      return aiMessage || "LLM蠢懃ｭ斐↑縺・;
     } catch (error) {
       console.error("[ChatCoreManager][LLM ERROR]", error);
       
@@ -327,6 +335,7 @@ export class ChatCoreManager {
     return await this.chatRepository.getUserStatistics(userId);
   }
 }
+
 
 
 
