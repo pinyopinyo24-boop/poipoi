@@ -343,7 +343,7 @@ async function main() {
 
   console.log(`変更候補: ${changes.length}件`);
 
-  const engine = new CodeEvolutionEngine(ROOT, true);
+  const engine = new CodeEvolutionEngine(ROOT);
 
   const result = await engine.apply(
     changes,
