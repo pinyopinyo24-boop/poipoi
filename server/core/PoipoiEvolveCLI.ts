@@ -51,6 +51,25 @@ function git(args: string[]): string {
   }).trim();
 }
 
+function commitChanges(changedFiles: string[]): void {
+  if (changedFiles.length === 0) {
+    throw new Error("Gitに確定する変更がありません");
+
+  git(["add", "--", ...changedFiles]);
+
+  const staged = git(["diff", "--cached", "--name-only"]);
+
+  if (!staged) {
+    throw new Error("Gitに確定する対象がありません");
+  }
+
+  git([
+    "commit",
+    "-m",
+    "feat: apply safe poipoi self evolution",
+  ]);
+}
+
 function assertGitSafe() {
   const status = git(["status", "--porcelain"]);
 
@@ -374,6 +393,7 @@ async function main() {
   console.log("※ Git commitは自動実行していません");
 }
 
+  commitChanges(result.changedFiles);
 main().catch((error: unknown) => {
   console.error("❌ CLIエラー");
   console.error(
