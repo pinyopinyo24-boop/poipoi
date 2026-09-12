@@ -54,6 +54,7 @@ function git(args: string[]): string {
 function commitChanges(changedFiles: string[]): void {
   if (changedFiles.length === 0) {
     throw new Error("Gitに確定する変更がありません");
+  }
 
   git(["add", "--", ...changedFiles]);
 
