@@ -223,6 +223,28 @@ export class CodeEvolutionEngine {
       );
     }
 
+    if (relativePath.length === 0) {
+      throw new Error(
+        "プロジェクトのルート自体は変更対象にできません: " + filePath
+      );
+    }
+
+    let targetStat: fsSync.Stats;
+
+    try {
+      targetStat = fsSync.statSync(realAbsolute);
+    } catch {
+      throw new Error(
+        "変更対象の情報を取得できません: " + filePath
+      );
+    }
+
+    if (!targetStat.isFile()) {
+      throw new Error(
+        "通常ファイル以外は変更できません: " + filePath
+      );
+    }
+
     return realAbsolute;
   }
 }
