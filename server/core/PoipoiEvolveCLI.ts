@@ -391,10 +391,9 @@ async function main() {
   console.log("✅ 自己進化成功");
   console.log(`変更ファイル: ${result.changedFiles.join(", ")}`);
   console.log("================================");
-  console.log("※ Git commitは自動実行していません");
+  commitChanges(result.changedFiles);
 }
 
-  commitChanges(result.changedFiles);
 main().catch((error: unknown) => {
   console.error("❌ CLIエラー");
   console.error(
