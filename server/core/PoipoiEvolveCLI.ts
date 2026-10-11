@@ -435,7 +435,7 @@ async function main() {
   }
 
   if (
-    aiChanges.some(
+    !Array.isArray(aiChanges) || aiChanges.some(
       change =>
         change === null ||
         typeof change !== "object" ||
