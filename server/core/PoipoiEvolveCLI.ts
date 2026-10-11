@@ -1,4 +1,4 @@
-﻿import fs from "fs";
+import fs from "fs";
 import path from "path";
 import { execFileSync } from "child_process";
 import { CodeEvolutionEngine, CodeChange } from "./CodeEvolutionEngine";
@@ -417,6 +417,17 @@ async function main() {
     throw new Error("自己進化成功と判定されましたが変更ファイルがありません");
   }
 
+  const expectedTarget = targetPath.replace(/\\/g, "/");
+  const unexpectedResultFiles = result.changedFiles.filter(
+    filePath => filePath.replace(/\\/g, "/") !== expectedTarget
+  );
+
+  if (unexpectedResultFiles.length > 0) {
+    throw new Error(
+      "自己進化エンジンが対象外ファイルを返しました。コミットを中止します。\n" +
+      unexpectedResultFiles.join("\n")
+    );
+  }
   const afterStatus = git([
     "status",
     "--porcelain",
