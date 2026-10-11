@@ -208,7 +208,12 @@ function validateChanges(
   changes: AIChange[],
   targetPath: string
 ): CodeChange[] {
+  const seenTargets = new Set<string>();
+
   return changes.map(item => {
+    if (item === null || typeof item !== "object" || Array.isArray(item)) {
+      throw new Error("変更候補がオブジェクトではありません");
+    }
     if (
       typeof item.filePath !== "string" ||
       typeof item.oldCode !== "string" ||
