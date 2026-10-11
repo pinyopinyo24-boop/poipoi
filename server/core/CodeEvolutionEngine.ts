@@ -1,4 +1,5 @@
 ﻿import fs from "fs/promises";
+import fsSync from "fs";
 import path from "path";
 
 export interface CodeChange {
@@ -182,6 +183,30 @@ export class CodeEvolutionEngine {
       );
     }
 
-    return absolutePath;
+    let realRoot: string;
+    let realAbsolute: string;
+
+    try {
+      realRoot = fsSync.realpathSync(root);
+      realAbsolute = fsSync.realpathSync(absolutePath);
+    } catch {
+      throw new Error(
+        "変更対象の実体パスを確認できません: " + filePath
+      );
+    }
+
+    const relativePath = path.relative(realRoot, realAbsolute);
+
+    if (
+      relativePath === ".." ||
+      relativePath.startsWith(".." + path.sep) ||
+      path.isAbsolute(relativePath)
+    ) {
+      throw new Error(
+        "実体パスがプロジェクト外です: " + filePath
+      );
+    }
+
+    return realAbsolute;
   }
 }
