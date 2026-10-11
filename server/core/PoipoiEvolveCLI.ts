@@ -69,7 +69,7 @@ function commitChanges(changedFiles: string[]): void {
     );
   }
 
-  git(["add", "--", ...expectedFiles]);
+  git(['add', ...expectedFiles]);
 
   const stagedFiles = git(["diff", "--cached", "--name-only"])
     .split(/\r?\n/)
