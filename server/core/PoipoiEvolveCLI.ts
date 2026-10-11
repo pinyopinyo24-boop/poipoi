@@ -1,4 +1,4 @@
-﻿﻿import fs from "fs";
+﻿import fs from "fs";
 import path from "path";
 import { execFileSync } from "child_process";
 import { CodeEvolutionEngine, CodeChange } from "./CodeEvolutionEngine";
@@ -428,53 +428,84 @@ async function main() {
     }
   }
 
-  const aiChanges = extractJson(aiText);
+  let changes: ReturnType<typeof validateChanges> = [];
+  let validationError = "";
 
-  if (!Array.isArray(aiChanges)) {
-    throw new Error("AIの変更候補が配列ではありません。自己進化を中止します");
+  for (let attempt = 1; attempt <= 3; attempt++) {
+    try {
+      const aiChanges = extractJson(aiText);
+
+      if (!Array.isArray(aiChanges) || aiChanges.length === 0) {
+        throw new Error("AIの変更候補が空、または配列ではありません");
+      }
+      if (aiChanges.length > 10) {
+        throw new Error("AIの変更候補が10件を超えています");
+      }
+
+      for (const change of aiChanges) {
+        if (
+          change === null ||
+          typeof change !== "object" ||
+          Array.isArray(change) ||
+          typeof change.filePath !== "string" ||
+          change.filePath.replace(/\\/g, "/") !== targetPath
+        ) {
+          throw new Error("AIが対象外ファイルまたは不正な変更候補を返しました");
+        }
+
+        if (
+          typeof change.oldCode !== "string" ||
+          change.oldCode.length === 0 ||
+          typeof change.newCode !== "string" ||
+          change.newCode.trim().length === 0
+        ) {
+          throw new Error("oldCodeまたはnewCodeが不正です");
+        }
+
+        const occurrences = currentCode.split(change.oldCode).length - 1;
+        if (occurrences !== 1) {
+          throw new Error(
+            `oldCodeが現在コード内に一意に存在しません（出現回数: ${occurrences}）`
+          );
+        }
+      }
+
+      changes = validateChanges(aiChanges, targetPath);
+      if (changes.length === 0) {
+        throw new Error("変更候補が0件です");
+      }
+
+      validationError = "";
+      break;
+    } catch (error) {
+      validationError =
+        error instanceof Error ? error.message : String(error);
+
+      if (attempt === 3) {
+        throw new Error(
+          "AI生成コードの検証に3回失敗しました。変更は適用していません: " +
+          validationError
+        );
+      }
+
+      console.warn(`変更候補の検証失敗: ${attempt}/3。AIに再生成を要求します。`);
+
+      messages.push(
+        { role: "assistant", content: aiText },
+        {
+          role: "user",
+          content:
+            "直前の変更候補は検証に失敗しました。\n" +
+            "理由: " + validationError + "\n" +
+            "対象ファイルの現在コードからoldCodeを完全一致でコピーし、" +
+            "1回だけ存在する文字列を使ってください。安全な最小限の変更を1件だけ提案し、" +
+            "JSON配列だけを返してください。"
+        }
+      );
+
+      aiText = await invokeAI(messages);
+    }
   }
-
-  if (
-    !Array.isArray(aiChanges) || aiChanges.some(
-      change =>
-        change === null ||
-        typeof change !== "object" ||
-        Array.isArray(change) ||
-        typeof change.filePath !== "string" ||
-        change.filePath.replace(/\\/g, "/") !== targetPath
-    )
-  ) {
-    throw new Error(
-      "AIが対象外ファイルまたは不正な変更候補を返しました"
-    );
-  }
-
-
-  if (aiChanges.length > 10) {
-    throw new Error("AIの変更候補が10件を超えています。自己進化を中止します");
-  }
-
-  if (
-    !aiChanges.every(
-      (change: unknown) =>
-        change !== null &&
-        typeof change === "object" &&
-        !Array.isArray(change)
-    )
-  ) {
-    throw new Error("変更候補に不正なデータが含まれています。自己進化を中止します");
-  }
-
-  const changes = validateChanges(
-    aiChanges,
-    targetPath
-  );
-
-  if (changes.length === 0) {
-    throw new Error("変更候補が0件のため、自己進化を中止します");
-  }
-
-
   console.log(`変更候補: ${changes.length}件`);
 
   const engine = new CodeEvolutionEngine(ROOT);
