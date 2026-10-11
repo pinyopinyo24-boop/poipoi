@@ -31,6 +31,20 @@ function safePath(filePath: string): string {
     throw new Error(`プロジェクト外のファイルは禁止: ${filePath}`);
   }
 
+  if (!fs.existsSync(absolute)) {
+    throw new Error(`変更対象ファイルが存在しません: ${filePath}`);
+  }
+
+  const realRoot = fs.realpathSync(ROOT);
+  const realAbsolute = fs.realpathSync(absolute);
+
+  if (
+    !realAbsolute.startsWith(realRoot + path.sep) &&
+    realAbsolute !== realRoot
+  ) {
+    throw new Error(`実体パスがプロジェクト外です: ${filePath}`);
+  }
+
   if (
     FORBIDDEN.some(
       x =>
