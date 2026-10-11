@@ -209,6 +209,17 @@ function validateChanges(
   targetPath: string
 ): CodeChange[] {
   return changes.map(item => {
+    if (
+      typeof item.filePath !== "string" ||
+      typeof item.oldCode !== "string" ||
+      typeof item.newCode !== "string" ||
+      !item.filePath.trim() ||
+      !item.oldCode.trim() ||
+      !item.newCode.trim()
+    ) {
+      throw new Error("変更候補の必須項目が欠落しているか、型が不正です");
+    }
+
     const filePath = item.filePath.replace(/\\/g, "/");
     const absolutePath = safePath(filePath);
 
