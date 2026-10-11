@@ -1,6 +1,6 @@
-﻿import fs from "fs/promises";
+﻿import * as fs from "node:fs/promises";
 import fsSync from "fs";
-import path from "path";
+import * as path from "node:path";
 
 export interface CodeChange {
   filePath: string;
