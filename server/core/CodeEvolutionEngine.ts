@@ -23,25 +23,77 @@ export class CodeEvolutionEngine {
     changes: CodeChange[],
     testCommand: string[] = []
   ): Promise<CodeEvolutionResult> {
-    const backups = new Map<string, string>();
+    const backups = new Map<string, Buffer>();
+    const modified = new Set<string>();
 
     try {
-      for (const change of changes) {
-        const filePath = this.resolveSafePath(change.filePath);
-        backups.set(filePath, await fs.readFile(filePath, "utf8"));
+      if (testCommand.length > 0) {
+        throw new Error(
+          "本番自己進化ではテスト自動実行は禁止されています"
+        );
       }
 
+      if (changes.length === 0) {
+        throw new Error("変更候補がありません");
+      }
+
+      const prepared: Array<{
+        change: CodeChange;
+        filePath: string;
+        current: string;
+        hasBom: boolean;
+      }> = [];
+      const seenPaths = new Set<string>();
+
+      // 書き込み前に全変更を検証する
       for (const change of changes) {
+        if (!change.oldCode) {
+          throw new Error("変更元コードが空です: " + change.filePath);
+        }
+
+        if (!change.newCode.trim()) {
+          throw new Error("新しいコードが空です: " + change.filePath);
+        }
+
         const filePath = this.resolveSafePath(change.filePath);
-        const current = await fs.readFile(filePath, "utf8");
+        const pathKey =
+          process.platform === "win32"
+            ? filePath.toLowerCase()
+            : filePath;
+
+        if (seenPaths.has(pathKey)) {
+          throw new Error(
+            "同じファイルへの重複変更は禁止されています: " +
+              change.filePath
+          );
+        }
+        seenPaths.add(pathKey);
+
+        const originalBytes = await fs.readFile(filePath);
+        backups.set(filePath, originalBytes);
+
+        const hasBom =
+          originalBytes.length >= 3 &&
+          originalBytes[0] === 0xef &&
+          originalBytes[1] === 0xbb &&
+          originalBytes[2] === 0xbf;
+
+        const current = originalBytes
+          .subarray(hasBom ? 3 : 0)
+          .toString("utf8");
+
         const count = current.split(change.oldCode).length - 1;
 
         if (count === 0) {
-          throw new Error("変更対象コードが見つかりません: " + change.filePath);
+          throw new Error(
+            "変更対象コードが見つかりません: " + change.filePath
+          );
         }
 
         if (count > 1) {
-          throw new Error("変更対象コードが複数あります: " + change.filePath);
+          throw new Error(
+            "変更対象コードが複数あります: " + change.filePath
+          );
         }
 
         if (
@@ -56,42 +108,63 @@ export class CodeEvolutionEngine {
           );
         }
 
-        if (!change.newCode.trim()) {
-          throw new Error("新しいコードが空です: " + change.filePath);
-        }
-
-        await fs.writeFile(
-          filePath,
-          current.replace(change.oldCode, change.newCode),
-          "utf8"
-        );
+        prepared.push({ change, filePath, current, hasBom });
       }
 
-      // 本番自己進化ではテストを自動実行しない
-      if (testCommand.length > 0) {
-        throw new Error(
-          "本番自己進化ではテスト自動実行は禁止されています"
+      // 検証をすべて通過した後に書き込む
+      for (const item of prepared) {
+        const updated = item.current.replace(
+          item.change.oldCode,
+          item.change.newCode
         );
+        const content = Buffer.from(updated, "utf8");
+        const output = item.hasBom
+          ? Buffer.concat([Buffer.from([0xef, 0xbb, 0xbf]), content])
+          : content;
+
+        // 書き込み途中の失敗にも備えて先に復元対象へ登録
+        modified.add(item.filePath);
+        await fs.writeFile(item.filePath, output);
       }
 
       return {
         success: true,
-        changedFiles: changes.map(change => change.filePath),
+        changedFiles: prepared.map(item => item.change.filePath),
         testsPassed: false,
         rolledBack: false,
       };
     } catch (error) {
-      for (const filePath of Array.from(backups.keys())) {
-        const original = backups.get(filePath)!;
-        await fs.writeFile(filePath, original, "utf8");
+      const rollbackErrors: string[] = [];
+
+      for (const filePath of modified) {
+        const original = backups.get(filePath);
+        if (!original) continue;
+
+        try {
+          await fs.writeFile(filePath, original);
+        } catch (rollbackError) {
+          rollbackErrors.push(
+            filePath + ": " +
+              (rollbackError instanceof Error
+                ? rollbackError.message
+                : String(rollbackError))
+          );
+        }
       }
+
+      const message =
+        error instanceof Error ? error.message : String(error);
+      const finalError =
+        rollbackErrors.length > 0
+          ? message + "\n復元失敗:\n" + rollbackErrors.join("\n")
+          : message;
 
       return {
         success: false,
-        changedFiles: changes.map(change => change.filePath),
+        changedFiles: Array.from(modified),
         testsPassed: false,
-        rolledBack: backups.size > 0,
-        error: error instanceof Error ? error.message : String(error),
+        rolledBack: modified.size > 0 && rollbackErrors.length === 0,
+        error: finalError,
       };
     }
   }
