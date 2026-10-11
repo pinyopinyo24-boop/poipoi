@@ -100,7 +100,7 @@ export class CodeEvolutionEngine {
         }
 
         const sourceCode = current.charCodeAt(0) === 0xfeff ? current.slice(1) : current;
-      const count = sourceCode.split(change.oldCode).length - 1;
+        const count = sourceCode.split(change.oldCode).length - 1;
 
         if (count === 0) {
           throw new Error(
