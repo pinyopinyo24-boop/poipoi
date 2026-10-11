@@ -373,14 +373,24 @@ async function main() {
     );
   }
 
+  if (!Array.isArray(aiChanges)) {
+    throw new Error("AIの変更候補が配列ではありません。自己進化を中止します");
+  }
+
+  if (aiChanges.length > 10) {
+    throw new Error("AIの変更候補が10件を超えています。自己進化を中止します");
+  }
+
   const changes = validateChanges(
     aiChanges,
     targetPath
   );
 
-  if (changes.length > 10) {
-    throw new Error("1回の自己進化で変更できる件数を超えています");
+  if (changes.length === 0) {
+    throw new Error("変更候補が0件のため、自己進化を中止します");
   }
+
+
 
   console.log(`変更候補: ${changes.length}件`);
 
