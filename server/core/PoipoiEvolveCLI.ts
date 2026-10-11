@@ -100,11 +100,45 @@ function commitChanges(changedFiles: string[]): void {
     );
   }
 
-  git([
-    "commit",
-    "-m",
-    "feat: apply safe poipoi self evolution",
-  ]);
+  try {
+    git([
+      "commit",
+      "-m",
+      "feat: apply safe poipoi self evolution",
+    ]);
+  } catch (commitError) {
+    const commitMessage =
+      commitError instanceof Error
+        ? commitError.message
+        : String(commitError);
+
+    try {
+      git([
+        "restore",
+        "--source=HEAD",
+        "--staged",
+        "--worktree",
+        "--",
+        ...expectedFiles,
+      ]);
+    } catch (restoreError) {
+      const restoreMessage =
+        restoreError instanceof Error
+          ? restoreError.message
+          : String(restoreError);
+
+      throw new Error(
+        "Gitコミットに失敗し、対象ファイルの復元にも失敗しました。\n" +
+          "コミットエラー: " + commitMessage + "\n" +
+          "復元エラー: " + restoreMessage
+      );
+    }
+
+    throw new Error(
+      "Gitコミットに失敗したため、対象ファイルをHEADの状態へ復元しました。\n" +
+        commitMessage
+    );
+  }
 }
 
 function assertGitSafe() {
