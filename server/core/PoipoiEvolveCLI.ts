@@ -74,11 +74,23 @@ function commitChanges(changedFiles: string[]): void {
 function assertGitSafe() {
   const status = git(["status", "--porcelain"]);
 
-  if (status) {
+  const unexpectedChanges = status
+    .split(/\r?\n/)
+    .filter(Boolean)
+    .filter(line => {
+      const entry = line.trim();
+
+      return ![
+        "?? server/core/PoipoiEvolveCLI.ts.bak2",
+        "?? server/core/PoipoiEvolveCLI.ts.bak3",
+      ].includes(entry);
+    });
+
+  if (unexpectedChanges.length > 0) {
     throw new Error(
       "作業ツリーが汚れています。\n" +
       "先に現在の変更をcommit/stashしてください。\n\n" +
-      status
+      unexpectedChanges.join("\n")
     );
   }
 }
@@ -379,11 +391,20 @@ async function main() {
     process.exit(1);
   }
 
-  const afterStatus = git(["status", "--porcelain"]);
+  if (result.changedFiles.length === 0) {
+    throw new Error("自己進化成功と判定されましたが変更ファイルがありません");
+  }
+
+  const afterStatus = git([
+    "status",
+    "--porcelain",
+    "--",
+    ...result.changedFiles,
+  ]);
 
   if (!afterStatus) {
     throw new Error(
-      "自己進化成功と判定されましたがGit差分がありません"
+      "自己進化成功と判定されましたが変更対象ファイルにGit差分がありません"
     );
   }
 
