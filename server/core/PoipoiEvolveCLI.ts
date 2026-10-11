@@ -237,6 +237,13 @@ function validateChanges(
     const code = fs.readFileSync(absolutePath, "utf8");
     const oldCode = item.oldCode.trim();
     const newCode = item.newCode.trim();
+    const targetKey = JSON.stringify([filePath, oldCode]);
+
+    if (seenTargets.has(targetKey)) {
+      throw new Error(`同じ置換対象が重複しています: ${filePath}`);
+    }
+
+    seenTargets.add(targetKey);
 
     if (!oldCode) {
       throw new Error(`置換対象コードが空です: ${filePath}`);
