@@ -399,20 +399,25 @@ async function main() {
 
   const aiChanges = extractJson(aiText);
 
+  if (!Array.isArray(aiChanges)) {
+    throw new Error("AIの変更候補が配列ではありません。自己進化を中止します");
+  }
+
   if (
     aiChanges.some(
       change =>
+        change === null ||
+        typeof change !== "object" ||
+        Array.isArray(change) ||
+        typeof change.filePath !== "string" ||
         change.filePath.replace(/\\/g, "/") !== targetPath
     )
   ) {
     throw new Error(
-      "AIが対象外ファイルを変更しようとしました"
+      "AIが対象外ファイルまたは不正な変更候補を返しました"
     );
   }
 
-  if (!Array.isArray(aiChanges)) {
-    throw new Error("AIの変更候補が配列ではありません。自己進化を中止します");
-  }
 
   if (aiChanges.length > 10) {
     throw new Error("AIの変更候補が10件を超えています。自己進化を中止します");
