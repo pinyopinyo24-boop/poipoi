@@ -129,25 +129,54 @@ export class CodeEvolutionEngine {
         prepared.push({ change, filePath, current: sourceCode, hasBom });
       }
 
-      // 検証をすべて通過した後に書き込む
+      // 検証済みの置換をファイルごとにまとめる
+      const outputByPath = new Map<
+        string,
+        { content: string; hasBom: boolean }
+      >();
+
       for (const item of prepared) {
-        const updated = item.current.replace(
-          item.change.oldCode,
-          item.change.newCode
-        );
-        const content = Buffer.from(updated, "utf8");
+        const previous = outputByPath.get(item.filePath);
+        const currentContent = previous
+          ? previous.content
+          : item.current;
+
+        const count =
+          currentContent.split(item.change.oldCode).length - 1;
+
+        if (count !== 1) {
+          throw new Error(
+            "連続置換の対象コードを一意に特定できません: " +
+              item.change.filePath
+          );
+        }
+
+        outputByPath.set(item.filePath, {
+          content: currentContent.replace(
+            item.change.oldCode,
+            item.change.newCode
+          ),
+          hasBom: item.hasBom,
+        });
+      }
+
+      // 全置換をまとめた後、ファイルごとに一度だけ書き込む
+      for (const [filePath, item] of outputByPath) {
+        const content = Buffer.from(item.content, "utf8");
         const output = item.hasBom
           ? Buffer.concat([Buffer.from([0xef, 0xbb, 0xbf]), content])
           : content;
 
         // 書き込み途中の失敗にも備えて先に復元対象へ登録
-        modified.add(item.filePath);
-        await fs.writeFile(item.filePath, output);
+        modified.add(filePath);
+        await fs.writeFile(filePath, output);
       }
 
       return {
         success: true,
-        changedFiles: prepared.map(item => item.change.filePath),
+        changedFiles: Array.from(
+          new Set(prepared.map(item => item.change.filePath))
+        ),
         testsPassed: false,
         rolledBack: false,
       };
