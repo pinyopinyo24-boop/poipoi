@@ -99,7 +99,8 @@ export class CodeEvolutionEngine {
           );
         }
 
-        const count = current.split(change.oldCode).length - 1;
+        const sourceCode = current.charCodeAt(0) === 0xfeff ? current.slice(1) : current;
+      const count = sourceCode.split(change.oldCode).length - 1;
 
         if (count === 0) {
           throw new Error(
@@ -125,7 +126,7 @@ export class CodeEvolutionEngine {
           );
         }
 
-        prepared.push({ change, filePath, current, hasBom });
+        prepared.push({ change, filePath, current: sourceCode, hasBom });
       }
 
       // 検証をすべて通過した後に書き込む
