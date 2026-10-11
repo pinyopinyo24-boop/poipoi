@@ -1,4 +1,4 @@
-﻿import fs from "fs";
+﻿﻿import fs from "fs";
 import path from "path";
 import { execFileSync } from "child_process";
 import { CodeEvolutionEngine, CodeChange } from "./CodeEvolutionEngine";
@@ -95,28 +95,18 @@ function commitChanges(changedFiles: string[]): void {
 
 function assertGitSafe() {
   const status = git(["status", "--porcelain"]);
-
   const unexpectedChanges = status
     .split(/\r?\n/)
     .filter(Boolean)
-    .filter(line => {
-      const entry = line.trim();
-
-      return ![
-        "?? server/core/PoipoiEvolveCLI.ts.bak2",
-        "?? server/core/PoipoiEvolveCLI.ts.bak3",
-      ].includes(entry);
-    });
+    .filter(line => line.slice(0, 2) !== "??");
 
   if (unexpectedChanges.length > 0) {
     throw new Error(
-      "作業ツリーが汚れています。\n" +
-      "先に現在の変更をcommit/stashしてください。\n\n" +
+      "追跡対象に未コミット変更またはステージ済み変更があります。安全のため中止します。\n" +
       unexpectedChanges.join("\n")
     );
   }
 }
-
 function extractTarget(request: string): string {
   const match = request.match(
     /((?:server|src)[\/\\][^\s"'`]+?\.(?:ts|tsx|js|jsx))/
@@ -248,10 +238,6 @@ function validateChanges(
       throw new Error(`AI生成コードに変更がありません: ${filePath}`);
     }
 
-    if (newCode === oldCode) {
-      throw new Error(`AI生成コードに変更がありません: ${filePath}`);
-    }
-
     const forbiddenGeneratedPatterns = [
       "export const export const",
       "export default export default",
@@ -303,6 +289,7 @@ async function main() {
     process.exit(1);
   }
 
+  assertGitSafe();
   console.log("🐾 ポイポイ自己進化");
   console.log(`要求: ${request}`);
 
