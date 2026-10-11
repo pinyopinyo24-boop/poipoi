@@ -234,10 +234,21 @@ export class CodeEvolutionEngine {
 
     try {
       realRoot = fsSync.realpathSync(root);
-      realAbsolute = fsSync.realpathSync(absolutePath);
-    } catch {
+    } catch (error) {
+      const detail =
+        error instanceof Error ? error.message : String(error);
       throw new Error(
-        "変更対象の実体パスを確認できません: " + filePath
+        `プロジェクトの実体パスを確認できません: ${root} / ${detail}`
+      );
+    }
+
+    try {
+      realAbsolute = fsSync.realpathSync(absolutePath);
+    } catch (error) {
+      const detail =
+        error instanceof Error ? error.message : String(error);
+      throw new Error(
+        `変更対象の実体パスを確認できません: ${filePath} / ${detail}`
       );
     }
 
@@ -263,31 +274,11 @@ export class CodeEvolutionEngine {
 
     try {
       targetStat = fsSync.statSync(realAbsolute);
-    } catch {
+    } catch (error) {
+      const detail =
+        error instanceof Error ? error.message : String(error);
       throw new Error(
-        "変更対象の情報を取得できません: " + filePath
-      );
-    }
-
-    if (!targetStat.isFile()) {
-      throw new Error(
-        "通常ファイル以外は変更できません: " + filePath
-      );
-    }
-
-    if (relativePath.length === 0) {
-      throw new Error(
-        "プロジェクトのルート自体は変更対象にできません: " + filePath
-      );
-    }
-
-    let targetStat: fsSync.Stats;
-
-    try {
-      targetStat = fsSync.statSync(realAbsolute);
-    } catch {
-      throw new Error(
-        "変更対象の情報を取得できません: " + filePath
+        `変更対象の情報を取得できません: ${filePath} / ${detail}`
       );
     }
 
