@@ -83,6 +83,22 @@ export class CodeEvolutionEngine {
           .subarray(hasBom ? 3 : 0)
           .toString("utf8");
 
+        if (
+          typeof change.oldCode !== "string" ||
+          change.oldCode.length === 0 ||
+          typeof change.newCode !== "string"
+        ) {
+          throw new Error(
+            "変更候補のoldCodeまたはnewCodeが不正です: " + change.filePath
+          );
+        }
+
+        if (change.oldCode === change.newCode) {
+          throw new Error(
+            "変更前後のコードが同一です: " + change.filePath
+          );
+        }
+
         const count = current.split(change.oldCode).length - 1;
 
         if (count === 0) {
