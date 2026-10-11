@@ -52,16 +52,38 @@ function git(args: string[]): string {
 }
 
 function commitChanges(changedFiles: string[]): void {
-  if (changedFiles.length === 0) {
+  const expectedFiles = [...new Set(changedFiles)].sort();
+
+  if (expectedFiles.length === 0) {
     throw new Error("Gitに確定する変更がありません");
   }
 
-  git(["add", "--", ...changedFiles]);
+  const existingStaged = git(["diff", "--cached", "--name-only"])
+    .split(/\r?\n/)
+    .filter(Boolean);
 
-  const staged = git(["diff", "--cached", "--name-only"]);
+  if (existingStaged.length > 0) {
+    throw new Error(
+      "既存のステージ済み変更があります。誤コミット防止のため中止します。\n" +
+      existingStaged.join("\n")
+    );
+  }
 
-  if (!staged) {
-    throw new Error("Gitに確定する対象がありません");
+  git(["add", "--", ...expectedFiles]);
+
+  const stagedFiles = git(["diff", "--cached", "--name-only"])
+    .split(/\r?\n/)
+    .filter(Boolean);
+
+  const actualFiles = [...new Set(stagedFiles)].sort();
+
+  if (JSON.stringify(actualFiles) !== JSON.stringify(expectedFiles)) {
+    git(["reset", "--", ...expectedFiles]);
+    throw new Error(
+      "ステージ対象と変更対象が一致しません。コミットを中止しました。\n" +
+      "予定: " + expectedFiles.join(", ") + "\n" +
+      "実際: " + actualFiles.join(", ")
+    );
   }
 
   git([
