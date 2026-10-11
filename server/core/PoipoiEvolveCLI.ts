@@ -381,6 +381,17 @@ async function main() {
     throw new Error("AIの変更候補が10件を超えています。自己進化を中止します");
   }
 
+  if (
+    !aiChanges.every(
+      (change: unknown) =>
+        change !== null &&
+        typeof change === "object" &&
+        !Array.isArray(change)
+    )
+  ) {
+    throw new Error("変更候補に不正なデータが含まれています。自己進化を中止します");
+  }
+
   const changes = validateChanges(
     aiChanges,
     targetPath
