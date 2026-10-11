@@ -233,8 +233,7 @@ function validateChanges(
       typeof item.oldCode !== "string" ||
       typeof item.newCode !== "string" ||
       !item.filePath.trim() ||
-      !item.oldCode.trim() ||
-      !item.newCode.trim()
+      !item.oldCode.trim()
     ) {
       throw new Error("変更候補の必須項目が欠落しているか、型が不正です");
     }
@@ -249,8 +248,8 @@ function validateChanges(
     }
 
     const code = fs.readFileSync(absolutePath, "utf8");
-    const oldCode = item.oldCode.trim();
-    const newCode = item.newCode.trim();
+    const oldCode = item.oldCode;
+    const newCode = item.newCode;
     const targetKey = JSON.stringify([filePath, oldCode]);
 
     if (seenTargets.has(targetKey)) {
@@ -294,9 +293,7 @@ function validateChanges(
       );
     }
 
-    if (!newCode) {
-      throw new Error(`新しいコードが空です: ${filePath}`);
-    }
+
 
     if (
       newCode.includes("process.env.") ||
