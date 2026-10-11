@@ -487,11 +487,13 @@ async function main() {
     );
   }
 
+  // Gitへの確定が成功してから、自己進化成功を表示する
+  commitChanges(result.changedFiles);
+
   console.log("================================");
-  console.log("✅ 自己進化成功");
+  console.log("✅ 自己進化成功（Gitコミット完了）");
   console.log(`変更ファイル: ${result.changedFiles.join(", ")}`);
   console.log("================================");
-  commitChanges(result.changedFiles);
 }
 
 main().catch((error: unknown) => {
