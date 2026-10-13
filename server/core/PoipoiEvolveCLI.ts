@@ -462,7 +462,18 @@ async function main() {
           throw new Error("oldCodeまたはnewCodeが不正です");
         }
 
-        const occurrences = currentCode.split(change.oldCode).length - 1;
+        const normalizedOldCode = change.oldCode
+          .replace(/\r\n/g, "\n")
+          .replace(/\r/g, "\n");
+        const sourceLineEnding = currentCode.includes("\r\n") ? "\r\n" : "\n";
+        const sourceCompatibleOldCode =
+          sourceLineEnding === "\n"
+            ? normalizedOldCode
+            : normalizedOldCode.replace(/\n/g, "\r\n");
+        const occurrences =
+          normalizedOldCode.length === 0
+            ? 0
+            : currentCode.split(sourceCompatibleOldCode).length - 1;
         if (occurrences !== 1) {
           throw new Error(
             `oldCodeが現在コード内に一意に存在しません（出現回数: ${occurrences}）`

@@ -100,7 +100,20 @@ export class CodeEvolutionEngine {
         }
 
         const sourceCode = current.charCodeAt(0) === 0xfeff ? current.slice(1) : current;
-        const count = sourceCode.split(change.oldCode).length - 1;
+        const sourceLineEnding = sourceCode.includes("\r\n")
+          ? "\r\n"
+          : "\n";
+        const normalizedOldCode = change.oldCode
+          .replace(/\r\n/g, "\n")
+          .replace(/\r/g, "\n");
+        const sourceCompatibleOldCode =
+          sourceLineEnding === "\n"
+            ? normalizedOldCode
+            : normalizedOldCode.replace(/\n/g, "\r\n");
+        const count =
+          normalizedOldCode.length === 0
+            ? 0
+            : sourceCode.split(sourceCompatibleOldCode).length - 1;
 
         if (count === 0) {
           throw new Error(
@@ -141,20 +154,42 @@ export class CodeEvolutionEngine {
           ? previous.content
           : item.current;
 
+        const currentLineEnding = currentContent.includes("\r\n")
+          ? "\r\n"
+          : "\n";
+        const normalizedOldCode = item.change.oldCode
+          .replace(/\r\n/g, "\n")
+          .replace(/\r/g, "\n");
+        const normalizedNewCode = item.change.newCode
+          .replace(/\r\n/g, "\n")
+          .replace(/\r/g, "\n");
+        const compatibleOldCode =
+          currentLineEnding === "\n"
+            ? normalizedOldCode
+            : normalizedOldCode.replace(/\n/g, "\r\n");
+        const compatibleNewCode =
+          currentLineEnding === "\n"
+            ? normalizedNewCode
+            : normalizedNewCode.replace(/\n/g, "\r\n");
         const count =
-          currentContent.split(item.change.oldCode).length - 1;
+          normalizedOldCode.length === 0
+            ? 0
+            : currentContent.split(compatibleOldCode).length - 1;
 
         if (count !== 1) {
           throw new Error(
             "連続置換の対象コードを一意に特定できません: " +
-              item.change.filePath
+              item.change.filePath +
+              "（検出数: " +
+              count +
+              "）"
           );
         }
 
         outputByPath.set(item.filePath, {
           content: currentContent.replace(
-            item.change.oldCode,
-            item.change.newCode
+            compatibleOldCode,
+            compatibleNewCode
           ),
           hasBom: item.hasBom,
         });
