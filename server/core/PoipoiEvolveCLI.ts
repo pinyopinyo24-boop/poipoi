@@ -282,8 +282,19 @@ function validateChanges(
     }
 
     const code = fs.readFileSync(absolutePath, "utf8");
-    const oldCode = item.oldCode;
-    const newCode = item.newCode;
+    const sourceLineEnding = code.includes("\r\n") ? "\r\n" : "\n";
+    const normalizeLineEndings = (value: string): string =>
+      value.replace(/\r\n/g, "\n").replace(/\r/g, "\n");
+    const normalizedOldCode = normalizeLineEndings(item.oldCode);
+    const normalizedNewCode = normalizeLineEndings(item.newCode);
+    const oldCode =
+      sourceLineEnding === "\n"
+        ? normalizedOldCode
+        : normalizedOldCode.replace(/\n/g, "\r\n");
+    const newCode =
+      sourceLineEnding === "\n"
+        ? normalizedNewCode
+        : normalizedNewCode.replace(/\n/g, "\r\n");
     const targetKey = JSON.stringify([filePath, oldCode]);
 
     if (seenTargets.has(targetKey)) {
