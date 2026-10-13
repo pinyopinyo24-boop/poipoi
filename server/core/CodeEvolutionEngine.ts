@@ -193,6 +193,16 @@ export class CodeEvolutionEngine {
           ),
           hasBom: item.hasBom,
         });
+        const generatedContent = outputByPath.get(item.filePath)?.content;
+        if (
+          generatedContent !== undefined &&
+          /;\s*;/.test(generatedContent)
+        ) {
+          throw new Error(
+            "生成コードに連続セミコロン（;;）を検出しました。変更を中止します。"
+          );
+        
+        }
       }
 
       // 全置換をまとめた後、ファイルごとに一度だけ書き込む
