@@ -198,7 +198,10 @@ export class CodeEvolutionEngine {
           generatedContent !== undefined &&
           /;\s*;/.test(generatedContent)
         ) {
-          throw new Error(`r`n            "生成コードに連続セミコロン（;;）を検出しました。変更を中止します。"`r`n          );`r`n        }
+          throw new Error(
+            "生成コードに連続セミコロン（;;）を検出しました。変更を中止します。"
+          );
+        }
       }
 
       // 全置換をまとめた後、ファイルごとに一度だけ書き込む
