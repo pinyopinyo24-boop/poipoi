@@ -1,344 +1,599 @@
-import * as fs from "node:fs/promises";
-import fsSync from "fs";
-import * as path from "node:path";
+﻿import fs from "fs";
+import path from "path";
+import { execFileSync } from "child_process";
+import { CodeEvolutionEngine, CodeChange } from "./CodeEvolutionEngine";
+import { aiProviderManager } from "../ai/AIProviderManager";
 
-export interface CodeChange {
+type AIChange = {
   filePath: string;
   oldCode: string;
   newCode: string;
   reason: string;
+};
+
+const ROOT = process.cwd();
+
+const FORBIDDEN = [
+  ".env",
+  ".env.local",
+  ".env.production",
+  "package-lock.json",
+  "pnpm-lock.yaml",
+  "yarn.lock",
+  ".git"
+];
+
+function safePath(filePath: string): string {
+  const normalized = filePath.replace(/\\/g, "/").replace(/^\.\/+/, "");
+  const absolute = path.resolve(ROOT, normalized);
+
+  if (!absolute.startsWith(ROOT + path.sep) && absolute !== ROOT) {
+    throw new Error(`プロジェクト外のファイルは禁止: ${filePath}`);
+  }
+
+  if (!fs.existsSync(absolute)) {
+    throw new Error(`変更対象ファイルが存在しません: ${filePath}`);
+  }
+
+  const realRoot = fs.realpathSync(ROOT);
+  const realAbsolute = fs.realpathSync(absolute);
+
+  if (
+    !realAbsolute.startsWith(realRoot + path.sep) &&
+    realAbsolute !== realRoot
+  ) {
+    throw new Error(`実体パスがプロジェクト外です: ${filePath}`);
+  }
+
+  if (
+    FORBIDDEN.some(
+      x =>
+        normalized === x ||
+        normalized.startsWith(x + "/")
+    )
+  ) {
+    throw new Error(`変更禁止ファイルです: ${filePath}`);
+  }
+
+  return absolute;
 }
 
-export interface CodeEvolutionResult {
-  success: boolean;
-  changedFiles: string[];
-  testsPassed: boolean;
-  rolledBack: boolean;
-  error?: string;
+function git(args: string[]): string {
+  return execFileSync("git", args, {
+    cwd: ROOT,
+    encoding: "utf8"
+  }).trim();
 }
 
-export class CodeEvolutionEngine {
-  constructor(private readonly projectRoot: string = process.cwd()) {}
+function commitChanges(changedFiles: string[]): void {
+  const expectedFiles = [...new Set(changedFiles)].sort();
 
-  async apply(
-    changes: CodeChange[],
-    testCommand: string[] = []
-  ): Promise<CodeEvolutionResult> {
-    const backups = new Map<string, Buffer>();
-    const modified = new Set<string>();
+  if (expectedFiles.length === 0) {
+    throw new Error("Gitに確定する変更がありません");
+  }
 
+  const existingStaged = git(["diff", "--cached", "--name-only"])
+    .split(/\r?\n/)
+    .filter(Boolean);
+
+  if (existingStaged.length > 0) {
+    throw new Error(
+      "既存のステージ済み変更があります。誤コミット防止のため中止します。\n" +
+      existingStaged.join("\n")
+    );
+  }
+
+  git(['add', ...expectedFiles]);
+
+  const stagedFiles = git(["diff", "--cached", "--name-only"])
+    .split(/\r?\n/)
+    .filter(Boolean);
+
+  const actualFiles = [...new Set(stagedFiles)].sort();
+
+  if (JSON.stringify(actualFiles) !== JSON.stringify(expectedFiles)) {
+    git(["reset", "--", ...expectedFiles]);
+    throw new Error(
+      "ステージ対象と変更対象が一致しません。コミットを中止しました。\n" +
+      "予定: " + expectedFiles.join(", ") + "\n" +
+      "実際: " + actualFiles.join(", ")
+    );
+  }
+
+  try {
+    git([
+      "commit",
+      "-m",
+      "feat: apply safe poipoi self evolution",
+    ]);
+  } catch (commitError) {
+    const commitMessage =
+      commitError instanceof Error
+        ? commitError.message
+        : String(commitError);
+
+    throw new Error(
+      "Gitコミットに失敗しました。作業中の変更を保護するため自動復元は行っていません。\n" +
+        commitMessage
+    );
+  }
+}
+
+function assertGitSafe() {
+  const status = git(["status", "--porcelain"]);
+  const unexpectedChanges = status
+    .split(/\r?\n/)
+    .filter(Boolean)
+    .filter(line => line.slice(0, 2) !== "??");
+
+  if (unexpectedChanges.length > 0) {
+    throw new Error(
+      "追跡対象に未コミット変更またはステージ済み変更があります。安全のため中止します。\n" +
+      unexpectedChanges.join("\n")
+    );
+  }
+}
+function extractTarget(request: string): string {
+  const match = request.match(
+    /((?:server|src)[\/\\][^\s"'`]+?\.(?:ts|tsx|js|jsx))/
+  );
+
+  if (!match) {
+    throw new Error(
+      "対象ファイルを特定できません。\n" +
+      "例: server/core/SelfEvolutionWorkflow.ts を改善する"
+    );
+  }
+
+  return match[1].replace(/\\/g, "/");
+}
+
+function extractJson(text: string): AIChange[] {
+  const candidates = [
+    text.trim(),
+    text.replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/i, "").trim()
+  ];
+
+  for (const candidate of candidates) {
     try {
-      if (testCommand.length > 0) {
+      const parsed = JSON.parse(candidate);
+
+      const normalize = (value: unknown, index: number): AIChange => {
+        if (!value || typeof value !== "object") {
+          throw new Error(`AI変更 #${index + 1} の形式が不正です`);
+        }
+
+        const item = value as Record<string, unknown>;
+
+        if (
+          typeof item.filePath !== "string" ||
+          typeof item.oldCode !== "string" ||
+          typeof item.newCode !== "string" ||
+          typeof item.reason !== "string"
+        ) {
+          throw new Error(`AI変更 #${index + 1} の形式が不正です`);
+        }
+
+        return {
+          filePath: item.filePath,
+          oldCode: item.oldCode,
+          newCode: item.newCode,
+          reason: item.reason,
+        };
+      };
+
+      if (Array.isArray(parsed)) {
+        return parsed.map(normalize);
+      }
+
+      if (parsed && typeof parsed === "object") {
+        const value = parsed as Record<string, unknown>;
+
+        if (Array.isArray(value.changes)) {
+          return value.changes.map(normalize);
+        }
+
+        return [normalize(value, 0)];
+      }
+    } catch {
+      continue;
+    }
+  }
+
+  throw new Error("AI応答に有効なJSON変更内容がありません");
+}
+async function invokeAI(messages: unknown[]): Promise<string> {
+  const manager = aiProviderManager as {
+    invoke?: (messages: unknown[]) => Promise<string>;
+  };
+
+  if (typeof manager.invoke !== "function") {
+    throw new Error("AIProviderManager.invoke() が利用できません");
+  }
+
+  return await manager.invoke(messages);
+}
+function findRelevantTests(targetPath: string): string[] {
+  const absoluteTarget = safePath(targetPath);
+  const directory = path.dirname(absoluteTarget);
+  const base = path.basename(
+    absoluteTarget,
+    path.extname(absoluteTarget)
+  );
+
+  const candidates = [
+    path.join(directory, `${base}.test.ts`),
+    path.join(directory, `${base}.test.tsx`),
+    path.join(directory, `${base}.spec.ts`),
+    path.join(directory, `${base}.spec.tsx`)
+  ];
+
+  return candidates.filter(file => fs.existsSync(file));
+}
+function validateChanges(
+  changes: AIChange[],
+  targetPath: string
+): CodeChange[] {
+  const seenTargets = new Set<string>();
+
+  return changes.map(item => {
+    if (item === null || typeof item !== "object" || Array.isArray(item)) {
+      throw new Error("変更候補がオブジェクトではありません");
+    }
+    if (
+      typeof item.filePath !== "string" ||
+      typeof item.oldCode !== "string" ||
+      typeof item.newCode !== "string" ||
+      !item.filePath.trim() ||
+      !item.oldCode.trim()
+    ) {
+      throw new Error("変更候補の必須項目が欠落しているか、型が不正です");
+    }
+
+    const filePath = item.filePath.replace(/\\/g, "/");
+    const absolutePath = safePath(filePath);
+
+    if (filePath !== targetPath) {
+      throw new Error(
+        `変更対象外のファイルです: ${filePath}`
+      );
+    }
+
+    const code = fs.readFileSync(absolutePath, "utf8");
+    const sourceLineEnding = code.includes("\r\n") ? "\r\n" : "\n";
+    const normalizeLineEndings = (value: string): string =>
+      value.replace(/\r\n/g, "\n").replace(/\r/g, "\n");
+    const normalizedOldCode = normalizeLineEndings(item.oldCode);
+    const normalizedNewCode = normalizeLineEndings(item.newCode);
+    const oldCode =
+      sourceLineEnding === "\n"
+        ? normalizedOldCode
+        : normalizedOldCode.replace(/\n/g, "\r\n");
+    const newCode =
+      sourceLineEnding === "\n"
+        ? normalizedNewCode
+        : normalizedNewCode.replace(/\n/g, "\r\n");
+    const targetKey = JSON.stringify([filePath, oldCode]);
+
+    if (seenTargets.has(targetKey)) {
+      throw new Error(`同じ置換対象が重複しています: ${filePath}`);
+    }
+
+    seenTargets.add(targetKey);
+
+    if (!oldCode) {
+      throw new Error(`置換対象コードが空です: ${filePath}`);
+    }
+
+    const occurrences = code.split(oldCode).length - 1;
+
+    if (occurrences !== 1) {
+      throw new Error(
+        `置換対象コードを一意に特定できません: ${filePath} / ${occurrences}件`
+      );
+    }
+
+    if (newCode === oldCode) {
+      throw new Error(`AI生成コードに変更がありません: ${filePath}`);
+    }
+
+    const forbiddenGeneratedPatterns = [
+      "export const export const",
+      "export default export default",
+      "import import ",
+      "class class ",
+      "function function ",
+      "interface interface ",
+      "type type ",
+      "const const ",
+      "let let ",
+      "var var ",
+    ];
+
+    if (forbiddenGeneratedPatterns.some(pattern => newCode.includes(pattern))) {
+      throw new Error(
+        `AI生成コードに不正な重複構文があります: ${filePath}`
+      );
+    }
+
+
+
+    if (
+      newCode.includes("process.env.") ||
+      newCode.includes("API_KEY") ||
+      newCode.includes("SECRET")
+    ) {
+      throw new Error(
+        `秘密情報を含む可能性がある変更を拒否しました: ${filePath}`
+      );
+    }
+
+    return {
+      filePath,
+      oldCode,
+      newCode,
+      reason: item.reason
+    };
+  });
+}
+async function main() {
+  const request = process.argv.slice(2).join(" ").trim();
+
+  if (!request) {
+    console.error(
+      '使い方: pnpm poipoi:evolve "改善内容"'
+    );
+    process.exit(1);
+  }
+
+  assertGitSafe();
+  console.log("🐾 ポイポイ自己進化");
+  console.log(`要求: ${request}`);
+
+  // 変更前のGit状態を保護
+  const targetPath = extractTarget(request);
+  const absoluteTarget = safePath(targetPath);
+
+  console.log(`対象: ${targetPath}`);
+
+  const currentCode = fs.readFileSync(
+    absoluteTarget,
+    "utf8"
+  );
+
+  if (!currentCode.trim()) {
+    throw new Error("対象ファイルが空です");
+  }
+  const messages: { role: string; content: string }[] = [
+    {
+      role: "system",
+      content:
+        [
+          "あなたはPoipoiの安全なコード改善AIです。",
+          "必ずJSON配列だけを返してください。",
+          "",
+          "形式:",
+          '[{"filePath":"相対パス","oldCode":"現在コードから完全一致する置換対象","newCode":"置換後コード","reason":"理由"}]',
+          "",
+          "ルール:",
+          "1. filePathは対象ファイルと同じものだけを返す",
+          "2. oldCodeは現在コードから完全コピーする",
+          "3. oldCodeは必ず現在コード内に存在する文字列にする",
+          "4. newCodeはoldCodeを置換する完全なコードにする",
+          "5. oldCodeの前後を勝手に変更しない",
+          "6. 変更は安全で小さなものを1件だけ提案する",
+          "7. 説明文、Markdown、コードフェンスは禁止",
+          "8. 必ずJSON配列だけを返す"
+        ].join("\n")
+    },
+    {
+      role: "user",
+      content:
+        [
+          `改善要求:\n${request}`,
+          `対象ファイル:\n${targetPath}`,
+          `現在コード:\n${currentCode}`
+        ].join("\n\n")
+    }
+  ];
+  let aiText = "";
+
+  for (let attempt = 1; attempt <= 3; attempt++) {
+    try {
+      console.log(`AI生成: ${attempt}/3`);
+      aiText = await invokeAI(messages);
+      break;
+    } catch (error) {
+      if (attempt === 3) {
         throw new Error(
-          "本番自己進化ではテスト自動実行は禁止されています"
+          "AI Provider呼び出しに3回失敗しました: " +
+          (error instanceof Error ? error.message : String(error))
         );
       }
 
-      if (changes.length === 0) {
-        throw new Error("変更候補がありません");
+      await new Promise(resolve =>
+        setTimeout(resolve, 1000 * attempt)
+      );
+    }
+  }
+
+  let changes: ReturnType<typeof validateChanges> = [];
+  let validationError = "";
+
+  for (let attempt = 1; attempt <= 3; attempt++) {
+    try {
+      const aiChanges = extractJson(aiText);
+
+      if (!Array.isArray(aiChanges) || aiChanges.length === 0) {
+        throw new Error("AIの変更候補が空、または配列ではありません");
+      }
+      if (aiChanges.length > 10) {
+        throw new Error("AIの変更候補が10件を超えています");
       }
 
-      const prepared: Array<{
-        change: CodeChange;
-        filePath: string;
-        current: string;
-        hasBom: boolean;
-      }> = [];
-      const seenPaths = new Set<string>();
-
-      // 書き込み前に全変更を検証する
-      for (const change of changes) {
-        if (!change.oldCode) {
-          throw new Error("変更元コードが空です: " + change.filePath);
+      for (const change of aiChanges) {
+        if (
+          change === null ||
+          typeof change !== "object" ||
+          Array.isArray(change) ||
+          typeof change.filePath !== "string" ||
+          change.filePath.replace(/\\/g, "/") !== targetPath
+        ) {
+          throw new Error("AIが対象外ファイルまたは不正な変更候補を返しました");
         }
-
-        if (!change.newCode.trim()) {
-          throw new Error("新しいコードが空です: " + change.filePath);
-        }
-
-        const filePath = this.resolveSafePath(change.filePath);
-        const pathKey =
-          process.platform === "win32"
-            ? filePath.toLowerCase()
-            : filePath;
-
-        if (seenPaths.has(pathKey)) {
-          throw new Error(
-            "同じファイルへの重複変更は禁止されています: " +
-              change.filePath
-          );
-        }
-        seenPaths.add(pathKey);
-
-        const originalBytes = await fs.readFile(filePath);
-        backups.set(filePath, originalBytes);
-
-        const hasBom =
-          originalBytes.length >= 3 &&
-          originalBytes[0] === 0xef &&
-          originalBytes[1] === 0xbb &&
-          originalBytes[2] === 0xbf;
-
-        const current = originalBytes
-          .subarray(hasBom ? 3 : 0)
-          .toString("utf8");
 
         if (
           typeof change.oldCode !== "string" ||
           change.oldCode.length === 0 ||
-          typeof change.newCode !== "string"
+          typeof change.newCode !== "string" ||
+          change.newCode.trim().length === 0
         ) {
-          throw new Error(
-            "変更候補のoldCodeまたはnewCodeが不正です: " + change.filePath
-          );
+          throw new Error("oldCodeまたはnewCodeが不正です");
         }
 
-        if (change.oldCode === change.newCode) {
-          throw new Error(
-            "変更前後のコードが同一です: " + change.filePath
-          );
-        }
-
-        const sourceCode = current.charCodeAt(0) === 0xfeff ? current.slice(1) : current;
-        const sourceLineEnding = sourceCode.includes("\r\n")
-          ? "\r\n"
-          : "\n";
         const normalizedOldCode = change.oldCode
           .replace(/\r\n/g, "\n")
           .replace(/\r/g, "\n");
+        const sourceLineEnding = currentCode.includes("\r\n") ? "\r\n" : "\n";
         const sourceCompatibleOldCode =
           sourceLineEnding === "\n"
             ? normalizedOldCode
             : normalizedOldCode.replace(/\n/g, "\r\n");
-        const count =
+        const occurrences =
           normalizedOldCode.length === 0
             ? 0
-            : sourceCode.split(sourceCompatibleOldCode).length - 1;
-
-        if (count === 0) {
+            : currentCode.split(sourceCompatibleOldCode).length - 1;
+        if (occurrences !== 1) {
           throw new Error(
-            "変更対象コードが見つかりません: " + change.filePath
-          );
-        }
-
-        if (count > 1) {
-          throw new Error(
-            "変更対象コードが複数あります: " + change.filePath
-          );
-        }
-
-        if (
-          change.newCode.includes("export const export const") ||
-          change.newCode.includes("export default export default") ||
-          change.newCode.includes("import import ") ||
-          change.newCode.includes("class class ") ||
-          change.newCode.includes("function function ")
-        ) {
-          throw new Error(
-            "AI生成コードに不正な重複構文があります: " + change.filePath
-          );
-        }
-
-        prepared.push({ change, filePath, current: sourceCode, hasBom });
-      }
-
-      // 検証済みの置換をファイルごとにまとめる
-      const outputByPath = new Map<
-        string,
-        { content: string; hasBom: boolean }
-      >();
-
-      for (const item of prepared) {
-        const previous = outputByPath.get(item.filePath);
-        const currentContent = previous
-          ? previous.content
-          : item.current;
-
-        const currentLineEnding = currentContent.includes("\r\n")
-          ? "\r\n"
-          : "\n";
-        const normalizedOldCode = item.change.oldCode
-          .replace(/\r\n/g, "\n")
-          .replace(/\r/g, "\n");
-        const normalizedNewCode = item.change.newCode
-          .replace(/\r\n/g, "\n")
-          .replace(/\r/g, "\n");
-        const compatibleOldCode =
-          currentLineEnding === "\n"
-            ? normalizedOldCode
-            : normalizedOldCode.replace(/\n/g, "\r\n");
-        const compatibleNewCode =
-          currentLineEnding === "\n"
-            ? normalizedNewCode
-            : normalizedNewCode.replace(/\n/g, "\r\n");
-        const count =
-          normalizedOldCode.length === 0
-            ? 0
-            : currentContent.split(compatibleOldCode).length - 1;
-
-        if (count !== 1) {
-          throw new Error(
-            "連続置換の対象コードを一意に特定できません: " +
-              item.change.filePath +
-              "（検出数: " +
-              count +
-              "）"
-          );
-        }
-
-        outputByPath.set(item.filePath, {
-          content: currentContent.replace(
-            compatibleOldCode,
-            compatibleNewCode
-          ),
-          hasBom: item.hasBom,
-        });
-        const generatedContent = outputByPath.get(item.filePath)?.content;
-        if (
-          generatedContent !== undefined &&
-          /;\s*;/.test(generatedContent)
-        ) {
-          throw new Error(
-            "生成コードに連続セミコロン（;;）を検出しました。変更を中止します。"
+            `oldCodeが現在コード内に一意に存在しません（出現回数: ${occurrences}）`
           );
         }
       }
 
-      // 全置換をまとめた後、ファイルごとに一度だけ書き込む
-      for (const [filePath, item] of outputByPath) {
-        const content = Buffer.from(item.content, "utf8");
-        const output = item.hasBom
-          ? Buffer.concat([Buffer.from([0xef, 0xbb, 0xbf]), content])
-          : content;
-
-        // 書き込み途中の失敗にも備えて先に復元対象へ登録
-        modified.add(filePath);
-        await fs.writeFile(filePath, output);
+      changes = validateChanges(aiChanges, targetPath);
+      if (changes.length === 0) {
+        throw new Error("変更候補が0件です");
       }
 
-      return {
-        success: true,
-        changedFiles: Array.from(
-          new Set(prepared.map(item => item.change.filePath))
-        ),
-        testsPassed: false,
-        rolledBack: false,
-      };
+      validationError = "";
+      break;
     } catch (error) {
-      const rollbackErrors: string[] = [];
+      validationError =
+        error instanceof Error ? error.message : String(error);
 
-      for (const filePath of modified) {
-        const original = backups.get(filePath);
-        if (original === undefined) {
-          rollbackErrors.push(filePath + ": 復元用バックアップが見つかりません。");
-          continue;
-        }
-
-        try {
-          await fs.writeFile(filePath, original);
-          const restored = await fs.readFile(filePath);
-          if (!restored.equals(original)) {
-            throw new Error("復元後の内容が元データと一致しません。");
-          }
-        } catch (rollbackError) {
-          rollbackErrors.push(
-            filePath + ": " +
-              (rollbackError instanceof Error
-                ? rollbackError.message
-                : String(rollbackError))
-          );
-        }
+      if (attempt === 3) {
+        throw new Error(
+          "AI生成コードの検証に3回失敗しました。変更は適用していません: " +
+          validationError
+        );
       }
 
-      const message =
-        error instanceof Error ? error.message : String(error);
-      const finalError =
-        rollbackErrors.length > 0
-          ? message + "\n復元失敗:\n" + rollbackErrors.join("\n")
-          : message;
+      console.warn(`変更候補の検証失敗: ${attempt}/3。AIに再生成を要求します。`);
 
-      return {
-        success: false,
-        changedFiles: Array.from(modified),
-        testsPassed: false,
-        rolledBack: modified.size > 0 && rollbackErrors.length === 0,
-        error: finalError,
-      };
+      messages.push(
+        { role: "assistant", content: aiText },
+        {
+          role: "user",
+          content:
+            "直前の変更候補は検証に失敗しました。\n" +
+            "失敗理由: " + validationError + "\n\n" +
+            "対象ファイル: " + targetPath + "\n\n" +
+            "以下が対象ファイルの現在コードです。\n" +
+            "oldCodeには、次のコードから連続した文字列を一字一句そのままコピーしてください。\n" +
+            "空白、改行、インデントも一致させ、現在コード内に1回だけ存在する範囲を選んでください。\n" +
+            "変更は安全な最小限のものを1件だけ提案してください。\n" +
+            "filePathは対象ファイルと同じ値にしてください。\n" +
+            "JSON配列だけを返し、説明文やMarkdownは付けないでください。\n\n" +
+            "現在コード:\n" + currentCode
+        }
+      );
+
+      aiText = await invokeAI(messages);
     }
   }
+  console.log(`変更候補: ${changes.length}件`);
 
-  private resolveSafePath(filePath: string): string {
-    const root = path.resolve(this.projectRoot);
-    const absolutePath = path.resolve(root, filePath);
-
-    if (
-      absolutePath !== root &&
-      !absolutePath.startsWith(root + path.sep)
-    ) {
-      throw new Error(
-        "プロジェクト外への変更は禁止されています: " + filePath
-      );
-    }
-
-    let realRoot: string;
-    let realAbsolute: string;
-
-    try {
-      realRoot = fsSync.realpathSync(root);
-    } catch (error) {
-      const detail =
-        error instanceof Error ? error.message : String(error);
-      throw new Error(
-        `プロジェクトの実体パスを確認できません: ${root} / ${detail}`
-      );
-    }
-
-    try {
-      realAbsolute = fsSync.realpathSync(absolutePath);
-    } catch (error) {
-      const detail =
-        error instanceof Error ? error.message : String(error);
-      throw new Error(
-        `変更対象の実体パスを確認できません: ${filePath} / ${detail}`
-      );
-    }
-
-    const relativePath = path.relative(realRoot, realAbsolute);
-
-    if (
-      relativePath === ".." ||
-      relativePath.startsWith(".." + path.sep) ||
-      path.isAbsolute(relativePath)
-    ) {
-      throw new Error(
-        "実体パスがプロジェクト外です: " + filePath
-      );
-    }
-
-    if (relativePath.length === 0) {
-      throw new Error(
-        "プロジェクトのルート自体は変更対象にできません: " + filePath
-      );
-    }
-
-    let targetStat: fsSync.Stats;
-
-    try {
-      targetStat = fsSync.statSync(realAbsolute);
-    } catch (error) {
-      const detail =
-        error instanceof Error ? error.message : String(error);
-      throw new Error(
-        `変更対象の情報を取得できません: ${filePath} / ${detail}`
-      );
-    }
-
-    if (!targetStat.isFile()) {
-      throw new Error(
-        "通常ファイル以外は変更できません: " + filePath
-      );
-    }
-
-    return realAbsolute;
-  }
+  // 自己進化前のステージ済み変更を保護
+const stagedBeforeEvolution = git(["diff", "--cached", "--name-only"]);
+if (stagedBeforeEvolution.trim()) {
+  throw new Error(
+    "自己進化前のステージ済み変更を保護するため中止しました。\n" +
+    stagedBeforeEvolution
+  );
 }
+
+  "status",
+  "--porcelain",
+  "--",
+  targetPath,
+]);
+if (targetStatusBeforeEvolution.trim()) {
+  throw new Error(
+    "自己進化対象ファイルに既存の変更があるため中止しました。\n" +
+    targetStatusBeforeEvolution
+  );
+}
+const engine = new CodeEvolutionEngine(ROOT);
+
+  const result = await engine.apply(
+    changes,
+  );
+
+  if (!result.success) {
+    console.error("❌ 自己進化失敗");
+    console.error(result.error);
+    console.error(
+      "ロールバック:",
+      result.rolledBack ? "実行済み" : "失敗/なし"
+    );
+    process.exit(1);
+  }
+
+  if (result.changedFiles.length === 0) {
+    throw new Error("自己進化成功と判定されましたが変更ファイルがありません");
+  }
+
+  const expectedTarget = targetPath.replace(/\\/g, "/");
+  const unexpectedResultFiles = result.changedFiles.filter(
+    filePath => filePath.replace(/\\/g, "/") !== expectedTarget
+  );
+
+  if (unexpectedResultFiles.length > 0) {
+    throw new Error(
+      "自己進化エンジンが対象外ファイルを返しました。コミットを中止します。\n" +
+      unexpectedResultFiles.join("\n")
+    );
+  }
+  const afterStatus = git([
+    "status",
+    "--porcelain",
+    "--",
+    ...result.changedFiles,
+  ]);
+
+  if (!afterStatus) {
+    throw new Error(
+      "自己進化成功と判定されましたが変更対象ファイルにGit差分がありません"
+    );
+  }
+
+  // Gitへの確定が成功してから、自己進化成功を表示する
+  commitChanges(result.changedFiles);
+
+  console.log("================================");
+  console.log("✅ 自己進化成功（Gitコミット完了）");
+  console.log(`変更ファイル: ${result.changedFiles.join(", ")}`);
+  console.log("================================");
+}
+
+main().catch((error: unknown) => {
+  console.error("❌ CLIエラー");
+  console.error(
+    error instanceof Error
+      ? error.message
+      : String(error)
+  );
+  process.exit(1);
+});
+
+
