@@ -112,8 +112,23 @@ function commitChanges(changedFiles: string[]): void {
         ? commitError.message
         : String(commitError);
 
+    try {
+      git(["reset", "--", ...expectedFiles]);
+    } catch (unstageError) {
+      const unstageMessage =
+        unstageError instanceof Error
+          ? unstageError.message
+          : String(unstageError);
+
+      throw new Error(
+        "Gitコミットに失敗しました。作業中の変更は保持されています。\n" +
+          "ステージ解除にも失敗しました: " + unstageMessage + "\n" +
+          "コミットエラー: " + commitMessage
+      );
+    }
+
     throw new Error(
-      "Gitコミットに失敗しました。作業中の変更を保護するため自動復元は行っていません。\n" +
+      "Gitコミットに失敗しました。作業中の変更は保持し、ステージだけ解除しました。\n" +
         commitMessage
     );
   }
