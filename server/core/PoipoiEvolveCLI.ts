@@ -535,7 +535,28 @@ async function main() {
   }
   console.log(`変更候補: ${changes.length}件`);
 
-  const engine = new CodeEvolutionEngine(ROOT);
+  // 自己進化前のステージ済み変更を保護
+const stagedBeforeEvolution = git(["diff", "--cached", "--name-only"]);
+if (stagedBeforeEvolution.trim()) {
+  throw new Error(
+    "自己進化前のステージ済み変更を保護するため中止しました。\n" +
+    stagedBeforeEvolution
+  );
+}
+
+const targetStatusBeforeEvolution = git([
+  "status",
+  "--porcelain",
+  "--",
+  targetPath,
+]);
+if (targetStatusBeforeEvolution.trim()) {
+  throw new Error(
+    "自己進化対象ファイルに既存の変更があるため中止しました。\n" +
+    targetStatusBeforeEvolution
+  );
+}
+const engine = new CodeEvolutionEngine(ROOT);
 
   const result = await engine.apply(
     changes,
