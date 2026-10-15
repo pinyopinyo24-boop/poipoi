@@ -205,6 +205,11 @@ export class CodeEvolutionEngine {
       }
 
       // 全置換をまとめた後、ファイルごとに一度だけ書き込む
+      for (const filePath of outputByPath.keys()) {
+  if (!backups.has(filePath) || backups.get(filePath) === undefined) {
+    throw new Error("Missing rollback backup for target file: " + filePath);
+  }
+}
       for (const [filePath, item] of outputByPath) {
         const content = Buffer.from(item.content, "utf8");
         const output = item.hasBom
