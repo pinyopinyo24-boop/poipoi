@@ -229,7 +229,10 @@ export class CodeEvolutionEngine {
 
       for (const filePath of modified) {
         const original = backups.get(filePath);
-        if (!original) continue;
+        if (original === undefined) {
+          rollbackErrors.push(filePath + ": 復元用バックアップが見つかりません。");
+          continue;
+        }
 
         try {
           await fs.writeFile(filePath, original);
