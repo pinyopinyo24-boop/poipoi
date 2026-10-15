@@ -1,4 +1,4 @@
-﻿import * as fs from "node:fs/promises";
+import * as fs from "node:fs/promises";
 import fsSync from "fs";
 import * as path from "node:path";
 
@@ -233,6 +233,10 @@ export class CodeEvolutionEngine {
 
         try {
           await fs.writeFile(filePath, original);
+          const restored = await fs.readFile(filePath);
+          if (!restored.equals(original)) {
+            throw new Error("復元後の内容が元データと一致しません。");
+          }
         } catch (rollbackError) {
           rollbackErrors.push(
             filePath + ": " +
