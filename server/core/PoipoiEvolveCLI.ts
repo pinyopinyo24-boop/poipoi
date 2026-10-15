@@ -1,4 +1,4 @@
-import fs from "fs";
+﻿import fs from "fs";
 import path from "path";
 import { execFileSync } from "child_process";
 import { CodeEvolutionEngine, CodeChange } from "./CodeEvolutionEngine";
@@ -253,6 +253,16 @@ function validateChanges(
 
   // POIPOI_AI_CHANGE_GUARD: reject suspicious generated code patterns
   for (const change of changes) {
+    // 不正な型は既存の map 内の検証に処理を任せる
+    if (
+      change === null ||
+      typeof change !== "object" ||
+      Array.isArray(change) ||
+      typeof change.newCode !== "string"
+    ) {
+      continue;
+    }
+
     const generated = change.newCode;
     if (
       /(^|\n)\s*process\.env\.[A-Z0-9_]+\s*=/.test(generated) ||
