@@ -1,4 +1,4 @@
-﻿import fs from "fs";
+import fs from "fs";
 import path from "path";
 import { execFileSync } from "child_process";
 import { CodeEvolutionEngine, CodeChange } from "./CodeEvolutionEngine";
@@ -251,6 +251,22 @@ function validateChanges(
 ): CodeChange[] {
   const seenTargets = new Set<string>();
 
+  // POIPOI_AI_CHANGE_GUARD: reject suspicious generated code patterns
+  for (const change of changes) {
+    const generated = change.newCode;
+    if (
+      /(^|\n)\s*process\.env\.[A-Z0-9_]+\s*=/.test(generated) ||
+      /\beval\s*\(/.test(generated) ||
+      /\bnew\s+Function\s*\(/.test(generated) ||
+      /\bimport\s+.*from\s+["']child_process["']/.test(generated) ||
+      /\brequire\s*\(\s*["']child_process["']\s*\)/.test(generated)
+    ) {
+      throw new Error(
+        "AI生成コードに許可されていない危険なパターンがあります: " +
+        change.filePath
+      );
+    }
+  }
   return changes.map(item => {
     if (item === null || typeof item !== "object" || Array.isArray(item)) {
       throw new Error("変更候補がオブジェクトではありません");
