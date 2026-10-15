@@ -544,6 +544,14 @@ if (stagedBeforeEvolution.trim()) {
   );
 }
 
+const statusBeforeEvolution = git(["status", "--porcelain"]);
+if (statusBeforeEvolution.trim()) {
+  throw new Error(
+    "既存の作業ツリー変更を保護するため自己進化を中止しました。\n" +
+    statusBeforeEvolution
+  );
+}
+
 const targetStatusBeforeEvolution = git([
   "status",
   "--porcelain",
