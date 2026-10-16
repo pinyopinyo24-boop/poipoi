@@ -266,12 +266,13 @@ function extractJson(text: string): AIChange[] {
         }
         return [normalize(parsed, 0)];
       }
-    } catch {
+    } catch (error) {
+      errors.push(error instanceof Error ? error.message : String(error));
       continue;
     }
   }
 
-  throw new Error("AI応答に有効なJSON変更内容がありません");
+  throw new Error("AI応答に有効なJSON変更内容がありません。解析詳細: " + (errors.join(" | ") || "JSON候補を解析できません") + "。応答先頭: " + text.slice(0, 800));
 }
 async function invokeAI(messages: unknown[]): Promise<string> {
   const manager = aiProviderManager as {
