@@ -208,51 +208,63 @@ function extractTarget(request: string): string {
 }
 
 function extractJson(text: string): AIChange[] {
-  const candidates = [
-    text.trim(),
-    text.replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/i, "").trim()
-  ];
+  const trimmed = text.trim();
+  const candidates: string[] = [trimmed];
 
-  for (const candidate of candidates) {
+  const unfenced = trimmed
+    .replace(/^```(?:json)?\s*/i, "")
+    .replace(/\s*```$/i, "")
+    .trim();
+
+  if (unfenced !== trimmed) candidates.push(unfenced);
+
+  const firstArray = trimmed.indexOf("[");
+  const lastArray = trimmed.lastIndexOf("]");
+  if (firstArray >= 0 && lastArray > firstArray) {
+    candidates.push(trimmed.slice(firstArray, lastArray + 1));
+  }
+
+  const firstObject = trimmed.indexOf("{");
+  const lastObject = trimmed.lastIndexOf("}");
+  if (firstObject >= 0 && lastObject > firstObject) {
+    candidates.push(trimmed.slice(firstObject, lastObject + 1));
+  }
+
+  const normalize = (value: unknown, index: number): AIChange => {
+    if (!value || typeof value !== "object") {
+      throw new Error(`AI変更 #${index + 1} の形式が不正です`);
+    }
+
+    const item = value as Record<string, unknown>;
+    if (
+      typeof item.filePath !== "string" ||
+      typeof item.oldCode !== "string" ||
+      typeof item.newCode !== "string" ||
+      typeof item.reason !== "string"
+    ) {
+      throw new Error(`AI変更 #${index + 1} の必須項目が不足しています`);
+    }
+
+    return {
+      filePath: item.filePath,
+      oldCode: item.oldCode,
+      newCode: item.newCode,
+      reason: item.reason,
+    };
+  };
+
+  for (const candidate of [...new Set(candidates)]) {
     try {
-      const parsed = JSON.parse(candidate);
+      const parsed: unknown = JSON.parse(candidate);
 
-      const normalize = (value: unknown, index: number): AIChange => {
-        if (!value || typeof value !== "object") {
-          throw new Error(`AI変更 #${index + 1} の形式が不正です`);
-        }
-
-        const item = value as Record<string, unknown>;
-
-        if (
-          typeof item.filePath !== "string" ||
-          typeof item.oldCode !== "string" ||
-          typeof item.newCode !== "string" ||
-          typeof item.reason !== "string"
-        ) {
-          throw new Error(`AI変更 #${index + 1} の形式が不正です`);
-        }
-
-        return {
-          filePath: item.filePath,
-          oldCode: item.oldCode,
-          newCode: item.newCode,
-          reason: item.reason,
-        };
-      };
-
-      if (Array.isArray(parsed)) {
-        return parsed.map(normalize);
-      }
+      if (Array.isArray(parsed)) return parsed.map(normalize);
 
       if (parsed && typeof parsed === "object") {
         const value = parsed as Record<string, unknown>;
-
         if (Array.isArray(value.changes)) {
           return value.changes.map(normalize);
         }
-
-        return [normalize(value, 0)];
+        return [normalize(parsed, 0)];
       }
     } catch {
       continue;
