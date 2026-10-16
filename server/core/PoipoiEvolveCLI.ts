@@ -208,7 +208,8 @@ function extractTarget(request: string): string {
 }
 
 function extractJson(text: string): AIChange[] {
-  const trimmed = text.trim();
+    const errors: string[] = [];
+const trimmed = text.trim();
   const candidates: string[] = [trimmed];
 
   const unfenced = trimmed
