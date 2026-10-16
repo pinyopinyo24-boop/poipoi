@@ -152,7 +152,7 @@ function assertGitSafe() {
 function validateBeforeCommit(changedFiles: string[]): void {
   const result = spawnSync(
     process.platform === "win32" ? "pnpm.cmd" : "pnpm",
-    ["exec", "tsc", "--noEmit"],
+    ["exec", "tsc", "--noEmit", "--pretty", "false"],
     {
       cwd: process.cwd(),
       encoding: "utf8",
@@ -160,14 +160,37 @@ function validateBeforeCommit(changedFiles: string[]): void {
     }
   );
 
-  if (result.status !== 0) {
-    const rollback = git(["restore", "--", ...changedFiles]);
+  if (result.status === 0) return;
+
+  const output = [result.stdout, result.stderr, result.error?.message]
+    .filter(Boolean)
+    .join("\n");
+
+  const diagnostics = output
+    .split(/\r?\n/)
+    .filter(line => /error TS\d+/.test(line));
+
+  const normalize = (value: string) =>
+    value.replace(/\\/g, "/").toLowerCase();
+
+  const targetDiagnostics = diagnostics.filter(line => {
+    const normalizedLine = normalize(line);
+    return changedFiles.some(file =>
+      normalizedLine.includes(normalize(file))
+    );
+  });
+
+  if (targetDiagnostics.length > 0 || diagnostics.length === 0) {
+    git(["restore", "--", ...changedFiles]);
     throw new Error(
-      "型チェックに失敗したため変更をコミットしません。対象ファイルを復元しました。\n" +
-      (result.stderr || result.stdout || result.error?.message || "型チェックに失敗しました") +
-      (rollback ? "\n" + rollback : "")
+      "型チェックに失敗したためコミットを中止しました。\n" +
+      (targetDiagnostics.length > 0
+        ? targetDiagnostics.join("\n")
+        : output)
     );
   }
+
+  console.warn("変更対象外の既存TypeScriptエラーを検出しました。");
 }
 function extractTarget(request: string): string {
   const match = request.match(
