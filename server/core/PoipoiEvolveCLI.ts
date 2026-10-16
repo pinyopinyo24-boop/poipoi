@@ -1,3 +1,4 @@
+import { spawnSync } from "node:child_process";
 import fs from "fs";
 import path from "path";
 import { execFileSync } from "child_process";
@@ -145,6 +146,26 @@ function assertGitSafe() {
     throw new Error(
       "追跡対象に未コミット変更またはステージ済み変更があります。安全のため中止します。\n" +
       unexpectedChanges.join("\n")
+    );
+  }
+}
+function validateBeforeCommit(changedFiles: string[]): void {
+  const result = spawnSync(
+    process.platform === "win32" ? "pnpm.cmd" : "pnpm",
+    ["exec", "tsc", "--noEmit"],
+    {
+      cwd: process.cwd(),
+      encoding: "utf8",
+      shell: process.platform === "win32",
+    }
+  );
+
+  if (result.status !== 0) {
+    const rollback = git(["restore", "--", ...changedFiles]);
+    throw new Error(
+      "型チェックに失敗したため変更をコミットしません。対象ファイルを復元しました。\n" +
+      (result.stderr || result.stdout || result.error?.message || "型チェックに失敗しました") +
+      (rollback ? "\n" + rollback : "")
     );
   }
 }
@@ -615,6 +636,7 @@ const engine = new CodeEvolutionEngine(ROOT);
   }
 
   // Gitへの確定が成功してから、自己進化成功を表示する
+  validateBeforeCommit(result.changedFiles);
   commitChanges(result.changedFiles);
 
   console.log("================================");
