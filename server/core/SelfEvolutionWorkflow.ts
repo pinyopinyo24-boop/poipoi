@@ -88,7 +88,7 @@ export class SelfEvolutionWorkflow {
   private improvementManager: SelfImprovementManager;
   private executor: ImprovementExecutor;
   private memoryEngine: MemoryEngine;
-  private resultHistory: WorkflowResult[];
+  private resultHistory: WorkflowResult[] = [];
 
   private constructor() {
     this.improvementManager = SelfImprovementManager.getInstance();
