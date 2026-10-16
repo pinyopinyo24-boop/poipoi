@@ -1,4 +1,4 @@
-﻿import {
+import {
   BaseAIProvider,
   AIMessage,
   AIResponse,
@@ -40,6 +40,7 @@ export class LocalAIProvider extends BaseAIProvider {
           headers: {
             'Content-Type': 'application/json',
           },
+          signal: AbortSignal.timeout(180000),
           body: JSON.stringify({
             model,
             messages,

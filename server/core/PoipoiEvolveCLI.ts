@@ -1,4 +1,4 @@
-﻿import fs from "fs";
+import fs from "fs";
 import path from "path";
 import { execFileSync } from "child_process";
 import { CodeEvolutionEngine, CodeChange } from "./CodeEvolutionEngine";
@@ -563,11 +563,7 @@ if (stagedBeforeEvolution.trim()) {
   );
 }
 
-  "status",
-  "--porcelain",
-  "--",
-  targetPath,
-]);
+const targetStatusBeforeEvolution = git(["status", "--porcelain", "--", targetPath]);
 if (targetStatusBeforeEvolution.trim()) {
   throw new Error(
     "自己進化対象ファイルに既存の変更があるため中止しました。\n" +
