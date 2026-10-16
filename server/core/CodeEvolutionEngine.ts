@@ -70,6 +70,18 @@ export class CodeEvolutionEngine {
         }
         seenPaths.add(pathKey);
 
+        // シンボリックリンクを解決し、実際の書き込み先も検証する
+        const realRoot = await fs.realpath(this.projectRoot);
+        const realTarget = await fs.realpath(filePath);
+        const relativeTarget = path.relative(realRoot, realTarget);
+        if (
+          relativeTarget === ".." ||
+          relativeTarget.startsWith(".." + path.sep) ||
+          path.isAbsolute(relativeTarget)
+        ) {
+          throw new Error("実体パスがプロジェクト外です: " + filePath);
+        }
+
         const originalBytes = await fs.readFile(filePath);
         backups.set(filePath, originalBytes);
 
