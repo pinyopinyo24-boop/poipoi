@@ -60,7 +60,7 @@ export class LocalAIProvider extends BaseAIProvider {
         );
       }
 
-      const responseText = await response.text();
+      const raw = await response.text();
       let data: any;
       try {
         data = JSON.parse(raw.trim());
