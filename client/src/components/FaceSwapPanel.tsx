@@ -43,13 +43,13 @@ export default function FaceSwapPanel({ onClose }: FaceSwapPanelProps) {
     const file = e.target.files?.[0];
     if (!file) return;
 
-    const maxSize = 500 * 1024 * 1024;
+    const isVideo = file.type.startsWith('video/');
+    const maxSize = isVideo ? 128 * 1024 * 1024 : 20 * 1024 * 1024;
     if (file.size > maxSize) {
-      toast.error('ファイルサイズが大きすぎます（最大500MB）');
+      toast.error(`ファイルサイズが大きすぎます（${isVideo ? '動画128MB' : '画像20MB'}まで）`);
       return;
     }
 
-    const isVideo = file.type.startsWith('video/');
     const reader = new FileReader();
     
     reader.onload = (event) => {

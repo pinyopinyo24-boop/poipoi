@@ -1,8 +1,9 @@
-import { router, publicProcedure } from "./_core/trpc";
+import { router, protectedProcedure, publicProcedure } from "./_core/trpc";
 import { TRPCError } from "@trpc/server";
 import { z } from "zod";
 import * as fs from "fs";
 import * as path from "path";
+import { randomUUID } from "crypto";
 import { execSync, spawnSync } from "child_process";
 import { performFaceSwap } from "./_core/faceswap-tensorflow";
 import { performVideoFaceSwap } from "./_core/video-faceswap";
@@ -18,6 +19,35 @@ if (!fs.existsSync(uploadDir)) {
 }
 
 const activeVideoSwapJobs = new Map<string, AbortController>();
+const uploadedFileOwners = new Map<string, number>();
+
+const MAX_IMAGE_BYTES = 20 * 1024 * 1024;
+const MAX_VIDEO_BYTES = 128 * 1024 * 1024;
+
+function decodeBase64(value: string, maxBytes: number, label: string): Buffer {
+  const dataUrl = /^data:(?:image|video)\/[a-z0-9.+-]+;base64,/i.test(value);
+  const encoded = dataUrl ? value.slice(value.indexOf(",") + 1) : value;
+  if (!encoded || encoded.length % 4 !== 0 || !/^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/.test(encoded)) {
+    throw new TRPCError({ code: "BAD_REQUEST", message: `${label} must be valid base64 data` });
+  }
+  if (encoded.length > Math.ceil(maxBytes / 3) * 4) {
+    throw new TRPCError({ code: "PAYLOAD_TOO_LARGE", message: `${label} exceeds the ${Math.floor(maxBytes / 1024 / 1024)}MB limit` });
+  }
+  const buffer = Buffer.from(encoded, "base64");
+  if (buffer.length === 0 || buffer.length > maxBytes || buffer.toString("base64") !== encoded) {
+    throw new TRPCError({ code: "BAD_REQUEST", message: `${label} is empty, oversized, or malformed` });
+  }
+  return buffer;
+}
+
+function resolveUploadedFile(filePath: string): string {
+  const root = path.resolve(uploadDir);
+  const resolved = path.resolve(filePath);
+  if (path.dirname(resolved) !== root || path.basename(resolved) === "." || path.basename(resolved) === "..") {
+    throw new TRPCError({ code: "BAD_REQUEST", message: "Invalid file path" });
+  }
+  return resolved;
+}
 
 /**
  * Pythonを使用した顔入れ替え処理
@@ -67,30 +97,32 @@ export const fileUploadRouter = router({
    * Upload a file and return it as base64
    * This endpoint expects multipart/form-data
    */
-  uploadFile: publicProcedure
+  uploadFile: protectedProcedure
     .input(z.object({
-      fileBase64: z.string().describe("File content as base64"),
+      fileBase64: z.string().max(Math.ceil(MAX_VIDEO_BYTES / 3) * 4 + 128).describe("File content as base64"),
       fileName: z.string().describe("Original file name"),
       fileType: z.enum(["image", "video"]).describe("File type"),
     }))
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
       try {
         // Decode base64 to buffer
-        const buffer = Buffer.from(input.fileBase64, "base64");
+        const maxSize = input.fileType === "image" ? MAX_IMAGE_BYTES : MAX_VIDEO_BYTES;
+        const buffer = decodeBase64(input.fileBase64, maxSize, "File");
         
-        // Validate file size (max 500MB)
-        const maxSize = 500 * 1024 * 1024;
-        if (buffer.length > maxSize) {
-          throw new Error("File size exceeds 500MB limit");
+        // Validate extension before using a server-generated storage name.
+        const ext = path.extname(path.basename(input.fileName)).toLowerCase();
+        const allowedExtensions = input.fileType === "image"
+          ? new Set([".jpg", ".jpeg", ".png", ".webp"])
+          : new Set([".mp4", ".mov", ".webm"]);
+        if (!allowedExtensions.has(ext)) {
+          throw new TRPCError({ code: "BAD_REQUEST", message: "Unsupported file extension" });
         }
-        
-        // Generate unique filename
-        const ext = path.extname(input.fileName);
-        const uniqueName = `${input.fileType}-${Date.now()}-${Math.random().toString(36).substring(7)}${ext}`;
+        const uniqueName = `${input.fileType}-${randomUUID()}${ext}`;
         const filePath = path.join(uploadDir, uniqueName);
         
         // Save file
-        fs.writeFileSync(filePath, buffer);
+        fs.writeFileSync(filePath, buffer, { flag: "wx", mode: 0o600 });
+        uploadedFileOwners.set(path.resolve(filePath), ctx.user.id);
         
         return {
           success: true,
@@ -107,24 +139,26 @@ export const fileUploadRouter = router({
   /**
    * Get uploaded file as base64
    */
-  getFile: publicProcedure
+  getFile: protectedProcedure
     .input(z.object({
       filePath: z.string().describe("Path to the uploaded file"),
     }))
-    .query(async ({ input }) => {
+    .query(async ({ input, ctx }) => {
       try {
         // Security: ensure path is within upload directory
-        const resolvedPath = path.resolve(input.filePath);
-        const uploadDirResolved = path.resolve(uploadDir);
-        
-        if (!resolvedPath.startsWith(uploadDirResolved)) {
-          throw new Error("Invalid file path");
+        const resolvedPath = resolveUploadedFile(input.filePath);
+        if (uploadedFileOwners.get(resolvedPath) !== ctx.user.id) {
+          throw new TRPCError({ code: "NOT_FOUND", message: "File not found" });
         }
         
         if (!fs.existsSync(resolvedPath)) {
           throw new Error("File not found");
         }
         
+        const fileStat = fs.lstatSync(resolvedPath);
+        if (!fileStat.isFile() || fileStat.isSymbolicLink() || fileStat.size > MAX_VIDEO_BYTES) {
+          throw new TRPCError({ code: "BAD_REQUEST", message: "Invalid or oversized uploaded file" });
+        }
         const buffer = fs.readFileSync(resolvedPath);
         const base64 = buffer.toString("base64");
         
@@ -142,23 +176,22 @@ export const fileUploadRouter = router({
   /**
    * Delete uploaded file
    */
-  deleteFile: publicProcedure
+  deleteFile: protectedProcedure
     .input(z.object({
       filePath: z.string().describe("Path to the file to delete"),
     }))
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
       try {
         // Security: ensure path is within upload directory
-        const resolvedPath = path.resolve(input.filePath);
-        const uploadDirResolved = path.resolve(uploadDir);
-        
-        if (!resolvedPath.startsWith(uploadDirResolved)) {
-          throw new Error("Invalid file path");
+        const resolvedPath = resolveUploadedFile(input.filePath);
+        if (uploadedFileOwners.get(resolvedPath) !== ctx.user.id) {
+          throw new TRPCError({ code: "NOT_FOUND", message: "File not found" });
         }
         
         if (fs.existsSync(resolvedPath)) {
           fs.unlinkSync(resolvedPath);
         }
+        uploadedFileOwners.delete(resolvedPath);
         
         return { success: true };
       } catch (error) {
@@ -172,15 +205,17 @@ export const fileUploadRouter = router({
    */
   swap: publicProcedure
     .input(z.object({
-      sourceImage: z.string().describe("Source face image as base64"),
-      targetImage: z.string().describe("Target image as base64"),
+      sourceImage: z.string().max(Math.ceil(MAX_IMAGE_BYTES / 3) * 4 + 128).describe("Source face image as base64"),
+      targetImage: z.string().max(Math.ceil(MAX_IMAGE_BYTES / 3) * 4 + 128).describe("Target image as base64"),
       quality: z.enum(["low", "medium", "high"]).default("high"),
     }))
     .mutation(async ({ input }) => {
       try {
+        const sourceImage = decodeBase64(input.sourceImage, MAX_IMAGE_BYTES, "Source image").toString("base64");
+        const targetImage = decodeBase64(input.targetImage, MAX_IMAGE_BYTES, "Target image").toString("base64");
         const result = await performRealQualityFaceSwapFromBase64(
-          input.sourceImage,
-          input.targetImage,
+          sourceImage,
+          targetImage,
           input.quality
         );
 
@@ -219,8 +254,8 @@ export const fileUploadRouter = router({
    */
   swapVideo: publicProcedure
     .input(z.object({
-      sourceImage: z.string().describe("Source face image as base64"),
-      targetVideo: z.string().describe("Target video as base64"),
+      sourceImage: z.string().max(Math.ceil(MAX_IMAGE_BYTES / 3) * 4 + 128).describe("Source face image as base64"),
+      targetVideo: z.string().max(Math.ceil(MAX_VIDEO_BYTES / 3) * 4 + 128).describe("Target video as base64"),
       quality: z.enum(["low", "medium", "high"]).default("medium"),
       jobId: z.string().uuid(),
     }))
@@ -239,24 +274,12 @@ export const fileUploadRouter = router({
         console.log('[VideoSwap] Input targetVideo length:', input.targetVideo?.length);
         
         // Handle data URLs (data:image/jpeg;base64,xxx or data:video/mp4;base64,xxx)
-        const sourceBase64 = input.sourceImage.includes(',') 
-          ? input.sourceImage.split(',')[1] 
-          : input.sourceImage;
-        const videoBase64 = input.targetVideo.includes(',')
-          ? input.targetVideo.split(',')[1]
-          : input.targetVideo;
-        
-        console.log('[VideoSwap] Extracted sourceBase64 length:', sourceBase64.length);
-        console.log('[VideoSwap] Extracted videoBase64 length:', videoBase64.length);
-        console.log('[VideoSwap] sourceBase64 first 50 chars:', sourceBase64.substring(0, 50));
-        console.log('[VideoSwap] videoBase64 first 50 chars:', videoBase64.substring(0, 50));
-        
-        const sourceBuffer = Buffer.from(sourceBase64, "base64");
-        const videoBuffer = Buffer.from(videoBase64, "base64");
+        const sourceBuffer = decodeBase64(input.sourceImage, MAX_IMAGE_BYTES, "Source image");
+        const videoBuffer = decodeBase64(input.targetVideo, MAX_VIDEO_BYTES, "Target video");
         
         // Create temporary file paths
-        sourceImagePath = path.join(uploadDir, `source-${Date.now()}.jpg`);
-        targetVideoPath = path.join(uploadDir, `video-${Date.now()}.mp4`);
+        sourceImagePath = path.join(uploadDir, `source-${randomUUID()}.jpg`);
+        targetVideoPath = path.join(uploadDir, `video-${randomUUID()}.mp4`);
         
         // Write files
         fs.writeFileSync(sourceImagePath, sourceBuffer);
@@ -333,8 +356,8 @@ export const fileUploadRouter = router({
    */
   testVideoSwap: publicProcedure
     .input(z.object({
-      sourceImage: z.string().describe("Source face image as base64"),
-      targetVideo: z.string().describe("Target video as base64"),
+      sourceImage: z.string().max(Math.ceil(MAX_IMAGE_BYTES / 3) * 4 + 128).describe("Source face image as base64"),
+      targetVideo: z.string().max(Math.ceil(MAX_VIDEO_BYTES / 3) * 4 + 128).describe("Target video as base64"),
     }))
     .mutation(async ({ input }) => {
       let sourceImagePath = "";
@@ -343,20 +366,13 @@ export const fileUploadRouter = router({
       
       try {
         // Handle data URLs
-        const sourceBase64 = input.sourceImage.includes(',') 
-          ? input.sourceImage.split(',')[1] 
-          : input.sourceImage;
-        const videoBase64 = input.targetVideo.includes(',')
-          ? input.targetVideo.split(',')[1]
-          : input.targetVideo;
-        
-        const sourceBuffer = Buffer.from(sourceBase64, "base64");
-        const videoBuffer = Buffer.from(videoBase64, "base64");
+        const sourceBuffer = decodeBase64(input.sourceImage, MAX_IMAGE_BYTES, "Source image");
+        const videoBuffer = decodeBase64(input.targetVideo, MAX_VIDEO_BYTES, "Target video");
         
         // Create temporary file paths
-        sourceImagePath = path.join(uploadDir, `test-source-${Date.now()}.jpg`);
-        targetVideoPath = path.join(uploadDir, `test-video-${Date.now()}.mp4`);
-        outputPath = path.join(uploadDir, `test-output-${Date.now()}.mp4`);
+        sourceImagePath = path.join(uploadDir, `test-source-${randomUUID()}.jpg`);
+        targetVideoPath = path.join(uploadDir, `test-video-${randomUUID()}.mp4`);
+        outputPath = path.join(uploadDir, `test-output-${randomUUID()}.mp4`);
         
         // Write files
         fs.writeFileSync(sourceImagePath, sourceBuffer);
@@ -407,8 +423,8 @@ export const fileUploadRouter = router({
    */
   swapVideoRealQuality: publicProcedure
     .input(z.object({
-      sourceImage: z.string().describe("Source face image as base64"),
-      targetVideo: z.string().describe("Target video as base64"),
+      sourceImage: z.string().max(Math.ceil(MAX_IMAGE_BYTES / 3) * 4 + 128).describe("Source face image as base64"),
+      targetVideo: z.string().max(Math.ceil(MAX_VIDEO_BYTES / 3) * 4 + 128).describe("Target video as base64"),
       quality: z.enum(["low", "medium", "high"]).default("high"),
       fps: z.number().default(2),
       maxFrames: z.number().optional(),
@@ -418,18 +434,11 @@ export const fileUploadRouter = router({
       let targetVideoPath = "";
       
       try {
-        const sourceBase64 = input.sourceImage.includes(',')
-          ? input.sourceImage.split(',')[1]
-          : input.sourceImage;
-        const videoBase64 = input.targetVideo.includes(',')
-          ? input.targetVideo.split(',')[1]
-          : input.targetVideo;
+        const sourceBuffer = decodeBase64(input.sourceImage, MAX_IMAGE_BYTES, "Source image");
+        const videoBuffer = decodeBase64(input.targetVideo, MAX_VIDEO_BYTES, "Target video");
         
-        const sourceBuffer = Buffer.from(sourceBase64, "base64");
-        const videoBuffer = Buffer.from(videoBase64, "base64");
-        
-        sourceImagePath = path.join(uploadDir, `source-rq-${Date.now()}.jpg`);
-        targetVideoPath = path.join(uploadDir, `video-rq-${Date.now()}.mp4`);
+        sourceImagePath = path.join(uploadDir, `source-rq-${randomUUID()}.jpg`);
+        targetVideoPath = path.join(uploadDir, `video-rq-${randomUUID()}.mp4`);
         
         fs.writeFileSync(sourceImagePath, sourceBuffer);
         fs.writeFileSync(targetVideoPath, videoBuffer);
