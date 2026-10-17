@@ -232,13 +232,10 @@ export class RestoreService {
         return { success: false, error: 'Job already started' };
       }
 
-      this.updateRestoreJobStatus(userId, jobId, 'in_progress', 0);
-
-      // 復元処理の実装
-      await new Promise(resolve => setTimeout(resolve, 100));
-
-      this.updateRestoreJobStatus(userId, jobId, 'completed', 100);
-      return { success: true };
+      const error = 'No persistent backup storage adapter is configured; no data was restored.';
+      this.updateRestoreJobStatus(userId, jobId, 'failed', 0, { error });
+      job.error = error;
+      return { success: false, error };
     } catch (error) {
       const errorMsg = String(error);
       this.updateRestoreJobStatus(userId, jobId, 'failed', 0, { error: errorMsg });

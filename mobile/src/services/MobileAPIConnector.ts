@@ -239,17 +239,23 @@ export class MobileAPIConnector {
   /**
    * ファイルアップロード
    */
-  async uploadFile(request: FileUploadRequest): Promise<APIResponse<FileUploadResponse>> {
+  async uploadFile(request: FileUploadRequest, onProgress?: (percent: number) => void): Promise<APIResponse<FileUploadResponse>> {
     try {
       const fileType = request.fileType.startsWith('image/') ? 'image' : request.fileType.startsWith('video/') ? 'video' : null;
       if (!fileType || !Number.isFinite(request.fileSize) || request.fileSize <= 0) {
         throw new Error('対応形式は画像・動画です');
       }
-      const response = await this.retryRequest(() => this.apiClient.post('/api/trpc/fileUpload.uploadFile', {
+      const response = await this.apiClient.post('/api/trpc/fileUpload.uploadFile', {
         json: { fileName: request.fileName, fileType, fileBase64: request.fileData },
-      }));
+      }, {
+        timeout: 120000,
+        onUploadProgress: event => {
+          if (event.total) onProgress?.(Math.min(99, Math.floor(event.loaded / event.total * 100)));
+        },
+      });
       const uploaded = this.getTrpcData(response.data);
       if (!uploaded?.filePath) throw new Error('アップロード結果がありません');
+      onProgress?.(100);
 
       return {
         success: true,
@@ -257,6 +263,24 @@ export class MobileAPIConnector {
       };
     } catch (error) {
       return this.handleError(error, 'Failed to upload file');
+    }
+  }
+
+  async downloadFile(filePath: string, onProgress?: (percent: number) => void): Promise<APIResponse<{ fileName: string; fileData: string; size: number }>> {
+    try {
+      const input = encodeURIComponent(JSON.stringify({ json: { filePath } }));
+      const response = await this.apiClient.get(`/api/trpc/fileUpload.getFile?input=${input}`, {
+        timeout: 120000,
+        onDownloadProgress: event => {
+          if (event.total) onProgress?.(Math.min(99, Math.floor(event.loaded / event.total * 100)));
+        },
+      });
+      const result = this.getTrpcData<{ success: boolean; data: string; size: number }>(response.data);
+      if (!result?.success || typeof result.data !== 'string' || !Number.isFinite(result.size)) throw new Error('ダウンロード結果がありません');
+      onProgress?.(100);
+      return { success: true, data: { fileName: filePath.split(/[\\/]/).pop() || 'download', fileData: result.data, size: result.size } };
+    } catch (error) {
+      return this.handleError(error, 'Failed to download file');
     }
   }
 

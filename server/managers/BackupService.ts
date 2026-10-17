@@ -107,13 +107,14 @@ export class BackupService {
         userId,
         name,
         type,
-        status: 'pending',
+        status: 'failed',
         size: 0,
         fileCount: 0,
         createdAt: now,
         expiresAt: now + retentionMs,
         checksum: '',
-        metadata: {},
+        completedAt: now,
+        metadata: { error: 'No persistent backup storage adapter is configured; no backup file was created.' },
       };
 
       if (!this.backups.has(userId)) {

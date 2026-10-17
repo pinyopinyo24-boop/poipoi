@@ -36,11 +36,13 @@ import { syncRouter } from "./routers/sync";
 import { evolutionSchedulerRouter } from "./routers/evolution-scheduler";
 import { z } from "zod";
 import { osRouter } from './routers.os';
+import { driveTransferRouter } from './routers.drive-transfer';
 
 export const appRouter = router({
   executionLogs: executionLogsRouter,
   system: systemRouter,
   os: osRouter,
+  driveTransfers: driveTransferRouter,
   auth: router(localAuthRouter),
   advanced: advancedRouter,
   advancedFeatures: advancedFeaturesRouter,

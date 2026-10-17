@@ -31,7 +31,7 @@ class ColabNotebookCreator {
       requestBody: { name: `poipoi_${jobId}`, mimeType: NOTEBOOK_MIME_TYPE },
       media: { mimeType: NOTEBOOK_MIME_TYPE, body: JSON.stringify(notebook) },
       fields: 'id',
-    }, { timeout: 30_000 });
+    }, { timeout: 60_000 });
     const notebookId = response.data.id;
     if (!notebookId) throw new Error('Google Drive did not return a notebook id');
     return { notebookId, colabUrl: `https://colab.research.google.com/drive/${notebookId}` };
@@ -44,6 +44,7 @@ function createNotebook(jobId: string, callbackToken: string, callbackBaseUrl: s
   const code = `# PoiPoi Colab worker. This notebook requests only the two input files and returns the result to the originating PoiPoi job.
 from google.colab import files
 from pathlib import Path
+from google.colab import drive
 import requests, subprocess, sys, os
 
 JOB_ID = ${JSON.stringify(jobId)}
@@ -88,7 +89,7 @@ target_path = next(iter(target_upload))
 output_path = '/content/poipoi_result.mp4'
 report_progress(5)
 try:
-subprocess.run(['git', 'clone', '--depth', '1', '--branch', '3.6.1', 'https://github.com/facefusion/facefusion.git', '/content/facefusion'],
+    subprocess.run(['git', 'clone', '--depth', '1', '--branch', '3.6.1', 'https://github.com/facefusion/facefusion.git', '/content/facefusion'],
                    check=True, timeout=600, capture_output=True, text=True)
 except Exception as error:
     report_failure(error)
@@ -118,7 +119,34 @@ if Path(output_path).stat().st_size > 64 * 1024 * 1024:
     error = RuntimeError("Result exceeds PoiPoi's 64 MiB callback limit")
     report_failure(error)
     raise error
-report_progress(99)
+report_progress(70)
+try:
+    print('Google Drive を接続して結果ファイルを保存します')
+    drive.mount('/content/drive')
+    drive_dir = Path('/content/drive/MyDrive/PoiPoi')
+    drive_dir.mkdir(parents=True, exist_ok=True)
+    drive_output = drive_dir / f'poipoi_{JOB_ID}_result.mp4'
+    total_size = Path(output_path).stat().st_size
+    copied = 0
+    last_reported = 70
+    with open(output_path, 'rb') as source, open(drive_output, 'wb') as destination:
+        while True:
+            chunk = source.read(1024 * 1024)
+            if not chunk:
+                break
+            destination.write(chunk)
+            copied += len(chunk)
+            value = 70 + int(25 * copied / total_size)
+            if value >= last_reported + 5 or copied == total_size:
+                report_progress(min(value, 95))
+                last_reported = value
+    if not drive_output.is_file() or drive_output.stat().st_size != total_size:
+        raise IOError('Google Drive result size verification failed')
+    print(f'Google Drive に保存しました: {drive_output}')
+except Exception as error:
+    report_failure(error)
+    raise
+report_progress(96)
 with open(output_path, 'rb') as result_file:
     result_response = requests.post(
         CALLBACK_URL + '.uploadResult',
@@ -139,7 +167,7 @@ print('PoiPoiへの結果返却が完了しました。ファイルもこの端�
   const toCellSource = (value: string) => value.split('\n').map((line, index, lines) => index < lines.length - 1 ? `${line}\n` : line);
   return {
     cells: [
-      { cell_type: 'markdown', metadata: {}, source: toCellSource('# PoiPoi FaceFusion\n\n入力動画と画像はこの実行時にアップロードします。処理完了後、結果は認証付きワンタイムトークンでPoiPoiへ返却され、この端末にもダウンロードされます。') },
+      { cell_type: 'markdown', metadata: {}, source: toCellSource('# PoiPoi FaceFusion\n\n入力動画と画像はこの実行時にアップロードします。処理後の動画は実行者が認証したGoogle DriveのMyDrive/PoiPoiへ保存し、PoiPoiにもワンタイムトークンで返却します。') },
       { cell_type: 'code', execution_count: null, metadata: {}, outputs: [], source: toCellSource(code) },
     ],
     metadata: {
