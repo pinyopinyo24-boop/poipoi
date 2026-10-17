@@ -1,5 +1,6 @@
 @echo off
 REM PoiPoi Portable - Start Script for Windows
+cd /d "%~dp0.."
 
 echo.
 echo ╔════════════════════════════════════════╗
@@ -30,18 +31,15 @@ if errorlevel 1 (
 echo ✓ npm found: 
 npm --version
 
-REM Check if .env file exists
+REM Check whether optional environment settings are present.
 if not exist ".env" (
     echo.
     echo ⚠️  Warning: .env file not found
-    echo Creating .env from .env.example...
     if exist ".env.example" (
         copy ".env.example" ".env"
-        echo ✓ .env created. Please configure API keys in .env
+        echo ✓ .env created from .env.example
     ) else (
-        echo ❌ Error: .env.example not found
-        pause
-        exit /b 1
+        echo ℹ️  No .env.example found. Continuing without optional settings.
     )
 )
 
