@@ -5,6 +5,7 @@
 
 import * as tf from "@tensorflow/tfjs-node"; // Import tf from tfjs-node for Node.js specific functionalities
 import * as faceLandmarksDetection from "@tensorflow-models/face-landmarks-detection";
+import { MemoryOptimizationService } from "../managers/MemoryOptimizationService";
 
 interface ModelCache {
   faceMesh: any;
@@ -22,6 +23,8 @@ let modelCache: ModelCache = {
 };
 
 let totalCacheSize = 0;
+let modelLoadPromise: Promise<any> | null = null;
+const memoryOptimizationService = new MemoryOptimizationService();
 
 /**
  * FaceMesh モデルをキャッシュから取得または初期化
@@ -40,43 +43,48 @@ export async function getCachedFaceMeshModel(): Promise<any> {
     return modelCache.faceMesh;
   }
 
-  // キャッシュが無効な場合は新規初期化
-  console.log("[ModelCache] FaceMesh モデルを初期化中...");
-  const startTime = Date.now();
+  if (modelLoadPromise) {
+    return modelLoadPromise;
+  }
+
+  modelLoadPromise = (async () => {
+    // キャッシュが無効な場合は新規初期化
+    console.log("[ModelCache] FaceMesh モデルを初期化中...");
+    const startTime = Date.now();
+
+    try {
+      // 期限切れモデルの解放を最適化サービスに委譲してから新規ロードする
+      if (modelCache.faceMesh) {
+        await clearModelCache();
+      }
+
+      const model = await faceLandmarksDetection.createDetector(
+        faceLandmarksDetection.SupportedModels.MediaPipeFaceMesh,
+        { runtime: "tfjs", refineLandmarks: true }
+      );
+
+      const loadTime = Date.now() - startTime;
+      modelCache = {
+        faceMesh: model,
+        lastUsed: Date.now(),
+        loadTime,
+      };
+      totalCacheSize = 50 * 1024 * 1024;
+
+      console.log(
+        `[ModelCache] FaceMesh モデルをロード完了（${loadTime}ms、キャッシュサイズ: ${(totalCacheSize / 1024 / 1024).toFixed(2)}MB）`
+      );
+      return model;
+    } catch (error) {
+      console.error("[ModelCache] FaceMesh モデルのロードに失敗:", error);
+      throw error;
+    }
+  })();
 
   try {
-    // 既存モデルをクリーンアップ
-    if (modelCache.faceMesh) {
-      await modelCache.faceMesh.dispose();
-      totalCacheSize = 0;
-    }
-
-    // 新しいモデルをロード
-    const model = await faceLandmarksDetection.createDetector(
-      faceLandmarksDetection.SupportedModels.MediaPipeFaceMesh,
-      { runtime: "tfjs", refineLandmarks: true }
-    );
-
-    const loadTime = Date.now() - startTime;
-
-    // キャッシュに保存
-    modelCache = {
-      faceMesh: model,
-      lastUsed: now,
-      loadTime,
-    };
-
-    // キャッシュサイズを更新（推定値）
-    totalCacheSize = 50 * 1024 * 1024; // FaceMesh は約50MB
-
-    console.log(
-      `[ModelCache] FaceMesh モデルをロード完了（${loadTime}ms、キャッシュサイズ: ${(totalCacheSize / 1024 / 1024).toFixed(2)}MB）`
-    );
-
-    return model;
-  } catch (error) {
-    console.error("[ModelCache] FaceMesh モデルのロードに失敗:", error);
-    throw error;
+    return await modelLoadPromise;
+  } finally {
+    modelLoadPromise = null;
   }
 }
 
@@ -85,23 +93,17 @@ export async function getCachedFaceMeshModel(): Promise<any> {
  */
 export async function clearModelCache(): Promise<void> {
   console.log("[ModelCache] キャッシュをクリア中...");
-
-  if (modelCache.faceMesh) {
+  await memoryOptimizationService.clearCache("FaceMesh model cache", async () => {
+    const memoryFreed = totalCacheSize;
+    const cachedModel = modelCache.faceMesh;
     try {
-      await modelCache.faceMesh.dispose();
-    } catch (e) {
-      console.warn("[ModelCache] モデルの dispose に失敗:", e);
+      if (cachedModel) await cachedModel.dispose();
+      return memoryFreed;
+    } finally {
+      modelCache = { faceMesh: null, lastUsed: 0, loadTime: 0 };
+      totalCacheSize = 0;
     }
-  }
-
-  modelCache = {
-    faceMesh: null,
-    lastUsed: 0,
-    loadTime: 0,
-  };
-
-  totalCacheSize = 0;
-
+  });
   console.log("[ModelCache] キャッシュをクリア完了");
 }
 

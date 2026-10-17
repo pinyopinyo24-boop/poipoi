@@ -133,6 +133,33 @@ export class MemoryOptimizationService {
     return optimization;
   }
 
+  /** Execute a real cache cleanup and record the memory it releases. */
+  async clearCache(
+    targetComponent: string,
+    cleanup: () => Promise<number> | number
+  ): Promise<MemoryOptimization> {
+    const startedAt = Date.now();
+    try {
+      const memoryFreed = await cleanup();
+      return this.recordOptimization(
+        'cache_clear',
+        targetComponent,
+        Math.max(0, memoryFreed),
+        Date.now() - startedAt,
+        true
+      );
+    } catch (error) {
+      console.warn(`[MemoryOptimization] Cache cleanup failed for ${targetComponent}:`, error);
+      return this.recordOptimization(
+        'cache_clear',
+        targetComponent,
+        0,
+        Date.now() - startedAt,
+        false
+      );
+    }
+  }
+
   /**
    * メモリ最適化を取得
    */
