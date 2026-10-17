@@ -14,6 +14,8 @@ interface UserMemory {
 export class MemoryEngine {
   private static instance: MemoryEngine;
   private memory: Map<string, UserMemory>; // userId -> { key -> MemoryEntry }
+  private lastExpirationSweepAt = 0;
+  private readonly expirationSweepIntervalMs = 30_000;
 
   private constructor() {
     this.memory = new Map<string, UserMemory>();
@@ -27,10 +29,12 @@ export class MemoryEngine {
   }
 
   public setMemory(userId: string, key: string, value: any, expirationMs?: number, refreshOnAccess: boolean = false): void {
-    const expiresAt = expirationMs ? Date.now() + expirationMs : undefined;
+    const now = Date.now();
+    this.sweepExpiredEntries(now);
+    const expiresAt = expirationMs ? now + expirationMs : undefined;
     const entry: MemoryEntry = {
       value: JSON.parse(JSON.stringify(value)), // Deep copy to prevent external modification
-      timestamp: Date.now(),
+      timestamp: now,
       expiresAt,
       refreshOnAccess,
     };
@@ -42,6 +46,8 @@ export class MemoryEngine {
   }
 
   public getMemory<T>(userId: string, key: string): T | undefined {
+    const now = Date.now();
+    this.sweepExpiredEntries(now);
     const userMemory = this.memory.get(userId);
     if (!userMemory) {
       return undefined;
@@ -52,16 +58,17 @@ export class MemoryEngine {
       return undefined;
     }
 
-    if (entry.expiresAt && Date.now() > entry.expiresAt) {
+    if (entry.expiresAt && now > entry.expiresAt) {
       // Memory expired, delete it
       delete userMemory[key];
+      if (Object.keys(userMemory).length === 0) this.memory.delete(userId);
       return undefined;
     }
 
     if (entry.refreshOnAccess && entry.expiresAt) {
       // Refresh expiration on access
-      entry.expiresAt = Date.now() + (entry.expiresAt - entry.timestamp);
-      entry.timestamp = Date.now();
+      entry.expiresAt = now + (entry.expiresAt - entry.timestamp);
+      entry.timestamp = now;
     }
 
     return JSON.parse(JSON.stringify(entry.value)) as T; // Return deep copy
@@ -71,6 +78,7 @@ export class MemoryEngine {
     const userMemory = this.memory.get(userId);
     if (userMemory) {
       delete userMemory[key];
+      if (Object.keys(userMemory).length === 0) this.memory.delete(userId);
     }
   }
 
@@ -79,11 +87,29 @@ export class MemoryEngine {
   }
 
   public getMemoryUsage(userId: string): number {
+    this.sweepExpiredEntries(Date.now());
     const userMemory = this.memory.get(userId);
     return userMemory ? Object.keys(userMemory).length : 0;
   }
 
   public clearAllMemory(): void {
     this.memory.clear();
+    this.lastExpirationSweepAt = 0;
+  }
+
+  private sweepExpiredEntries(now: number): void {
+    if (now - this.lastExpirationSweepAt < this.expirationSweepIntervalMs) return;
+    this.lastExpirationSweepAt = now;
+
+    for (const [userId, userMemory] of this.memory) {
+      for (const [key, entry] of Object.entries(userMemory)) {
+        if (entry.expiresAt !== undefined && now > entry.expiresAt) {
+          delete userMemory[key];
+        }
+      }
+      if (Object.keys(userMemory).length === 0) {
+        this.memory.delete(userId);
+      }
+    }
   }
 }
