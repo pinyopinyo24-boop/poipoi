@@ -254,7 +254,12 @@ const trimmed = text.trim();
     };
   };
 
-  for (const candidate of [...new Set(candidates)]) {
+  const seenCandidates = new Set<string>();
+  for (let candidateIndex = 0; candidateIndex < candidates.length; candidateIndex += 1) {
+    const candidate = candidates[candidateIndex];
+    if (seenCandidates.has(candidate)) continue;
+    seenCandidates.add(candidate);
+
     try {
       const parsed: unknown = JSON.parse(candidate);
 
@@ -264,6 +269,29 @@ const trimmed = text.trim();
         const value = parsed as Record<string, unknown>;
         if (Array.isArray(value.changes)) {
           return value.changes.map(normalize);
+        }
+        if (typeof value.response === "string") {
+          const response = value.response.trim();
+          candidates.push(response);
+
+          const responseUnfenced = response
+            .replace(/^```(?:json)?\s*/i, "")
+            .replace(/\s*```$/i, "")
+            .trim();
+          if (responseUnfenced !== response) candidates.push(responseUnfenced);
+
+          const responseFirstArray = response.indexOf("[");
+          const responseLastArray = response.lastIndexOf("]");
+          if (responseFirstArray >= 0 && responseLastArray > responseFirstArray) {
+            candidates.push(response.slice(responseFirstArray, responseLastArray + 1));
+          }
+
+          const responseFirstObject = response.indexOf("{");
+          const responseLastObject = response.lastIndexOf("}");
+          if (responseFirstObject >= 0 && responseLastObject > responseFirstObject) {
+            candidates.push(response.slice(responseFirstObject, responseLastObject + 1));
+          }
+          continue;
         }
         return [normalize(parsed, 0)];
       }
