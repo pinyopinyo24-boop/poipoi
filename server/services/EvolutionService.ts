@@ -15,6 +15,7 @@ export interface ImprovementProposal {
   timestamp?: Date;
   approvedAt?: Date;
   rejectedAt?: Date;
+  rejectionReason?: string;
   implementedAt?: Date;
 }
 

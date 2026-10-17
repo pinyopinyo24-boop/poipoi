@@ -122,8 +122,11 @@ export class EvolutionAIManager {
   async executeOptimization(userId: string, proposalId: string) {
     // 提案を取得
     const proposal = await this.repository.getProposal(proposalId);
-    if (!proposal) {
+    if (!proposal || proposal.userId !== userId) {
       throw new Error(`Proposal not found: ${proposalId}`);
+    }
+    if (proposal.status !== 'accepted') {
+      throw new Error('Proposal must be approved before execution');
     }
 
     // 最適化を実行
@@ -136,6 +139,13 @@ export class EvolutionAIManager {
       result,
       timestamp: new Date(),
     });
+
+    if (result.success) {
+      await this.repository.updateProposal(proposalId, {
+        status: 'implemented',
+        implementedAt: new Date(),
+      });
+    }
 
     return result;
   }
@@ -213,8 +223,11 @@ export class EvolutionAIManager {
    */
   async approveProposal(userId: string, proposalId: string) {
     const proposal = await this.repository.getProposal(proposalId);
-    if (!proposal) {
+    if (!proposal || proposal.userId !== userId) {
       throw new Error(`Proposal not found: ${proposalId}`);
+    }
+    if (proposal.status !== 'pending') {
+      throw new Error('Only pending proposals can be approved');
     }
 
     const updated = await this.repository.updateProposal(proposalId, {
@@ -230,13 +243,17 @@ export class EvolutionAIManager {
    */
   async rejectProposal(userId: string, proposalId: string, reason: string) {
     const proposal = await this.repository.getProposal(proposalId);
-    if (!proposal) {
+    if (!proposal || proposal.userId !== userId) {
       throw new Error(`Proposal not found: ${proposalId}`);
+    }
+    if (proposal.status !== 'pending') {
+      throw new Error('Only pending proposals can be rejected');
     }
 
     const updated = await this.repository.updateProposal(proposalId, {
       status: 'rejected',
       rejectedAt: new Date(),
+      rejectionReason: reason,
     });
 
     return updated;

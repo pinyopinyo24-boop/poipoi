@@ -803,13 +803,61 @@ describe('STEP 46: EvolutionAIManager', () => {
         // 2. 提案を承認
         const approved = await manager.approveProposal(userId, proposals[0].id);
         expect(approved.status).toBe('accepted');
+        await expect(manager.approveProposal(userId, proposals[0].id)).rejects.toThrow(
+          'Only pending proposals can be approved'
+        );
 
         // 3. 別の提案を却下
         if (proposals.length > 1) {
           const rejected = await manager.rejectProposal(userId, proposals[1].id, 'Not feasible');
           expect(rejected.status).toBe('rejected');
+          expect(rejected.rejectionReason).toBe('Not feasible');
+          await expect(manager.approveProposal(userId, proposals[1].id)).rejects.toThrow(
+            'Only pending proposals can be approved'
+          );
         }
       }
+    });
+
+    it('should prevent execution before a proposal is approved', async () => {
+      const userId = 'approval_required_user';
+      const proposals = await manager.generateImprovementProposals(userId);
+
+      await expect(
+        manager.executeOptimization(userId, proposals[0].id)
+      ).rejects.toThrow('Proposal must be approved before execution');
+    });
+
+    it('should prevent another user from approving, rejecting, or executing a proposal', async () => {
+      const ownerId = 'proposal_owner';
+      const otherUserId = 'different_user';
+      const proposals = await manager.generateImprovementProposals(ownerId);
+      const proposalId = proposals[0].id;
+
+      await expect(manager.approveProposal(otherUserId, proposalId)).rejects.toThrow(
+        `Proposal not found: ${proposalId}`
+      );
+      await expect(
+        manager.rejectProposal(otherUserId, proposalId, 'Not yours')
+      ).rejects.toThrow(`Proposal not found: ${proposalId}`);
+      await expect(
+        manager.executeOptimization(otherUserId, proposalId)
+      ).rejects.toThrow(`Proposal not found: ${proposalId}`);
+    });
+
+    it('should execute an approved proposal and record its result', async () => {
+      const userId = 'approved_execution_user';
+      const proposals = await manager.generateImprovementProposals(userId);
+      await manager.approveProposal(userId, proposals[0].id);
+
+      const result = await manager.executeOptimization(userId, proposals[0].id);
+      expect(result.proposalId).toBe(proposals[0].id);
+      expect(result.success).toBe(true);
+      await expect(
+        manager.executeOptimization(userId, proposals[0].id)
+      ).rejects.toThrow('Proposal must be approved before execution');
+      expect(await manager.getEvolutionHistory(userId)).toHaveLength(1);
+      expect((await repository.getProposal(proposals[0].id))?.status).toBe('implemented');
     });
 
     it('should export and analyze learning data', async () => {
