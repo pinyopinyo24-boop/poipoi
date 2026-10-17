@@ -258,6 +258,9 @@ export function PoiPoiOSDashboard() {
   const [currentWorkflow, setCurrentWorkflow] = useState<any>(null);
   const [workflowResult, setWorkflowResult] = useState<any>(null);
   const [isExecuting, setIsExecuting] = useState(false);
+  const [executionLogSearch, setExecutionLogSearch] = useState('');
+  const [executionLogStatus, setExecutionLogStatus] = useState<'all' | 'running' | 'completed' | 'failed'>('all');
+  const [executionLogMode, setExecutionLogMode] = useState<'all' | 'demo' | 'real'>('all');
 
   // tRPC queries
   const initializeMutation = trpc.aiAgents.initialize.useMutation();
@@ -359,6 +362,14 @@ export function PoiPoiOSDashboard() {
   const providerStatuses = providerStatusesQuery.data || {};
   const agentStatuses = agentStatusesQuery.data || {};
   const workflowHistory = (Array.isArray(workflowHistoryQuery.data) ? workflowHistoryQuery.data : []) || [];
+  const executionLogs = [...(executionLogsQuery.data || [])].reverse().filter((log) => {
+    const search = executionLogSearch.trim().toLowerCase();
+    const matchesSearch = !search || log.workflowId.toLowerCase().includes(search) ||
+      log.entries.some((entry) => entry.agentType.toLowerCase().includes(search));
+    return matchesSearch &&
+      (executionLogStatus === 'all' || log.status === executionLogStatus) &&
+      (executionLogMode === 'all' || log.mode === executionLogMode);
+  });
 
   if (loading) {
     return (
@@ -468,10 +479,40 @@ export function PoiPoiOSDashboard() {
             </Button>
           </CardHeader>
           <CardContent className="space-y-3">
+            <div className="flex flex-wrap gap-3">
+              <input
+                aria-label="実行履歴を検索"
+                className="min-w-48 flex-1 rounded border px-3 py-2 text-sm"
+                placeholder="ワークフロー・エージェント名を検索"
+                value={executionLogSearch}
+                onChange={(event) => setExecutionLogSearch(event.target.value)}
+              />
+              <select
+                aria-label="実行状態で絞り込み"
+                className="rounded border px-3 py-2 text-sm"
+                value={executionLogStatus}
+                onChange={(event) => setExecutionLogStatus(event.target.value as typeof executionLogStatus)}
+              >
+                <option value="all">すべての状態</option>
+                <option value="running">実行中</option>
+                <option value="completed">完了</option>
+                <option value="failed">失敗</option>
+              </select>
+              <select
+                aria-label="実行モードで絞り込み"
+                className="rounded border px-3 py-2 text-sm"
+                value={executionLogMode}
+                onChange={(event) => setExecutionLogMode(event.target.value as typeof executionLogMode)}
+              >
+                <option value="all">すべてのモード</option>
+                <option value="demo">デモ</option>
+                <option value="real">実運用</option>
+              </select>
+            </div>
             {executionLogsQuery.isLoading ? (
               <p className="text-sm text-muted-foreground">読み込み中...</p>
-            ) : executionLogsQuery.data?.length ? (
-              [...executionLogsQuery.data].reverse().map((log) => (
+            ) : executionLogs.length ? (
+              executionLogs.map((log) => (
                 <div key={log.workflowId} className="rounded-lg border p-4 space-y-2">
                   <div className="flex flex-wrap items-center justify-between gap-2">
                     <div>
@@ -496,7 +537,9 @@ export function PoiPoiOSDashboard() {
                 </div>
               ))
             ) : (
-              <p className="text-sm text-muted-foreground">実行履歴はまだありません。</p>
+              <p className="text-sm text-muted-foreground">
+                {executionLogsQuery.data?.length ? '条件に一致する実行履歴はありません。' : '実行履歴はまだありません。'}
+              </p>
             )}
           </CardContent>
         </Card>
