@@ -19,6 +19,7 @@ if (!fs.existsSync(uploadDir)) {
 }
 
 const activeVideoSwapJobs = new Map<string, AbortController>();
+const MAX_ACTIVE_VIDEO_JOBS = 2;
 
 const MAX_IMAGE_BYTES = 20 * 1024 * 1024;
 const MAX_VIDEO_BYTES = 128 * 1024 * 1024;
@@ -46,6 +47,16 @@ function resolveUploadedFile(filePath: string, userId: number): string {
     throw new TRPCError({ code: "BAD_REQUEST", message: "Invalid file path" });
   }
   return resolved;
+}
+
+function reserveVideoJob(jobId: string, controller: AbortController): void {
+  if (activeVideoSwapJobs.has(jobId)) {
+    throw new TRPCError({ code: "CONFLICT", message: "この動画処理IDはすでに使用されています" });
+  }
+  if (activeVideoSwapJobs.size >= MAX_ACTIVE_VIDEO_JOBS) {
+    throw new TRPCError({ code: "TOO_MANY_REQUESTS", message: "動画処理が混み合っています。完了後に再試行してください" });
+  }
+  activeVideoSwapJobs.set(jobId, controller);
 }
 
 /**
@@ -253,11 +264,8 @@ export const fileUploadRouter = router({
       jobId: z.string().uuid(),
     }))
     .mutation(async ({ input }) => {
-      if (activeVideoSwapJobs.has(input.jobId)) {
-        throw new TRPCError({ code: "CONFLICT", message: "この動画処理IDはすでに使用されています" });
-      }
       const controller = new AbortController();
-      activeVideoSwapJobs.set(input.jobId, controller);
+      reserveVideoJob(input.jobId, controller);
       let sourceImagePath = "";
       let targetVideoPath = "";
       
@@ -356,6 +364,8 @@ export const fileUploadRouter = router({
       let sourceImagePath = "";
       let targetVideoPath = "";
       let outputPath = "";
+      const jobId = randomUUID();
+      reserveVideoJob(jobId, new AbortController());
       
       try {
         // Handle data URLs
@@ -401,6 +411,7 @@ export const fileUploadRouter = router({
         };
       } finally {
         // Clean up temporary files
+        activeVideoSwapJobs.delete(jobId);
         try {
           if (sourceImagePath && fs.existsSync(sourceImagePath)) fs.unlinkSync(sourceImagePath);
           if (targetVideoPath && fs.existsSync(targetVideoPath)) fs.unlinkSync(targetVideoPath);
@@ -425,6 +436,8 @@ export const fileUploadRouter = router({
     .mutation(async ({ input }) => {
       let sourceImagePath = "";
       let targetVideoPath = "";
+      const jobId = randomUUID();
+      reserveVideoJob(jobId, new AbortController());
       
       try {
         const sourceBuffer = decodeBase64(input.sourceImage, MAX_IMAGE_BYTES, "Source image");
@@ -477,6 +490,7 @@ export const fileUploadRouter = router({
           error: errorMessage,
         };
       } finally {
+        activeVideoSwapJobs.delete(jobId);
         try {
           if (sourceImagePath && fs.existsSync(sourceImagePath)) fs.unlinkSync(sourceImagePath);
           if (targetVideoPath && fs.existsSync(targetVideoPath)) fs.unlinkSync(targetVideoPath);
