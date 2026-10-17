@@ -20,6 +20,15 @@ export interface ValidationResult {
   warnings?: string[];
 }
 
+const RESERVED_IDENTIFIERS = new Set([
+  "await", "break", "case", "catch", "class", "const", "continue", "debugger",
+  "default", "delete", "do", "else", "enum", "export", "extends", "false",
+  "finally", "for", "function", "if", "implements", "import", "in", "instanceof",
+  "interface", "let", "new", "null", "package", "private", "protected", "public", "arguments", "eval",
+  "return", "static", "super", "switch", "this", "throw", "true", "try", "typeof",
+  "var", "void", "while", "with", "yield",
+]);
+
 class CodeGenerator {
   private templates: Record<CodeType, (name: string, language?: string) => string> = {
     function: (name: string, language: string = "javascript") => {
@@ -41,24 +50,22 @@ function ${name}() {
       if (language === "typescript") {
         return `
 class ${name} {
-  constructor() {
-    console.log("${name} created");
-  }
+  constructor(private readonly instanceName: string = ${JSON.stringify(name)}) {}
 
-  method(): void {
-    // TODO: Implement method
+  getName(): string {
+    return this.instanceName;
   }
 }
 `;
       }
       return `
 class ${name} {
-  constructor() {
-    console.log("${name} created");
+  constructor(instanceName = ${JSON.stringify(name)}) {
+    this.instanceName = instanceName;
   }
 
-  method() {
-    // TODO: Implement method
+  getName() {
+    return this.instanceName;
   }
 }
 `;
@@ -67,10 +74,12 @@ class ${name} {
     api: (name: string, language: string = "javascript") => {
       if (language === "typescript") {
         return `
-async function ${name}(): Promise<any> {
+async function ${name}(): Promise<unknown> {
   try {
-    // API処理
     const response = await fetch('/api/endpoint');
+    if (!response.ok) {
+      throw new Error("Request failed with status " + response.status);
+    }
     return await response.json();
   } catch (error) {
     console.error(error);
@@ -82,8 +91,10 @@ async function ${name}(): Promise<any> {
       return `
 async function ${name}() {
   try {
-    // API処理
     const response = await fetch('/api/endpoint');
+    if (!response.ok) {
+      throw new Error("Request failed with status " + response.status);
+    }
     return await response.json();
   } catch (error) {
     console.error(error);
@@ -99,14 +110,16 @@ async function ${name}() {
 import React from 'react';
 
 interface ${name}Props {
-  // Props definition
+  title?: string;
+  children?: React.ReactNode;
 }
 
-export const ${name}: React.FC<${name}Props> = (props) => {
+export const ${name}: React.FC<${name}Props> = ({ title = ${JSON.stringify(name)}, children }) => {
   return (
-    <div>
-      {/* Component content */}
-    </div>
+    <section aria-label={title}>
+      <h2>{title}</h2>
+      {children}
+    </section>
   );
 };
 `;
@@ -114,11 +127,12 @@ export const ${name}: React.FC<${name}Props> = (props) => {
       return `
 import React from 'react';
 
-export const ${name} = (props) => {
+export const ${name} = ({ title = ${JSON.stringify(name)}, children }) => {
   return (
-    <div>
-      {/* Component content */}
-    </div>
+    <section aria-label={title}>
+      <h2>{title}</h2>
+      {children}
+    </section>
   );
 };
 `;
@@ -129,12 +143,12 @@ export const ${name} = (props) => {
         return `
 import { useState } from 'react';
 
-export function ${name}(): any {
-  const [state, setState] = useState(null);
+export function ${name}(): { value: string; setValue: (value: string) => void } {
+  const [value, setValue] = useState("");
 
   return {
-    state,
-    setState,
+    value,
+    setValue,
   };
 }
 `;
@@ -143,11 +157,11 @@ export function ${name}(): any {
 import { useState } from 'react';
 
 export function ${name}() {
-  const [state, setState] = useState(null);
+  const [value, setValue] = useState("");
 
   return {
-    state,
-    setState,
+    value,
+    setValue,
   };
 }
 `;
@@ -156,15 +170,13 @@ export function ${name}() {
     util: (name: string, language: string = "javascript") => {
       if (language === "typescript") {
         return `
-export function ${name}(input: any): any {
-  // Utility function implementation
+export function ${name}<T>(input: T): T {
   return input;
 }
 `;
       }
       return `
 export function ${name}(input) {
-  // Utility function implementation
   return input;
 }
 `;
@@ -184,6 +196,9 @@ export function ${name}(input) {
   ): GeneratedCode {
     if (!this.templates[type]) {
       throw new Error(`Unknown template type: ${type}`);
+    }
+    if (!/^[A-Za-z_$][A-Za-z0-9_$]*$/.test(name) || RESERVED_IDENTIFIERS.has(name)) {
+      throw new Error("名前には予約語でない有効な識別子を指定してください");
     }
 
     const code = this.templates[type](name, language);
