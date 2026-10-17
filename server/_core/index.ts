@@ -2,6 +2,7 @@ import 'dotenv/config';
 import express from "express";
 import { createServer } from "http";
 import net from "net";
+import { timingSafeEqual } from "crypto";
 import { createReadStream, existsSync } from "fs";
 import cors from "cors";
 import { createExpressMiddleware } from "@trpc/server/adapters/express";
@@ -97,9 +98,20 @@ async function startServer() {
   
   // Heartbeat self-evolution callback
   app.post("/api/scheduled/self-evolution", async (req, res) => {
+    const expectedSecret = process.env.HEARTBEAT_CALLBACK_SECRET;
+    const providedSecret = req.get("authorization")?.replace(/^Bearer\s+/i, "") ?? "";
+    if (!expectedSecret || Buffer.byteLength(expectedSecret) < 32) {
+      res.status(503).json({ error: "Heartbeat callback is not configured" });
+      return;
+    }
+    const expected = Buffer.from(expectedSecret);
+    const provided = Buffer.from(providedSecret);
+    if (expected.length !== provided.length || !timingSafeEqual(expected, provided)) {
+      res.status(401).json({ error: "Unauthorized" });
+      return;
+    }
     try {
-      const userId = req.body?.userId || "system";
-      const result = await HeartbeatConnector.getInstance().onHeartbeatCallback(userId);
+      const result = await HeartbeatConnector.getInstance().onHeartbeatCallback("system");
       res.json(result);
     } catch (error) {
       console.error("[Heartbeat] self-evolution callback error:", error);

@@ -19,13 +19,13 @@
  * Heartbeat (server/_core/heartbeat.ts) は本番環境では HTTP コールバックを送信する。
  * `heartbeatCallback` エンドポイントのパスが `/api/trpc/evolutionScheduler.heartbeatCallback`
  * に相当するが、Heartbeat の callbackPath は `/api/scheduled/self-evolution` に設定されている。
- * そのため express 側で `/api/scheduled/self-evolution` を受け取って
- * `HeartbeatConnector.onHeartbeatCallback()` を呼ぶことで接続する。
+ * Express 側でBearer秘密鍵を検証してから
+ * `HeartbeatConnector.onHeartbeatCallback()` を呼び出す。tRPC管理操作は管理者認証が必要。
  * （tRPC mutation は JSON-RPC 形式のため、Heartbeat POST との橋渡し役として
  *  `heartbeatCallback` mutation と Express ルートを共存させる）
  */
 
-import { router, publicProcedure } from '../_core/trpc';
+import { router, adminProcedure } from '../_core/trpc';
 import { z } from 'zod';
 import { HeartbeatConnector } from '../core/HeartbeatConnector';
 import { EvolutionScheduler } from '../core/EvolutionScheduler';
@@ -39,9 +39,9 @@ export const evolutionSchedulerRouter = router({
    * Heartbeat コールバックを受信し、自己進化サイクルを実行する。
    *
    * Heartbeat の callbackPath `/api/scheduled/self-evolution` から
-   * Express ルート経由で呼び出される（直接 tRPC 呼び出しも可）。
+   * Express ルート経由で呼び出される（管理者による直接 tRPC 呼び出しも可）。
    */
-  heartbeatCallback: publicProcedure
+  heartbeatCallback: adminProcedure
     .input(
       z.object({
         userId: z.string().optional().default('system'),
@@ -71,7 +71,7 @@ export const evolutionSchedulerRouter = router({
    * 手動で1サイクル実行する（テスト・管理用）。
    * 既存の triggerOnce API を破壊しない。
    */
-  triggerOnce: publicProcedure
+  triggerOnce: adminProcedure
     .input(
       z.object({
         userId: z.string().min(1),
@@ -106,14 +106,14 @@ export const evolutionSchedulerRouter = router({
   /**
    * スケジューラ状態・統計を取得する。
    */
-  getStatus: publicProcedure.query(() => {
+  getStatus: adminProcedure.query(() => {
     return connector.getSchedulerStatus();
   }),
 
   /**
    * 実行履歴を取得する。
    */
-  getRunHistory: publicProcedure
+  getRunHistory: adminProcedure
     .input(
       z.object({
         limit: z.number().min(1).max(100).optional().default(20),
@@ -128,7 +128,7 @@ export const evolutionSchedulerRouter = router({
   /**
    * Heartbeat コールバック受信履歴を取得する。
    */
-  getCallbackHistory: publicProcedure
+  getCallbackHistory: adminProcedure
     .input(
       z.object({
         limit: z.number().min(1).max(50).optional().default(20),
@@ -144,12 +144,12 @@ export const evolutionSchedulerRouter = router({
    * スケジューラ設定を更新する。
    * enable_auto_cycle などのパラメータは SafeImprovementApplier 経由で変更する。
    */
-  configure: publicProcedure
+  configure: adminProcedure
     .input(
       z.object({
-        intervalMs: z.number().min(60_000).optional(),
-        maxChangesPerCycle: z.number().min(0).max(20).optional(),
-        maxConsecutiveFailures: z.number().min(1).max(10).optional(),
+        intervalMs: z.number().int().min(60_000).max(2_147_483_647).optional(),
+        maxChangesPerCycle: z.number().int().min(0).max(20).optional(),
+        maxConsecutiveFailures: z.number().int().min(1).max(10).optional(),
         failureRateThreshold: z.number().min(0).max(1).optional(),
       })
     )
@@ -171,7 +171,7 @@ export const evolutionSchedulerRouter = router({
   /**
    * Heartbeat ジョブ定義を取得する（登録用）。
    */
-  getJobDescriptor: publicProcedure.query(() => {
+  getJobDescriptor: adminProcedure.query(() => {
     return connector.getJobDescriptor();
   }),
 
@@ -179,7 +179,7 @@ export const evolutionSchedulerRouter = router({
    * enable_auto_cycle を SafeImprovementApplier 経由で切り替える。
    * allowlist 対象キーのみ変更するため安全。
    */
-  setAutoCycle: publicProcedure
+  setAutoCycle: adminProcedure
     .input(
       z.object({
         userId: z.string().min(1),

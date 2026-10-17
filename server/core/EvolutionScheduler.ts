@@ -139,11 +139,29 @@ export class EvolutionScheduler {
   /** スケジューラ設定を更新する */
   public configure(partial: Partial<EvolutionSchedulerConfig>): void {
     if (partial.intervalMs !== undefined) {
-      if (partial.intervalMs < MIN_INTERVAL_MS) {
+      if (!Number.isSafeInteger(partial.intervalMs) ||
+          partial.intervalMs < MIN_INTERVAL_MS ||
+          partial.intervalMs > 2_147_483_647) {
         throw new Error(
-          `intervalMs must be >= ${MIN_INTERVAL_MS}ms (got ${partial.intervalMs})`
+          `intervalMs must be between ${MIN_INTERVAL_MS}ms and 2147483647ms (got ${partial.intervalMs})`
         );
       }
+    }
+    if (partial.maxChangesPerCycle !== undefined &&
+        (!Number.isSafeInteger(partial.maxChangesPerCycle) ||
+          partial.maxChangesPerCycle < 0 ||
+          partial.maxChangesPerCycle > 20)) {
+      throw new Error('maxChangesPerCycle must be an integer between 0 and 20');
+    }
+    if (partial.maxConsecutiveFailures !== undefined &&
+        (!Number.isSafeInteger(partial.maxConsecutiveFailures) ||
+          partial.maxConsecutiveFailures < 1 ||
+          partial.maxConsecutiveFailures > 10)) {
+      throw new Error('maxConsecutiveFailures must be an integer between 1 and 10');
+    }
+    if (partial.failureRateThreshold !== undefined &&
+        (!Number.isFinite(partial.failureRateThreshold) || partial.failureRateThreshold < 0 || partial.failureRateThreshold > 1)) {
+      throw new Error('failureRateThreshold must be between 0 and 1');
     }
     this.config = { ...this.config, ...partial };
   }

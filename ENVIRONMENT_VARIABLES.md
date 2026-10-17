@@ -36,6 +36,7 @@ postgresql://[user]:[password]@[host]:[port]/[database]
 | 変数名 | 必須 | デフォルト | 説明 | 推奨値 |
 |--------|------|----------|------|--------|
 | `JWT_SECRET` | ✅ | `local-secret-key` | JWT 署名キー | 32文字以上のランダム文字列 |
+| `HEARTBEAT_CALLBACK_SECRET` | Heartbeat利用時 | - | 自己進化コールバックのBearer認証用秘密鍵（32 bytes以上） |
 
 **生成方法:**
 ```bash
