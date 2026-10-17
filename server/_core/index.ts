@@ -57,15 +57,6 @@ async function startServer() {
   app.use(express.json({ limit: "500mb" }));
   app.use(express.urlencoded({ limit: "500mb", extended: true }));
   
-  // Debug middleware to log request body
-  app.use((req, res, next) => {
-    if (req.path === '/api/trpc/fileUpload.swap') {
-      console.log('[DEBUG] Request body type:', typeof req.body);
-      console.log('[DEBUG] Request body keys:', Object.keys(req.body || {}));
-      console.log('[DEBUG] Request body:', JSON.stringify(req.body).substring(0, 200));
-    }
-    next();
-  });
   registerStorageProxy(app);
   registerOAuthRoutes(app);
   
