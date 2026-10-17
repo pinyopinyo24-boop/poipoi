@@ -97,6 +97,16 @@ describe('STEP 46: EvolutionAIManager', () => {
       expect(stats.totalProposals).toBeGreaterThanOrEqual(0);
       expect(stats.totalVersions).toBeGreaterThanOrEqual(0);
     });
+
+    it('should derive analysis insights from usage and feedback data', async () => {
+      const analysis = await manager.performAIAnalysis('test_user_1');
+
+      expect(typeof analysis.aiInsights).toBe('string');
+      expect(analysis.aiInsights.length).toBeGreaterThan(0);
+      expect(analysis.aiInsights).not.toContain('would be generated here');
+      expect(analysis.usageAnalysis.userId).toBe('test_user_1');
+      expect(analysis.feedbackAnalysis.userId).toBe('test_user_1');
+    });
   });
 
   describe('EvolutionService', () => {

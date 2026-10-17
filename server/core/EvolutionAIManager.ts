@@ -276,12 +276,41 @@ export class EvolutionAIManager {
     const feedbackAnalysis = await this.analyzeFeedback(userId);
     const stats = await this.getEvolutionStats(userId);
 
-    // 高度な分析を実行
+    const insights: string[] = [];
+    const negativeFeedback = feedbackAnalysis.sentimentDistribution.negative;
+    if (
+      feedbackAnalysis.totalFeedback > 0 &&
+      negativeFeedback / feedbackAnalysis.totalFeedback >= 0.2
+    ) {
+      insights.push(
+        `低評価フィードバックが${Math.round(
+          (negativeFeedback / feedbackAnalysis.totalFeedback) * 100
+        )}%あります。主な課題を優先して改善してください。`
+      );
+    }
+
+    if (usageAnalysis.underutilizedFeatures.length > 0) {
+      const featureNames = usageAnalysis.underutilizedFeatures
+        .map((feature: { featureName: string }) => feature.featureName)
+        .join('、');
+      insights.push(`利用の少ない機能（${featureNames}）の案内や導線を見直してください。`);
+    }
+
+    if (usageAnalysis.deviceTypes.mobile > 0.3) {
+      insights.push('モバイル利用が多いため、モバイル操作性の改善を優先してください。');
+    }
+
+    if (stats.totalProposals > 0 && stats.acceptedProposals === 0) {
+      insights.push('改善提案がまだ承認されていません。提案内容と優先度を確認してください。');
+    }
+
     return {
       usageAnalysis,
       feedbackAnalysis,
       stats,
-      aiInsights: 'AI analysis insights would be generated here',
+      aiInsights: insights.length > 0
+        ? insights.join(' ')
+        : '現在の利用状況とフィードバックに、優先対応が必要な傾向は見つかりませんでした。',
     };
   }
 
