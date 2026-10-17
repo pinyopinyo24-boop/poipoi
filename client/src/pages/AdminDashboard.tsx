@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { useAuth } from "@/_core/hooks/useAuth";
 import { trpc } from "@/lib/trpc";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -10,11 +11,18 @@ const COLORS = ["#3b82f6", "#ef4444", "#f59e0b", "#10b981"];
 
 export default function AdminDashboard() {
   const { user } = useAuth();
+  const [typeFilter, setTypeFilter] = useState<"all" | "bug" | "feature" | "suggestion" | "other">("all");
+  const [statusFilter, setStatusFilter] = useState<"all" | "new" | "reviewing" | "resolved">("all");
   const feedbackStats = trpc.feedback.getStats.useQuery(undefined, {
     enabled: user?.role === "admin",
   });
   const feedbackList = trpc.feedback.list.useQuery(
-    { limit: 50, offset: 0 },
+    {
+      limit: 50,
+      offset: 0,
+      type: typeFilter === "all" ? undefined : typeFilter,
+      status: statusFilter === "all" ? undefined : statusFilter,
+    },
     { enabled: user?.role === "admin" }
   );
   const utils = trpc.useUtils();
@@ -177,6 +185,35 @@ export default function AdminDashboard() {
               <CardDescription>新しいものから最大50件を表示します。ステータスを更新できます。</CardDescription>
             </CardHeader>
             <CardContent className="space-y-3">
+              <div className="flex flex-wrap gap-4">
+                <label className="flex items-center gap-2 text-sm">
+                  種別
+                  <select
+                    className="rounded border px-2 py-1"
+                    value={typeFilter}
+                    onChange={(event) => setTypeFilter(event.target.value as typeof typeFilter)}
+                  >
+                    <option value="all">すべて</option>
+                    <option value="bug">バグ報告</option>
+                    <option value="feature">機能リクエスト</option>
+                    <option value="suggestion">改善提案</option>
+                    <option value="other">その他</option>
+                  </select>
+                </label>
+                <label className="flex items-center gap-2 text-sm">
+                  状態
+                  <select
+                    className="rounded border px-2 py-1"
+                    value={statusFilter}
+                    onChange={(event) => setStatusFilter(event.target.value as typeof statusFilter)}
+                  >
+                    <option value="all">すべて</option>
+                    <option value="new">新規</option>
+                    <option value="reviewing">確認中</option>
+                    <option value="resolved">解決済み</option>
+                  </select>
+                </label>
+              </div>
               {updateFeedbackStatus.error && (
                 <Alert variant="destructive">
                   <AlertDescription>ステータスを更新できませんでした。</AlertDescription>
