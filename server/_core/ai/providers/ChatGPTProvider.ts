@@ -122,57 +122,19 @@ export class ChatGPTProvider extends BaseAIProvider {
   }
 
   async getStatus(): Promise<AIProviderStatus> {
-    const startTime = Date.now();
-
-    try {
-      const response = await globalThis.fetch(`${this.apiUrl}/models`, {
-        method: 'GET',
-        headers: {
-          'Authorization': `Bearer ${this.apiKey}`,
-        },
-      });
-
-      const isAvailable = response.ok;
-      const duration = Date.now() - startTime;
-
-      this.logRequest('getStatus', {
-        isAvailable,
-        duration,
-        statusCode: response.status,
-      });
-
-      return {
-        provider: 'chatgpt',
-        isAvailable,
-        lastChecked: new Date(),
-        modelsAvailable: isAvailable ? this.models.length : 0,
-        errorMessage: isAvailable ? undefined : `API returned ${response.status}`,
-      };
-    } catch (error) {
-      this.logError('getStatus', error);
-
-      return {
-        provider: 'chatgpt',
-        isAvailable: false,
-        lastChecked: new Date(),
-        modelsAvailable: 0,
-        errorMessage: error instanceof Error ? error.message : 'Unknown error',
-      };
-    }
+    const isConfigured = this.getApiKeyStatus() === 'configured';
+    return {
+      provider: 'chatgpt',
+      isAvailable: false,
+      isConfigured,
+      connectionVerified: false,
+      lastChecked: new Date(),
+      modelsAvailable: 0,
+      errorMessage: isConfigured ? 'キー設定済み。課金を伴う疎通確認は行っていません' : 'APIキー未設定または形式不正',
+    };
   }
 
   async validateConfig(): Promise<boolean> {
-    if (this.getApiKeyStatus() !== 'configured') {
-      this.logError('validateConfig', 'API key not configured');
-      return false;
-    }
-
-    try {
-      const status = await this.getStatus();
-      return status.isAvailable;
-    } catch (error) {
-      this.logError('validateConfig', error);
-      return false;
-    }
+    return this.getApiKeyStatus() === 'configured';
   }
 }

@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Alert, AlertDescription } from '@/components/ui/alert';
@@ -16,11 +16,55 @@ export function CloudProcessingTab({ sourceFileId, targetFileId }: CloudProcessi
   const [model, setModel] = useState<'inswapper_128' | 'inswapper_128_fp16'>('inswapper_128');
   const [loading, setLoading] = useState(false);
   const [showScript, setShowScript] = useState(false);
+  const [activeJobId, setActiveJobId] = useState<string | null>(null);
+  const [jobProgress, setJobProgress] = useState(0);
 
   // tRPC queries
   const startProcessingMutation = trpc.facefusionHybrid.startProcessing.useMutation();
   const getSettingsQuery = trpc.colabIntegration.getRecommendedSettings.useQuery();
   const getUploadedFilesQuery = trpc.facefusionHybrid.getUploadedFiles.useMutation();
+  const getProcessingStatusMutation = trpc.facefusionHybrid.getProcessingStatus.useMutation();
+  const downloadResultMutation = trpc.facefusionHybrid.downloadProcessingResult.useMutation();
+  const getProcessingStatus = getProcessingStatusMutation.mutateAsync;
+  const downloadProcessingResult = downloadResultMutation.mutateAsync;
+
+  useEffect(() => {
+    if (!activeJobId) return;
+    let stopped = false;
+    const poll = async () => {
+      try {
+        const status = await getProcessingStatus({ jobId: activeJobId });
+        if (stopped) return;
+        setJobProgress(status.progress);
+        if (status.status === 'completed') {
+          const result = await downloadProcessingResult({ jobId: activeJobId });
+          if (stopped) return;
+          const bytes = Uint8Array.from(atob(result.fileData), (character) => character.charCodeAt(0));
+          const url = URL.createObjectURL(new Blob([bytes], { type: result.mimeType }));
+          const link = document.createElement('a');
+          link.href = url;
+          link.download = result.filename;
+          document.body.appendChild(link);
+          link.click();
+          link.remove();
+          window.setTimeout(() => URL.revokeObjectURL(url), 60_000);
+          setActiveJobId(null);
+          toast.success('Colabの処理結果をPoiPoiからダウンロードしました');
+        } else if (status.status === 'failed') {
+          setActiveJobId(null);
+          toast.error(status.error || 'Colabの処理に失敗しました');
+        }
+      } catch (error) {
+        if (!stopped) {
+          setActiveJobId(null);
+          toast.error(error instanceof Error ? error.message : '処理状況を取得できませんでした');
+        }
+      }
+    };
+    void poll();
+    const timer = window.setInterval(() => void poll(), 4000);
+    return () => { stopped = true; window.clearInterval(timer); };
+  }, [activeJobId, getProcessingStatus, downloadProcessingResult]);
 
   const handleLaunchColab = async () => {
     try {
@@ -46,6 +90,10 @@ export function CloudProcessingTab({ sourceFileId, targetFileId }: CloudProcessi
       // Colab URL を新しいタブで開く
       if (result.colabUrl) {
         window.open(result.colabUrl, '_blank');
+      }
+      if (result.jobId) {
+        setJobProgress(0);
+        setActiveJobId(result.jobId);
       }
 
       toast.success('Colabノートブックを作成しました。開いたページで実行ボタンを押してください。');
@@ -75,6 +123,16 @@ export function CloudProcessingTab({ sourceFileId, targetFileId }: CloudProcessi
   return (
     <div className="space-y-6">
       {/* 設定 */}
+      {activeJobId && (
+        <Card className="p-6 bg-blue-900 border-blue-700" aria-live="polite">
+          <h3 className="text-lg font-semibold text-white mb-3">Colab処理の段階表示</h3>
+          <div className="h-2 overflow-hidden rounded bg-blue-950">
+            <div className="h-full bg-cyan-400 transition-all" style={{ width: `${jobProgress}%` }} />
+          </div>
+          <p className="mt-2 text-sm text-blue-100">準備・返却段階: {jobProgress}% — FaceFusion処理中はこの値が変わらない場合があります。完了後に結果を自動でダウンロードします。</p>
+        </Card>
+      )}
+
       <Card className="p-6 bg-slate-800 border-slate-700">
         <h3 className="text-lg font-semibold text-white mb-4">⚙️ 処理設定</h3>
 

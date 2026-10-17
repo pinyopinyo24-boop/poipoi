@@ -46,6 +46,8 @@ export interface AIModel {
 export interface AIProviderStatus {
   provider: AIProviderType;
   isAvailable: boolean;
+  isConfigured?: boolean;
+  connectionVerified?: boolean;
   lastChecked: Date;
   errorMessage?: string;
   modelsAvailable: number;

@@ -28,7 +28,7 @@ export default function ChatScreen() {
   const [isLoading, setIsLoading] = useState(false);
   const [apiConnector, setApiConnector] = useState<MobileAPIConnector | null>(null);
   const [isConnected, setIsConnected] = useState(false);
-  const [sessionId, setSessionId] = useState<string>(`session_${Date.now()}`);
+  const [sessionId, setSessionId] = useState<string | undefined>();
 
   // API コネクタの初期化
   useEffect(() => {
@@ -43,9 +43,22 @@ export default function ChatScreen() {
 
       const connector = new MobileAPIConnector(apiBaseUrl);
       setApiConnector(connector);
+      const hasSavedSession = await connector.initialize();
       
       // Initialize session
-      setSessionId(`session_${Date.now()}`);
+      const savedSessionId = hasSavedSession ? connector.getSessionId() : null;
+      setSessionId(savedSessionId || undefined);
+      if (savedSessionId) {
+        const history = await connector.getChatHistory(savedSessionId);
+        if (history.success && history.data?.length) {
+          setMessages(history.data.map((message) => ({
+            id: message.id,
+            text: message.content,
+            isUser: message.role === 'user',
+            timestamp: message.timestamp,
+          })));
+        }
+      }
 
         // 接続確認
         const connected = await connector.checkConnectivity();
@@ -94,7 +107,9 @@ export default function ChatScreen() {
       if (response.success && response.data) {
         // Extract message content from ChatMessage object
         // response.data structure: { message: ChatMessage, session: ChatSession, ... }
-        const messageContent = response.data.message?.content || response.data.message || "応答がありません";
+        const messageContent = typeof response.data.message === 'string'
+          ? response.data.message
+          : response.data.message?.content || "応答がありません";
         const assistantMessage: Message = {
           id: (Date.now() + 1).toString(),
           text: typeof messageContent === 'string' ? messageContent : JSON.stringify(messageContent),

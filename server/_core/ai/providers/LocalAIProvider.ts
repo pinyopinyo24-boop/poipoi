@@ -98,34 +98,25 @@ export class LocalAIProvider extends BaseAIProvider {
   }
 
   async getStatus(): Promise<AIProviderStatus> {
+    let isConfigured = false;
     try {
-      const response = await globalThis.fetch(
-        `${this.apiUrl}/v1/models`
-      );
-
-      return {
-        provider: 'local',
-        isAvailable: response.ok,
-        lastChecked: new Date(),
-        modelsAvailable: response.ok ? this.models.length : 0,
-        errorMessage: response.ok
-          ? undefined
-          : `API returned ${response.status}`,
-      };
-    } catch (error) {
-      return {
-        provider: 'local',
-        isAvailable: false,
-        lastChecked: new Date(),
-        modelsAvailable: 0,
-        errorMessage:
-          error instanceof Error ? error.message : 'Unknown error',
-      };
+      const url = new URL(this.apiUrl);
+      isConfigured = url.protocol === 'http:' || url.protocol === 'https:';
+    } catch {
+      isConfigured = false;
     }
+    return {
+      provider: 'local',
+      isAvailable: false,
+      isConfigured,
+      connectionVerified: false,
+      lastChecked: new Date(),
+      modelsAvailable: 0,
+      errorMessage: isConfigured ? 'URL設定済み。ローカル推論サーバーへの疎通は未確認です' : 'ローカル推論サーバーのURL設定を確認してください',
+    };
   }
 
   async validateConfig(): Promise<boolean> {
-    const status = await this.getStatus();
-    return status.isAvailable;
+    return (await this.getStatus()).isConfigured === true;
   }
 }

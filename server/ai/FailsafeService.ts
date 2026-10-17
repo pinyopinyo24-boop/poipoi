@@ -59,12 +59,13 @@ class CircuitBreaker {
       }
     }
 
+    let timeoutHandle: ReturnType<typeof setTimeout> | undefined;
     try {
       const result = await Promise.race([
         fn(),
-        new Promise<T>((_, reject) =>
-          setTimeout(() => reject(new Error('Request timeout')), this.config.timeout)
-        ),
+        new Promise<T>((_, reject) => {
+          timeoutHandle = setTimeout(() => reject(new Error('Request timeout')), this.config.timeout);
+        }),
       ]);
 
       this.onSuccess();
@@ -72,6 +73,8 @@ class CircuitBreaker {
     } catch (error) {
       this.onFailure();
       throw error;
+    } finally {
+      if (timeoutHandle) clearTimeout(timeoutHandle);
     }
   }
 
@@ -166,13 +169,6 @@ export class FailsafeService {
         resetTimeout: 60000,
       },
       {
-        provider: 'claude',
-        failureThreshold: 5,
-        successThreshold: 2,
-        timeout: 30000,
-        resetTimeout: 60000,
-      },
-      {
         provider: 'gemini',
         failureThreshold: 5,
         successThreshold: 2,
@@ -214,10 +210,9 @@ export class FailsafeService {
     }
 
     // Set fallback providers
-    this.fallbackProviders.set('openai', ['claude', 'gemini', 'local']);
-    this.fallbackProviders.set('claude', ['openai', 'gemini', 'local']);
-    this.fallbackProviders.set('gemini', ['openai', 'claude', 'local']);
-    this.fallbackProviders.set('local', ['openai', 'claude', 'gemini']);
+    this.fallbackProviders.set('openai', ['local', 'gemini']);
+    this.fallbackProviders.set('gemini', ['local', 'openai']);
+    this.fallbackProviders.set('local', ['openai', 'gemini']);
   }
 
   /**

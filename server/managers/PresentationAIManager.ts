@@ -4,6 +4,7 @@
  */
 
 import { PresentationRepository } from './PresentationRepository';
+import { getPowerPointGenerationService } from './services/PowerPointGenerationService';
 
 export interface Presentation {
   id: string;
@@ -23,6 +24,7 @@ export interface Slide {
   layout: 'title' | 'content' | 'two-column' | 'image-text' | 'chart' | 'table';
   notes?: string;
   elements: SlideElement[];
+  chartData?: { labels: string[]; values: number[]; name?: string; type?: 'bar' | 'line' | 'pie' | 'doughnut' };
 }
 
 export interface SlideElement {
@@ -196,24 +198,17 @@ export class PresentationAIManager {
     return pres;
   }
 
-  exportPowerPoint(presentationId: string): Buffer | null {
+  async exportPowerPoint(presentationId: string): Promise<Buffer | null> {
     const pres = this.presentations.get(presentationId);
     if (!pres) return null;
-
-    // シミュレーション: 実際のPPTX生成は別のサービスで実装
-    const content = JSON.stringify(pres);
+    const content = await getPowerPointGenerationService().generatePowerPoint(pres);
     this.recordHistory('export-pptx', presentationId);
-    return Buffer.from(content);
+    return content;
   }
 
   exportPDF(presentationId: string): Buffer | null {
-    const pres = this.presentations.get(presentationId);
-    if (!pres) return null;
-
-    // シミュレーション: 実際のPDF生成は別のサービスで実装
-    const content = JSON.stringify(pres);
-    this.recordHistory('export-pdf', presentationId);
-    return Buffer.from(content);
+    if (!this.presentations.has(presentationId)) return null;
+    throw new Error('PDFエクスポートエンジンが構成されていません。PPTXまたはJSONで出力してください');
   }
 
   exportJSON(presentationId: string): string | null {

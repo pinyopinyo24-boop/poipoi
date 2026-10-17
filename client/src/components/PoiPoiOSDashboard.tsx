@@ -19,7 +19,7 @@ function StatusBadge({ status }: { status: 'idle' | 'processing' | 'completed' |
     completed: { icon: CheckCircle, label: '完了', color: 'bg-green-100 text-green-800' },
     failed: { icon: AlertCircle, label: 'エラー', color: 'bg-red-100 text-red-800' },
     waiting: { icon: Clock, label: '待機中', color: 'bg-yellow-100 text-yellow-800' },
-    pending: { icon: Clock, label: '保留中', color: 'bg-gray-100 text-gray-800' },
+    pending: { icon: Clock, label: '接続未確認', color: 'bg-amber-100 text-amber-800' },
     analyzing: { icon: Brain, label: '分析中', color: 'bg-blue-100 text-blue-800' },
     designing: { icon: Cog, label: 'デザイン中', color: 'bg-purple-100 text-purple-800' },
     implementing: { icon: Zap, label: '実装中', color: 'bg-orange-100 text-orange-800' },
@@ -39,6 +39,8 @@ function StatusBadge({ status }: { status: 'idle' | 'processing' | 'completed' |
 
 // Provider Status Card
 function ProviderStatusCard({ providerType, status }: { providerType: string; status: any }) {
+  const isVerified = status?.connectionVerified === true && status?.isAvailable === true;
+  const badgeStatus = isVerified ? 'completed' : status?.isConfigured ? 'pending' : 'failed';
   return (
     <Card className="hover:shadow-md transition-shadow">
       <CardContent className="pt-6">
@@ -50,13 +52,13 @@ function ProviderStatusCard({ providerType, status }: { providerType: string; st
                 {providerType === 'gemini' ? '🔵 Google Gemini' : '🟢 OpenAI ChatGPT'}
               </p>
             </div>
-            <StatusBadge status={status?.isAvailable ? 'completed' : 'failed'} />
+            <StatusBadge status={badgeStatus} />
           </div>
 
           <div className="grid grid-cols-2 gap-2 text-xs">
             <div>
-              <p className="text-muted-foreground">モデル数</p>
-              <p className="font-semibold">{status?.modelsAvailable || 0}</p>
+              <p className="text-muted-foreground">設定確認</p>
+              <p className="font-semibold">{status?.isConfigured ? '設定済み' : '未設定'}</p>
             </div>
             <div>
               <p className="text-muted-foreground">最終確認</p>
@@ -67,7 +69,7 @@ function ProviderStatusCard({ providerType, status }: { providerType: string; st
           </div>
 
           {status?.errorMessage && (
-            <div className="bg-red-50 border border-red-200 rounded p-2 text-xs text-red-700">
+            <div className={`${status?.isConfigured ? 'bg-amber-50 border-amber-200 text-amber-800' : 'bg-red-50 border-red-200 text-red-700'} border rounded p-2 text-xs`}>
               {status.errorMessage}
             </div>
           )}
@@ -273,6 +275,10 @@ export function PoiPoiOSDashboard() {
     { limit: 10 },
     { enabled: initialized && isAdmin }
   );
+  const runtimeStatusQuery = trpc.os.getRuntimeStatus.useQuery(undefined, {
+    enabled: isAdmin,
+    refetchInterval: 30_000,
+  });
 
   // Initialize AI Core on mount
   useEffect(() => {
@@ -417,6 +423,31 @@ export function PoiPoiOSDashboard() {
                 <p className="text-sm text-muted-foreground">最終更新</p>
                 <p className="text-sm">{new Date().toLocaleTimeString('ja-JP')}</p>
               </div>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {isAdmin && runtimeStatusQuery.data && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2"><Activity className="w-5 h-5" />実行環境・接続設定</CardTitle>
+            <CardDescription>設定の有無と、このAPIプロセスの実測値を表示します。外部サービスへの接続確認は実行しません。</CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="grid grid-cols-2 gap-3 text-sm md:grid-cols-4">
+              <div><p className="text-muted-foreground">API稼働時間</p><p className="font-semibold">{Math.floor(runtimeStatusQuery.data.runtime.uptimeSeconds / 3600)}時間</p></div>
+              <div><p className="text-muted-foreground">Node.js</p><p className="font-semibold">{runtimeStatusQuery.data.runtime.nodeVersion}</p></div>
+              <div><p className="text-muted-foreground">メモリ（heap）</p><p className="font-semibold">{runtimeStatusQuery.data.runtime.heapUsedPercent}%</p></div>
+              <div><p className="text-muted-foreground">OS / CPU</p><p className="font-semibold">{runtimeStatusQuery.data.runtime.platform} / {runtimeStatusQuery.data.runtime.architecture}</p></div>
+            </div>
+            <div className="grid gap-2 md:grid-cols-2">
+              {runtimeStatusQuery.data.components.map((component) => (
+                <div key={component.id} className="flex items-start justify-between gap-3 rounded border p-3 text-sm">
+                  <div><p className="font-medium">{component.id}</p><p className="text-xs text-muted-foreground">{component.detail}</p></div>
+                  <Badge variant="outline" className={component.status === 'running' || component.status === 'configured' ? 'border-green-300 bg-green-50 text-green-800' : component.status === 'not-verified' ? 'border-amber-300 bg-amber-50 text-amber-800' : 'border-red-300 bg-red-50 text-red-800'}>{component.status}</Badge>
+                </div>
+              ))}
             </div>
           </CardContent>
         </Card>

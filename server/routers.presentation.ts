@@ -4,9 +4,10 @@
  */
 
 import { z } from 'zod';
-import { publicProcedure, router } from './_core/trpc';
+import { protectedProcedure, publicProcedure, router } from './_core/trpc';
 import { getPresentationAIManager, PresentationAIManager } from './managers/PresentationAIManager';
 import { getPresentationRepository, PresentationRepository } from './managers/PresentationRepository';
+import { getPowerPointGenerationService } from './managers/services/PowerPointGenerationService';
 
 // Validation Schemas
 const CreatePresentationInput = z.object({
@@ -21,11 +22,23 @@ const UpdatePresentationInput = z.object({
   metadata: z.record(z.string(), z.any()).optional(),
 });
 
+const ChartDataInput = z.object({
+  labels: z.array(z.string().min(1).max(80)).min(1).max(50),
+  values: z.array(z.number().finite()).min(1).max(50),
+  name: z.string().max(120).optional(),
+  type: z.enum(['bar', 'line', 'pie', 'doughnut']).optional(),
+}).superRefine((data, ctx) => {
+  if (data.labels.length !== data.values.length) {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'Chart labels and values must have the same length' });
+  }
+});
+
 const AddSlideInput = z.object({
   presentationId: z.string(),
   title: z.string().min(1),
   content: z.string(),
   layout: z.enum(['title', 'content', 'two-column', 'image-text', 'chart', 'table']),
+  chartData: ChartDataInput.optional(),
   notes: z.string().optional(),
 });
 
@@ -35,6 +48,7 @@ const UpdateSlideInput = z.object({
   title: z.string().optional(),
   content: z.string().optional(),
   layout: z.enum(['title', 'content', 'two-column', 'image-text', 'chart', 'table']).optional(),
+  chartData: ChartDataInput.optional(),
   notes: z.string().optional(),
 });
 
@@ -146,6 +160,7 @@ export const presentationRouter = router({
           content: input.content,
           layout: input.layout,
           notes: input.notes,
+          chartData: input.chartData,
           elements: [],
         });
         if (!slide) {
@@ -166,6 +181,7 @@ export const presentationRouter = router({
           content: input.content,
           layout: input.layout,
           notes: input.notes,
+          chartData: input.chartData,
         } as any);
         if (!slide) {
           return { success: false, error: 'Slide not found' };
@@ -189,11 +205,11 @@ export const presentationRouter = router({
 
   export: publicProcedure
     .input(ExportInput)
-    .query(({ input }) => {
+    .query(async ({ input }) => {
       try {
         let result: Buffer | string | null = null;
         if (input.format === 'pptx') {
-          result = manager.exportPowerPoint(input.presentationId);
+          result = await manager.exportPowerPoint(input.presentationId);
         } else if (input.format === 'pdf') {
           result = manager.exportPDF(input.presentationId);
         } else if (input.format === 'json') {
@@ -209,10 +225,24 @@ export const presentationRouter = router({
           data: {
             format: input.format,
             size: typeof result === 'string' ? result.length : result.length,
+            fileName: `poipoi-presentation.${input.format}`,
+            fileData: Buffer.isBuffer(result) ? result.toString('base64') : Buffer.from(result).toString('base64'),
           },
         };
       } catch (error) {
         return { success: false, error: String(error) };
+      }
+    }),
+
+  importExcel: protectedProcedure
+    .input(z.object({ fileName: z.string().min(1).max(255), fileData: z.string().max(8 * 1024 * 1024 + 256) }))
+    .mutation(async ({ input }) => {
+      try {
+        const fileData = await getPowerPointGenerationService().importExcelToPowerPoint(input.fileName, input.fileData);
+        const fileName = `${input.fileName.replace(/\.(xlsx|xls)$/i, '') || 'presentation'}.pptx`;
+        return { success: true, data: { fileName, fileData: fileData.toString('base64'), size: fileData.length } };
+      } catch (error) {
+        return { success: false, error: error instanceof Error ? error.message : String(error) };
       }
     }),
 

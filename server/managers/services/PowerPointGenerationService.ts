@@ -1,7 +1,9 @@
 /**
- * PoiPoi PowerPointGenerationService
- * PowerPoint生成・エクスポート処理
+ * PoiPoi PowerPoint generation and export service.
  */
+
+import PptxGenJS from 'pptxgenjs';
+import * as XLSX from 'xlsx';
 
 export interface PresentationExportResult {
   success: boolean;
@@ -12,135 +14,212 @@ export interface PresentationExportResult {
   format: 'pptx' | 'pdf' | 'json';
 }
 
+type PresentationInput = {
+  title?: string;
+  description?: string;
+  metadata?: Record<string, unknown>;
+  slides?: Array<{
+    title?: string;
+    content?: string | string[];
+    notes?: string;
+    layout?: string;
+    elements?: Array<{
+      type?: string;
+      content?: string;
+      position?: { x?: number; y?: number };
+      size?: { width?: number; height?: number };
+      data?: { labels?: string[]; values?: number[]; name?: string };
+    }>;
+    chartData?: { labels: string[]; values: number[]; name?: string; type?: 'bar' | 'line' | 'pie' | 'doughnut' };
+  }>;
+};
+
+const DEFAULT_COLORS = { background: 'FFFFFF', text: '1F2937', accent: '2563EB', muted: '64748B' };
+
 export class PowerPointGenerationService {
-  /**
-   * PowerPoint生成
-   */
-  generatePowerPoint(presentationData: Record<string, any>): Buffer {
-    const content = JSON.stringify(presentationData);
-    return Buffer.from(content);
+  async importExcelToPowerPoint(fileName: string, fileData: string): Promise<Buffer> {
+    if (!fileName.toLowerCase().endsWith('.xlsx') && !fileName.toLowerCase().endsWith('.xls')) {
+      throw new Error('Excelファイル（.xlsx / .xls）を指定してください');
+    }
+    const encoded = fileData.replace(/^data:.*?;base64,/, '');
+    if (!encoded || encoded.length > 8 * 1024 * 1024 || !/^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/.test(encoded)) {
+      throw new Error('ExcelファイルのBase64データが不正または上限（6MB）を超えています');
+    }
+    const workbook = XLSX.read(Buffer.from(encoded, 'base64'), {
+      type: 'buffer', cellDates: true, cellFormula: false, sheetRows: 31,
+    });
+    if (workbook.SheetNames.length === 0) throw new Error('Excelにシートがありません');
+    const slides: NonNullable<PresentationInput['slides']> = [];
+    for (const sheetName of workbook.SheetNames.slice(0, 30)) {
+      const rows = XLSX.utils.sheet_to_json<unknown[]>(workbook.Sheets[sheetName], {
+        header: 1, raw: false, blankrows: false,
+      }).slice(0, 31);
+      const values = rows.map((row) => row.slice(0, 12).map((cell) => String(cell ?? '').slice(0, 200)));
+      const header = values[0] || [];
+      const body = values.slice(1);
+      const numericColumn = header.findIndex((_, column) => body.some((row) => row[column] && Number.isFinite(Number(row[column]))));
+      const chartRows = numericColumn >= 0 ? body.filter((row) => row[numericColumn] !== undefined && Number.isFinite(Number(row[numericColumn]))) : [];
+      const chartData = chartRows.length > 0
+        ? {
+            labels: chartRows.slice(0, 20).map((row, index) => (row[0] || `項目 ${index + 1}`).slice(0, 60)),
+            values: chartRows.slice(0, 20).map((row) => Number(row[numericColumn])),
+            name: header[numericColumn] || sheetName,
+            type: 'bar' as const,
+          }
+        : undefined;
+      slides.push({
+        title: sheetName.slice(0, 120),
+        content: body.slice(0, 15).map((row) => row.join(' | ').slice(0, 500)).join('\n'),
+        layout: chartData ? 'chart' : 'content',
+        elements: [],
+        ...(chartData ? { chartData } : {}),
+        notes: `Excelから取り込んだシート「${sheetName}」。最大31行・12列を変換しました。`,
+      });
+    }
+    return this.generatePowerPoint({
+      title: fileName.replace(/\.(xlsx|xls)$/i, '') || 'Excelからの変換',
+      description: 'Excelワークブックから生成',
+      slides,
+    });
   }
 
-  /**
-   * PDF生成準備
-   */
-  preparePDFExport(presentationData: Record<string, any>): Record<string, any> {
-    return {
-      title: presentationData.title,
-      slides: presentationData.slides,
-      format: 'pdf',
-      timestamp: new Date().toISOString(),
-    };
+  /** Create a real Office Open XML presentation buffer. */
+  async generatePowerPoint(presentationData: PresentationInput): Promise<Buffer> {
+    const pptx = new PptxGenJS();
+    pptx.layout = 'LAYOUT_WIDE';
+    pptx.author = 'PoiPoi';
+    pptx.subject = presentationData.description || '';
+    pptx.title = presentationData.title || 'PoiPoi Presentation';
+    pptx.company = 'PoiPoi';
+
+    const themeId = String(presentationData.metadata?.themeId || 'professional');
+    const colors = themeId === 'dark'
+      ? { background: '111827', text: 'F9FAFB', accent: '38BDF8', muted: 'CBD5E1' }
+      : themeId === 'creative'
+        ? { background: 'FFF7ED', text: '7C2D12', accent: 'EA580C', muted: '9A3412' }
+        : DEFAULT_COLORS;
+
+    const slides = presentationData.slides || [];
+    if (slides.length === 0) {
+      throw new Error('プレゼンテーションにスライドがありません');
+    }
+
+    slides.forEach((sourceSlide, index) => {
+      const slide = pptx.addSlide();
+      slide.background = { color: colors.background };
+      const title = sourceSlide.title?.trim() || `スライド ${index + 1}`;
+      const content = Array.isArray(sourceSlide.content)
+        ? sourceSlide.content
+        : String(sourceSlide.content || '').split(/\r?\n/).map((line) => line.replace(/^\s*[-*•]\s*/, '')).filter(Boolean);
+      const isTitle = sourceSlide.layout === 'title' || (index === 0 && sourceSlide.layout === undefined);
+
+      slide.addText(title, {
+        x: 0.65, y: isTitle ? 1.5 : 0.45, w: 12.0, h: isTitle ? 1.2 : 0.75,
+        fontFace: 'Aptos Display', fontSize: isTitle ? 34 : 25, bold: true,
+        color: colors.text, breakLine: false, fit: 'shrink', margin: 0.05,
+      });
+
+      if (isTitle) {
+        const description = index === 0 ? presentationData.description : '';
+        if (description) {
+          slide.addText(description, {
+            x: 0.8, y: 3.0, w: 11.5, h: 1.1, fontFace: 'Aptos', fontSize: 18,
+            color: colors.muted, align: 'center', valign: 'middle', fit: 'shrink', margin: 0.1,
+          });
+        }
+      } else {
+        slide.addShape(pptx.ShapeType.rect, {
+          x: 0.65, y: 1.28, w: 12.0, h: 0.055,
+          line: { color: colors.accent, transparency: 100 }, fill: { color: colors.accent },
+        });
+      }
+
+      const chartData = sourceSlide.chartData || sourceSlide.elements?.find((element) => element.type === 'chart')?.data;
+      const chartLabels = chartData?.labels || [];
+      const chartValues = chartData?.values || [];
+      const chartKind = chartData && 'type' in chartData ? chartData.type : undefined;
+      if (chartData && chartLabels.length > 0 && chartValues.length === chartLabels.length) {
+        const chartType = chartKind === 'line' ? pptx.ChartType.line
+          : chartKind === 'pie' ? pptx.ChartType.pie
+            : chartKind === 'doughnut' ? pptx.ChartType.doughnut : pptx.ChartType.bar;
+        slide.addChart(chartType, [{ name: chartData.name || title, labels: chartLabels, values: chartValues }], {
+          x: 0.9, y: 1.65, w: 11.6, h: 5.1,
+          showTitle: false, showLegend: chartKind === 'pie' || chartKind === 'doughnut',
+          showValue: true, catAxisLabelFontFace: 'Aptos', catAxisLabelFontSize: 11,
+          valAxisLabelFontFace: 'Aptos', valAxisLabelFontSize: 10,
+          chartColors: [colors.accent, '14B8A6', 'F59E0B', '8B5CF6'],
+          showCatName: false, showPercent: chartKind === 'pie' || chartKind === 'doughnut',
+        } as any);
+      } else if (content.length > 0) {
+        const bulletRuns = content.map((text) => ({
+          text: text.slice(0, 500),
+          options: { bullet: { indent: 18 }, hanging: 4, breakLine: true },
+        }));
+        slide.addText(bulletRuns, {
+          x: 0.9, y: 1.65, w: 11.5, h: 5.1,
+          fontFace: 'Aptos', fontSize: content.length > 7 ? 16 : 20,
+          color: colors.text, breakLine: false, valign: 'top', fit: 'shrink',
+          paraSpaceAfter: 12, margin: 0.1,
+        });
+      }
+
+      for (const element of sourceSlide.elements || []) {
+        if (element.type !== 'text' || !element.content) continue;
+        const x = Math.max(0, Math.min(12.7, (element.position?.x ?? 5) / 100 * 13.333));
+        const y = Math.max(0, Math.min(7.3, (element.position?.y ?? 85) / 100 * 7.5));
+        const w = Math.max(0.5, Math.min(13.333 - x, (element.size?.width ?? 90) / 100 * 13.333));
+        const h = Math.max(0.25, Math.min(7.5 - y, (element.size?.height ?? 10) / 100 * 7.5));
+        slide.addText(element.content.slice(0, 1000), { x, y, w, h, fontFace: 'Aptos', fontSize: 14, color: colors.muted, fit: 'shrink' });
+      }
+      if (sourceSlide.notes) slide.addNotes(sourceSlide.notes);
+      slide.addText(`${index + 1} / ${slides.length}`, {
+        x: 11.8, y: 7.12, w: 0.8, h: 0.2, fontFace: 'Aptos', fontSize: 8,
+        color: colors.muted, align: 'right', margin: 0,
+      });
+    });
+
+    const output = await pptx.write({ outputType: 'nodebuffer' });
+    return Buffer.isBuffer(output) ? output : Buffer.from(output as ArrayBuffer);
   }
 
-  /**
-   * JSON エクスポート
-   */
+  /** PDF parsing requires a configured parser/runtime. Never label JSON as a PDF. */
+  preparePDFExport(): never {
+    throw new Error('PDFエクスポートにはPDF生成エンジンの構成が必要です');
+  }
+
   exportAsJSON(presentationData: Record<string, any>): string {
     return JSON.stringify(presentationData, null, 2);
   }
 
-  /**
-   * レイアウト処理
-   */
-  processLayout(
-    layout: 'title' | 'content' | 'two-column' | 'image-text' | 'chart' | 'table',
-    content: Record<string, any>
-  ): Record<string, any> {
+  processLayout(layout: 'title' | 'content' | 'two-column' | 'image-text' | 'chart' | 'table', content: Record<string, any>): Record<string, any> {
     const layouts: Record<string, Record<string, any>> = {
-      title: {
-        type: 'title',
-        position: { x: 0, y: 0 },
-        size: { width: 100, height: 100 },
-      },
-      content: {
-        type: 'content',
-        position: { x: 10, y: 10 },
-        size: { width: 80, height: 80 },
-      },
-      'two-column': {
-        type: 'two-column',
-        left: { x: 5, y: 10, width: 45, height: 80 },
-        right: { x: 50, y: 10, width: 45, height: 80 },
-      },
-      'image-text': {
-        type: 'image-text',
-        image: { x: 0, y: 0, width: 50, height: 100 },
-        text: { x: 50, y: 0, width: 50, height: 100 },
-      },
-      chart: {
-        type: 'chart',
-        position: { x: 10, y: 10 },
-        size: { width: 80, height: 80 },
-      },
-      table: {
-        type: 'table',
-        position: { x: 10, y: 10 },
-        size: { width: 80, height: 80 },
-      },
+      title: { type: 'title', position: { x: 0, y: 0 }, size: { width: 100, height: 100 } },
+      content: { type: 'content', position: { x: 10, y: 10 }, size: { width: 80, height: 80 } },
+      'two-column': { type: 'two-column', left: { x: 5, y: 10, width: 45, height: 80 }, right: { x: 50, y: 10, width: 45, height: 80 } },
+      'image-text': { type: 'image-text', image: { x: 0, y: 0, width: 50, height: 100 }, text: { x: 50, y: 0, width: 50, height: 100 } },
+      chart: { type: 'chart', position: { x: 10, y: 10 }, size: { width: 80, height: 80 } },
+      table: { type: 'table', position: { x: 10, y: 10 }, size: { width: 80, height: 80 } },
     };
-
-    return {
-      ...layouts[layout],
-      content,
-    };
+    return { ...layouts[layout], content };
   }
 
-  /**
-   * エクスポート結果返却
-   */
-  createExportResult(
-    fileName: string,
-    slideCount: number,
-    format: 'pptx' | 'pdf' | 'json'
-  ): PresentationExportResult {
-    return {
-      success: true,
-      filePath: `/exports/${fileName}`,
-      fileName,
-      slideCount,
-      createdAt: new Date().toISOString(),
-      format,
-    };
+  createExportResult(fileName: string, slideCount: number, format: 'pptx' | 'pdf' | 'json'): PresentationExportResult {
+    return { success: true, filePath: `/exports/${fileName}`, fileName, slideCount, createdAt: new Date().toISOString(), format };
   }
 
-  /**
-   * バッチエクスポート
-   */
-  batchExport(
-    presentations: Array<Record<string, any>>,
-    format: 'pptx' | 'pdf' | 'json'
-  ): PresentationExportResult[] {
-    return presentations.map((pres, index) =>
-      this.createExportResult(`presentation_${index + 1}.${format}`, pres.slides?.length || 0, format)
-    );
+  batchExport(presentations: Array<Record<string, any>>, format: 'pptx' | 'pdf' | 'json'): PresentationExportResult[] {
+    return presentations.map((pres, index) => this.createExportResult(`presentation_${index + 1}.${format}`, pres.slides?.length || 0, format));
   }
 
-  /**
-   * テンプレート適用
-   */
   applyTemplate(presentationData: Record<string, any>, templateId: string): Record<string, any> {
-    return {
-      ...presentationData,
-      templateId,
-      metadata: {
-        ...presentationData.metadata,
-        templateApplied: true,
-        appliedAt: new Date().toISOString(),
-      },
-    };
+    return { ...presentationData, templateId, metadata: { ...presentationData.metadata, templateApplied: true, appliedAt: new Date().toISOString() } };
   }
 }
 
 let serviceInstance: PowerPointGenerationService | null = null;
-
 export function getPowerPointGenerationService(): PowerPointGenerationService {
-  if (!serviceInstance) {
-    serviceInstance = new PowerPointGenerationService();
-  }
-  return serviceInstance;
+  return serviceInstance ||= new PowerPointGenerationService();
 }
-
 export function resetPowerPointGenerationService(): void {
   serviceInstance = null;
 }

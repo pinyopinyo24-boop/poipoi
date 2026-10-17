@@ -35,10 +35,12 @@ import { hybridRouter } from "./routers/hybrid";
 import { syncRouter } from "./routers/sync";
 import { evolutionSchedulerRouter } from "./routers/evolution-scheduler";
 import { z } from "zod";
+import { osRouter } from './routers.os';
 
 export const appRouter = router({
   executionLogs: executionLogsRouter,
   system: systemRouter,
+  os: osRouter,
   auth: router(localAuthRouter),
   advanced: advancedRouter,
   advancedFeatures: advancedFeaturesRouter,

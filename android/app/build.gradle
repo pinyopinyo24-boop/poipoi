@@ -1,6 +1,12 @@
 apply plugin: 'com.android.application'
 apply plugin: 'kotlin-android'
 
+def releaseStorePath = System.getenv('ANDROID_KEYSTORE_PATH')
+def releaseStorePassword = System.getenv('ANDROID_KEYSTORE_PASSWORD')
+def releaseKeyAlias = System.getenv('ANDROID_KEY_ALIAS')
+def releaseKeyPassword = System.getenv('ANDROID_KEY_PASSWORD')
+def hasReleaseSigning = [releaseStorePath, releaseStorePassword, releaseKeyAlias, releaseKeyPassword].every { it != null && !it.trim().isEmpty() }
+
 android {
     compileSdkVersion rootProject.ext.compileSdkVersion
     buildToolsVersion rootProject.ext.buildToolsVersion
@@ -26,10 +32,12 @@ android {
             keyPassword "android"
         }
         release {
-            storeFile file("../keystore/poipoi.keystore")
-            storePassword "poipoi123"
-            keyAlias "poipoi-key"
-            keyPassword "poipoi123"
+            if (hasReleaseSigning) {
+                storeFile file(releaseStorePath)
+                storePassword releaseStorePassword
+                keyAlias releaseKeyAlias
+                keyPassword releaseKeyPassword
+            }
         }
     }
 
@@ -45,7 +53,9 @@ android {
             minifyEnabled true
             shrinkResources true
             proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
-            signingConfig signingConfigs.release
+            if (hasReleaseSigning) {
+                signingConfig signingConfigs.release
+            }
         }
     }
 
@@ -72,6 +82,26 @@ android {
         checkReleaseBuilds true
         abortOnError false
         disable 'MissingTranslation', 'ExtraTranslation'
+    }
+}
+
+gradle.taskGraph.whenReady { taskGraph ->
+    def releaseBuildRequested = taskGraph.allTasks.any { task ->
+        task.name.toLowerCase().contains('release') &&
+            (task.name.startsWith('assemble') || task.name.startsWith('bundle') || task.name.startsWith('package'))
+    }
+    if (releaseBuildRequested && !hasReleaseSigning) {
+        throw new GradleException('Release signing is not configured. Set ANDROID_KEYSTORE_PATH, ANDROID_KEYSTORE_PASSWORD, ANDROID_KEY_ALIAS, and ANDROID_KEY_PASSWORD outside the repository.')
+    }
+    if (releaseBuildRequested && !file(releaseStorePath).isFile()) {
+        throw new GradleException('ANDROID_KEYSTORE_PATH does not point to an existing keystore file.')
+    }
+    if (releaseBuildRequested) {
+        def repositoryRoot = rootProject.projectDir.parentFile.canonicalPath
+        def keystorePath = file(releaseStorePath).canonicalPath
+        if (keystorePath == repositoryRoot || keystorePath.startsWith(repositoryRoot + File.separator)) {
+            throw new GradleException('Release signing material must be stored outside the repository.')
+        }
     }
 }
 

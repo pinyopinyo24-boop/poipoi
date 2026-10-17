@@ -12,6 +12,7 @@
 
 import axios, { AxiosInstance, AxiosError } from 'axios';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { LocalCacheService } from './LocalCacheService';
 
 export interface APIResponse<T = any> {
   success: boolean;
@@ -35,10 +36,11 @@ export interface ChatRequest {
 }
 
 export interface ChatResponse {
-  id: string;
-  message: string;
-  sessionId: string;
-  timestamp: number;
+  id?: string;
+  message: string | { id?: string; content: string; timestamp?: number };
+  session?: { id: string };
+  sessionId?: string;
+  timestamp?: number;
   metadata?: Record<string, any>;
 }
 
@@ -108,10 +110,10 @@ export class MobileAPIConnector {
    */
   async initialize(): Promise<boolean> {
     try {
-      const sessionId = await AsyncStorage.getItem('sessionId');
       const sessionToken = await AsyncStorage.getItem('sessionToken');
+      const sessionId = await AsyncStorage.getItem('chatSessionId');
       
-      if (sessionId && sessionToken) {
+      if (sessionToken) {
         this.sessionId = sessionId;
         this.sessionToken = sessionToken;
         this.apiClient.defaults.headers.common['Authorization'] = `Bearer ${sessionToken}`;
@@ -145,37 +147,20 @@ export class MobileAPIConnector {
    */
   async sendChatMessage(request: ChatRequest): Promise<APIResponse<ChatResponse>> {
     try {
-      const cacheKey = `chat:${request.message}`;
-      const cached = this.getFromCache(cacheKey);
-      
-      if (cached) {
-        return { success: true, data: cached };
-      }
-
-      // Generate or use existing session ID
-      const sessionId = request.sessionId || `session_${Date.now()}`;
-      const userId = this.sessionId || `mobile_${Date.now()}`;
-      
-      // tRPC standard format: wrap input in 'json' key
-      // publicProcedure: no authentication required
-      const response = await this.retryRequest(() =>
-        this.apiClient.post('/api/trpc/chat.processMessage', {
-          json: {
-            userId,
-            sessionId,
-            message: request.message,
-          }
-        })
-      );
-
-      // Extract data from tRPC response
-      // tRPC response format: { result: { data: {...} } }
-      const data = response.data?.result?.data;
-      
-      if (!data) {
-        throw new Error('No data in tRPC response: ' + JSON.stringify(response.data));
-      }
-      this.setCache(cacheKey, data);
+      const sessionId = request.sessionId || this.sessionId || await this.createChatSession();
+      const response = await this.apiClient.post('/api/trpc/chat.processMessage', {
+        json: { userId: 'mobile', sessionId, message: request.message },
+      });
+      const data = this.getTrpcData(response.data);
+      if (!data?.message) throw new Error('チャット応答がありません');
+      const assistantText = typeof data.message === 'string' ? data.message : data.message.content;
+      const prior = await LocalCacheService.getChatHistory(sessionId) as ChatMessage[] | null;
+      const now = Date.now();
+      await LocalCacheService.saveChatHistory(sessionId, [
+        ...(prior || []),
+        { id: `mobile-user-${now}`, role: 'user', content: request.message, timestamp: now },
+        { id: data.message.id || `mobile-assistant-${now}`, role: 'assistant', content: assistantText, timestamp: data.message.timestamp || now },
+      ].slice(-200));
 
       return {
         success: true,
@@ -192,6 +177,7 @@ export class MobileAPIConnector {
   async getChatHistory(sessionId?: string): Promise<APIResponse<ChatMessage[]>> {
     try {
       const id = sessionId || this.sessionId;
+      if (!id) return { success: true, data: [] };
       const cacheKey = `history:${id}`;
       const cached = this.getFromCache(cacheKey);
       
@@ -199,18 +185,23 @@ export class MobileAPIConnector {
         return { success: true, data: cached };
       }
 
-      const response = await this.retryRequest(() =>
-        this.apiClient.get(`/api/trpc/chat.getHistory?sessionId=${id}`)
-      );
+      const input = encodeURIComponent(JSON.stringify({ json: { userId: 'mobile', sessionId: id } }));
+      const response = await this.retryRequest(() => this.apiClient.get(`/api/trpc/chat.getMessages?input=${input}`));
 
-      const data = response.data.result?.data || [];
+      const data = this.getTrpcData(response.data) || [];
       this.setCache(cacheKey, data);
+      await LocalCacheService.saveChatHistory(id, data);
 
       return {
         success: true,
         data,
       };
     } catch (error) {
+      const id = sessionId || this.sessionId;
+      if (id) {
+        const offlineData = await LocalCacheService.getChatHistory(id) as ChatMessage[] | null;
+        if (offlineData) return { success: true, data: offlineData };
+      }
       return this.handleError(error, 'Failed to get chat history');
     }
   }
@@ -219,22 +210,8 @@ export class MobileAPIConnector {
    * 音声メッセージ送信
    */
   async sendVoiceMessage(request: VoiceRequest): Promise<APIResponse<ChatResponse>> {
-    try {
-      const response = await this.retryRequest(() =>
-        this.apiClient.post('/api/trpc/voice.sendMessage', {
-          audioUrl: request.audioUrl,
-          language: request.language || 'ja',
-          sessionId: request.sessionId || this.sessionId,
-        })
-      );
-
-      return {
-        success: true,
-        data: response.data.result?.data,
-      };
-    } catch (error) {
-      return this.handleError(error, 'Failed to send voice message');
-    }
+    void request;
+    return { success: false, error: '音声文字起こしAPIはサーバー側に未実装です', code: 'NOT_IMPLEMENTED' };
   }
 
   /**
@@ -242,19 +219,19 @@ export class MobileAPIConnector {
    */
   async uploadFile(request: FileUploadRequest): Promise<APIResponse<FileUploadResponse>> {
     try {
-      const response = await this.retryRequest(() =>
-        this.apiClient.post('/api/trpc/file.upload', {
-          fileName: request.fileName,
-          fileType: request.fileType,
-          fileSize: request.fileSize,
-          fileData: request.fileData,
-          sessionId: request.sessionId || this.sessionId,
-        })
-      );
+      const fileType = request.fileType.startsWith('image/') ? 'image' : request.fileType.startsWith('video/') ? 'video' : null;
+      if (!fileType || !Number.isFinite(request.fileSize) || request.fileSize <= 0) {
+        throw new Error('対応形式は画像・動画です');
+      }
+      const response = await this.retryRequest(() => this.apiClient.post('/api/trpc/fileUpload.uploadFile', {
+        json: { fileName: request.fileName, fileType, fileBase64: request.fileData },
+      }));
+      const uploaded = this.getTrpcData(response.data);
+      if (!uploaded?.filePath) throw new Error('アップロード結果がありません');
 
       return {
         success: true,
-        data: response.data.result?.data,
+        data: { fileId: uploaded.fileName, fileName: uploaded.fileName, fileUrl: uploaded.filePath, timestamp: Date.now() },
       };
     } catch (error) {
       return this.handleError(error, 'Failed to upload file');
@@ -264,24 +241,13 @@ export class MobileAPIConnector {
   /**
    * セッション作成
    */
-  async createSession(): Promise<APIResponse<{ sessionId: string; token: string }>> {
+  async createSession(): Promise<APIResponse<{ sessionId: string; token?: string }>> {
     try {
-      const response = await this.retryRequest(() =>
-        this.apiClient.post('/api/trpc/session.create', {})
-      );
-
-      const { sessionId, token } = response.data.result?.data;
-      
-      // セッション情報を保存
-      this.sessionId = sessionId;
-      this.sessionToken = token;
-      await AsyncStorage.setItem('sessionId', sessionId);
-      await AsyncStorage.setItem('sessionToken', token);
-      this.apiClient.defaults.headers.common['Authorization'] = `Bearer ${token}`;
+      const sessionId = await this.createChatSession();
 
       return {
         success: true,
-        data: { sessionId, token },
+        data: { sessionId },
       };
     } catch (error) {
       return this.handleError(error, 'Failed to create session');
@@ -294,17 +260,17 @@ export class MobileAPIConnector {
   async closeSession(sessionId?: string): Promise<APIResponse<void>> {
     try {
       const id = sessionId || this.sessionId;
+      if (!id) return { success: true };
       await this.retryRequest(() =>
-        this.apiClient.post(`/api/trpc/session.close`, { sessionId: id })
+        this.apiClient.post('/api/trpc/chat.deleteSession', { json: { userId: 'mobile', sessionId: id } })
       );
 
       // ローカルセッション情報をクリア
       if (id === this.sessionId) {
         this.sessionId = null;
         this.sessionToken = null;
-        await AsyncStorage.removeItem('sessionId');
-        await AsyncStorage.removeItem('sessionToken');
-        delete this.apiClient.defaults.headers.common['Authorization'];
+        await AsyncStorage.removeItem('chatSessionId');
+        await LocalCacheService.clearChatHistory(id);
       }
 
       return { success: true };
@@ -370,11 +336,35 @@ export class MobileAPIConnector {
    * 認可失敗時の処理
    */
   private async handleUnauthorized(): Promise<void> {
+    const sessionId = this.sessionId;
     this.sessionId = null;
     this.sessionToken = null;
-    await AsyncStorage.removeItem('sessionId');
+    await AsyncStorage.removeItem('chatSessionId');
+    if (sessionId) await LocalCacheService.clearChatHistory(sessionId);
     await AsyncStorage.removeItem('sessionToken');
     delete this.apiClient.defaults.headers.common['Authorization'];
+  }
+
+  private async createChatSession(): Promise<string> {
+    if (!this.sessionToken) throw new Error('チャットにはログインが必要です');
+    const response = await this.apiClient.post('/api/trpc/chat.createSession', { json: { userId: 'mobile', title: 'モバイルチャット' } });
+    const session = this.getTrpcData(response.data);
+    const id = typeof session === 'string' ? session : session?.id;
+    if (typeof id !== 'string' || !id) throw new Error('チャットセッションを作成できませんでした');
+    this.sessionId = id;
+    await AsyncStorage.setItem('chatSessionId', id);
+    return id;
+  }
+
+  private getTrpcData<T = any>(response: any): T | undefined {
+    const data = response?.result?.data;
+    return (data && typeof data === 'object' && 'json' in data ? data.json : data) as T | undefined;
+  }
+
+  setAuthToken(token: string): void {
+    this.sessionToken = token;
+    this.apiClient.defaults.headers.common['Authorization'] = `Bearer ${token}`;
+    void AsyncStorage.setItem('sessionToken', token);
   }
 
   /**

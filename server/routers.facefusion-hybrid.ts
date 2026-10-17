@@ -250,7 +250,9 @@ export const facefusionHybridRouter = router({
         targetFileId: job.targetFileId,
       });
       job.status = 'completed';
+      job.progress = 100;
       job.resultFileId = fileId;
+      job.completedAt = new Date();
       delete job.callbackTokenHash;
 
       return { success: true, fileId, message: 'Result uploaded successfully' };
@@ -435,15 +437,11 @@ export const facefusionHybridRouter = router({
         if (!callbackToken || !process.env.GOOGLE_COLAB_CLIENT_ID || !process.env.GOOGLE_COLAB_CLIENT_SECRET || !process.env.GOOGLE_COLAB_REDIRECT_URI || !process.env.GOOGLE_COLAB_REFRESH_TOKEN) {
           throw new TRPCError({ code: 'PRECONDITION_FAILED', message: 'Google Colab OAuth credentials are not configured' });
         }
-        const sourceImageBase64 = (await fs.readFile(sourceFile.filePath)).toString('base64');
-        const targetVideoBase64 = (await fs.readFile(targetFile.filePath)).toString('base64');
         const colabResult = await createColabNotebookAuto(
           process.env.GOOGLE_COLAB_CLIENT_ID,
           process.env.GOOGLE_COLAB_CLIENT_SECRET,
           process.env.GOOGLE_COLAB_REDIRECT_URI,
           jobId,
-          sourceImageBase64,
-          targetVideoBase64,
           callbackToken,
           input.model,
           input.quality
@@ -541,4 +539,30 @@ export const facefusionHybridRouter = router({
       ],
     };
   }),
+
+  // Colab callback progress is authenticated with the same one-time job token used for result delivery.
+  updateProcessingProgress: publicProcedure
+    .input(z.object({ jobId: z.string().uuid(), callbackToken: z.string().uuid(), progress: z.number().int().min(0).max(99) }))
+    .mutation(({ input }) => {
+      const job = fileMetadata.get(input.jobId);
+      if (!job || job.type !== 'job' || job.provider !== 'colab' || job.status !== 'processing' || !hasValidCallbackToken(job, input.callbackToken)) {
+        throw new TRPCError({ code: 'NOT_FOUND', message: 'Job not found' });
+      }
+      job.progress = Math.max(job.progress || 0, input.progress);
+      return { jobId: job.id, status: job.status, progress: job.progress };
+    }),
+
+  failProcessing: publicProcedure
+    .input(z.object({ jobId: z.string().uuid(), callbackToken: z.string().uuid(), error: z.string().min(1).max(1000) }))
+    .mutation(({ input }) => {
+      const job = fileMetadata.get(input.jobId);
+      if (!job || job.type !== 'job' || job.provider !== 'colab' || job.status !== 'processing' || !hasValidCallbackToken(job, input.callbackToken)) {
+        throw new TRPCError({ code: 'NOT_FOUND', message: 'Job not found' });
+      }
+      job.status = 'failed';
+      job.error = input.error.slice(0, 1000);
+      job.completedAt = new Date();
+      delete job.callbackTokenHash;
+      return { jobId: job.id, status: job.status };
+    }),
 });

@@ -10,6 +10,8 @@ import { LocalAIProvider } from './providers/LocalAIProvider';
 import { AgentManager, AgentManagerConfig, WorkflowStep, WorkflowResult } from './AgentManager';
 import { BaseAgent, AgentType, AgentStatus, AgentExecutionResult } from './agents/BaseAgent';
 import { getConnectionMonitor } from './ProviderConnectionMonitor';
+import { ResilientAIProvider } from './ResilientAIProvider';
+import { failsafeService } from '../../ai/FailsafeService';
 
 export interface AICoreConfig {
   enableChatGPT: boolean;
@@ -26,6 +28,7 @@ export class AICore {
   private agentManager: AgentManager | null = null;
   private config: AICoreConfig;
   private initialized: boolean = false;
+  private runtimeProvider: IAIProvider | null = null;
   private connectionMonitor = getConnectionMonitor();
 
   constructor(config: AICoreConfig) {
@@ -65,7 +68,7 @@ export class AICore {
       }
 
       // Get primary provider or use first available
-      let primaryProvider = this.providers.get('local');
+      let primaryProvider = this.providers.get(this.config.primaryProvider);
       if (!primaryProvider && this.providers.size > 0) {
         console.warn(`[AICore] Primary provider '${this.config.primaryProvider}' not available, using first available`);
         primaryProvider = Array.from(this.providers.values())[0];
@@ -87,10 +90,16 @@ export class AICore {
         }
       }
 
-      // Initialize AgentManager
+      const fallbackProviders = Array.from(this.providers.values()).filter(
+        (provider) => provider.getProviderType() !== primaryProvider!.getProviderType(),
+      );
+      const resilientProvider = new ResilientAIProvider(primaryProvider, fallbackProviders);
+      this.runtimeProvider = resilientProvider;
+
+      // Initialize AgentManager using retry/fallback across configured existing providers.
       const managerConfig: AgentManagerConfig = {
-        primaryProvider,
-        secondaryProvider: this.getSecondaryProvider(),
+        primaryProvider: resilientProvider,
+        secondaryProvider: fallbackProviders[0],
         enableLogging: this.config.enableLogging,
         maxConcurrentTasks: 5,
       };
@@ -130,14 +139,14 @@ export class AICore {
    * Get primary provider
    */
   getPrimaryProvider(): IAIProvider | undefined {
-    return this.providers.get(this.config.primaryProvider);
+    return this.runtimeProvider || this.providers.get(this.config.primaryProvider);
   }
 
   /**
    * Get secondary provider
    */
   getSecondaryProvider(): IAIProvider | undefined {
-    const primaryType = this.config.primaryProvider;
+    const primaryType = (this.runtimeProvider || this.providers.get(this.config.primaryProvider))?.getProviderType();
     let secondaryProvider: IAIProvider | undefined;
     this.providers.forEach((provider, type) => {
       if (type !== primaryType && !secondaryProvider) {
@@ -163,11 +172,19 @@ export class AICore {
    */
   async getAllProviderStatuses(): Promise<Record<AIProviderType, AIProviderStatus>> {
     const statuses: Record<string, AIProviderStatus> = {};
-    this.providers.forEach((provider, type) => {
-      provider.getStatus().then(status => {
-        statuses[type] = status;
-      });
-    });
+    await Promise.all(Array.from(this.providers.entries()).map(async ([type, provider]) => {
+      try {
+        statuses[type] = await provider.getStatus();
+      } catch (error) {
+        statuses[type] = {
+          provider: type,
+          isAvailable: false,
+          lastChecked: new Date(),
+          errorMessage: error instanceof Error ? error.message : String(error),
+          modelsAvailable: 0,
+        };
+      }
+    }));
     return statuses as Record<AIProviderType, AIProviderStatus>;
   }
 
@@ -257,6 +274,8 @@ export class AICore {
       primaryProvider: this.config.primaryProvider,
       agentManager: this.agentManager?.getManagerStatus(),
       connectionStatus: this.connectionMonitor.getConnectionSummary(),
+      failsafe: failsafeService.getStatistics(),
+      circuitBreakers: failsafeService.getAllCircuitBreakerStates(),
     };
   }
 
