@@ -110,18 +110,32 @@ export class MultimodalProcessor {
    */
   async transcribeAudio(audioUrl: string, language?: string): Promise<string> {
     try {
+      const endpoint = process.env.BUILT_IN_FORGE_API_URL?.replace(/\/$/, '');
+      const apiKey = process.env.BUILT_IN_FORGE_API_KEY;
+      if (!endpoint || !apiKey) throw new Error('音声文字起こし用の既存AI接続が設定されていません');
+      const audioData = audioUrl.match(/^data:(audio\/[a-z0-9.+-]+);base64,([A-Za-z0-9+/]+=*)$/i);
+      const headers: Record<string, string> = { Authorization: `Bearer ${apiKey}` };
+      let body: BodyInit;
+      if (audioData) {
+        const bytes = Buffer.from(audioData[2], 'base64');
+        if (bytes.length === 0 || bytes.length > 10 * 1024 * 1024) throw new Error('音声ファイルは10MB以下にしてください');
+        const form = new FormData();
+        form.append('model', 'whisper-1');
+        form.append('language', language || 'ja');
+        form.append('file', new Blob([Uint8Array.from(bytes)], { type: audioData[1] }), `recording.${audioData[1].split('/')[1] || 'm4a'}`);
+        body = form;
+      } else {
+        if (!/^https:\/\//i.test(audioUrl)) throw new Error('音声URLはHTTPSまたは音声data URIを指定してください');
+        headers['Content-Type'] = 'application/json';
+        body = JSON.stringify({ model: 'whisper-1', audio_url: audioUrl, language: language || 'ja' });
+      }
       const response = await fetch(
-        `${process.env.BUILT_IN_FORGE_API_URL}/v1/audio/transcriptions`,
+        `${endpoint}/v1/audio/transcriptions`,
         {
           method: "POST",
-          headers: {
-            Authorization: `Bearer ${process.env.BUILT_IN_FORGE_API_KEY}`,
-          },
-          body: JSON.stringify({
-            model: "whisper-1",
-            audio_url: audioUrl,
-            language: language || "ja",
-          }),
+          headers,
+          body,
+          signal: AbortSignal.timeout(45_000),
         }
       );
 
@@ -130,6 +144,7 @@ export class MultimodalProcessor {
       }
 
       const data = (await response.json()) as { text: string };
+      if (typeof data.text !== 'string' || !data.text.trim()) throw new Error('文字起こし結果が空です');
       return data.text;
     } catch (error) {
       console.error("Audio transcription error:", error);

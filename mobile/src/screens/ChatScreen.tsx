@@ -8,8 +8,13 @@ import {
   StyleSheet,
   SafeAreaView,
   ActivityIndicator,
-  Alert
+  Alert,
+  Modal,
 } from "react-native";
+import { CameraView, useCameraPermissions } from 'expo-camera';
+import { useRef } from 'react';
+import * as FileSystem from 'expo-file-system';
+import { VoiceInputUI } from '../components/VoiceInputUI';
 import { MobileAPIConnector, ChatRequest, ChatResponse } from "../services/MobileAPIConnector";
 import Constants from "expo-constants";
 
@@ -29,6 +34,48 @@ export default function ChatScreen() {
   const [apiConnector, setApiConnector] = useState<MobileAPIConnector | null>(null);
   const [isConnected, setIsConnected] = useState(false);
   const [sessionId, setSessionId] = useState<string | undefined>();
+  const [cameraPermission, requestCameraPermission] = useCameraPermissions();
+  const [cameraOpen, setCameraOpen] = useState(false);
+  const cameraRef = useRef<CameraView>(null);
+  const [isAnalyzingImage, setIsAnalyzingImage] = useState(false);
+
+  const handleVoiceData = async (uri: string) => {
+    if (!apiConnector || !uri) return Alert.alert('音声入力', 'API接続後に録音してください');
+    try {
+      const base64 = await FileSystem.readAsStringAsync(uri, { encoding: FileSystem.EncodingType.Base64 });
+      const response = await apiConnector.sendVoiceMessage({ audioUrl: `data:audio/mp4;base64,${base64}`, language: 'ja' });
+      if (!response.success || !response.data) throw new Error(response.error || '文字起こしに失敗しました');
+      const transcript = typeof response.data.message === 'string' ? response.data.message : response.data.message.content;
+      setInput(transcript);
+      Alert.alert('文字起こし完了', '内容を確認して送信してください。');
+    } catch (error) {
+      Alert.alert('音声入力エラー', error instanceof Error ? error.message : '音声を処理できませんでした');
+    }
+  };
+
+  const handleOpenCamera = async () => {
+    if (!cameraPermission?.granted) {
+      const permission = await requestCameraPermission();
+      if (!permission.granted) return Alert.alert('カメラ権限', '画像読み取りにはカメラ権限が必要です。');
+    }
+    setCameraOpen(true);
+  };
+
+  const handleCaptureAndAnalyze = async () => {
+    try {
+      const photo = await cameraRef.current?.takePictureAsync({ base64: true, quality: 0.65 });
+      if (!photo?.base64 || !apiConnector) throw new Error('画像を取得できませんでした');
+      setCameraOpen(false);
+      setIsAnalyzingImage(true);
+      const response = await apiConnector.analyzeImage(`data:image/jpeg;base64,${photo.base64}`);
+      if (!response.success || !response.data) throw new Error(response.error || '画像分析に失敗しました');
+      setMessages(prev => [...prev, { id: `ocr-${Date.now()}`, text: response.data!.analysis, isUser: false, timestamp: Date.now() }]);
+    } catch (error) {
+      Alert.alert('画像読み取りエラー', error instanceof Error ? error.message : '画像を処理できませんでした');
+    } finally {
+      setIsAnalyzingImage(false);
+    }
+  };
 
   // API コネクタの初期化
   useEffect(() => {
@@ -178,6 +225,12 @@ export default function ChatScreen() {
       )}
 
       {/* Input Area */}
+      <View style={styles.mediaActions}>
+        <VoiceInputUI onVoiceData={handleVoiceData} isEnabled={!isLoading && !!apiConnector} />
+        <TouchableOpacity style={styles.mediaButton} onPress={handleOpenCamera} disabled={!apiConnector || isAnalyzingImage}>
+          <Text style={styles.mediaButtonText}>{isAnalyzingImage ? '画像を読取中…' : '写真を読み取る'}</Text>
+        </TouchableOpacity>
+      </View>
       <View style={styles.inputArea}>
         <TextInput
           style={styles.input}
@@ -196,6 +249,15 @@ export default function ChatScreen() {
           <Text style={styles.sendButtonText}>送信</Text>
         </TouchableOpacity>
       </View>
+      <Modal visible={cameraOpen} animationType="slide" onRequestClose={() => setCameraOpen(false)}>
+        <View style={styles.cameraContainer}>
+          <CameraView ref={cameraRef} style={styles.camera} facing="back" />
+          <View style={styles.cameraActions}>
+            <TouchableOpacity style={styles.mediaButton} onPress={() => setCameraOpen(false)}><Text style={styles.mediaButtonText}>閉じる</Text></TouchableOpacity>
+            <TouchableOpacity style={styles.sendButton} onPress={handleCaptureAndAnalyze}><Text style={styles.sendButtonText}>撮影して文字を読む</Text></TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -280,6 +342,12 @@ const styles = StyleSheet.create({
     borderTopColor: "#e0e0e0",
     gap: 8
   },
+  mediaActions: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-around', paddingHorizontal: 12, paddingTop: 8 },
+  mediaButton: { paddingHorizontal: 14, paddingVertical: 10, borderRadius: 8, backgroundColor: '#eef2ff' },
+  mediaButtonText: { color: '#1e3a8a', fontWeight: '600' },
+  cameraContainer: { flex: 1, backgroundColor: '#000', justifyContent: 'center' },
+  camera: { flex: 1 },
+  cameraActions: { padding: 16, flexDirection: 'row', justifyContent: 'space-around' },
   input: {
     flex: 1,
     borderWidth: 1,

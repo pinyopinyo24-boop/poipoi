@@ -4,6 +4,7 @@ import { createServer } from "http";
 import net from "net";
 import { timingSafeEqual } from "crypto";
 import { createReadStream, existsSync } from "fs";
+import path from "path";
 import cors from "cors";
 import { createExpressMiddleware } from "@trpc/server/adapters/express";
 import { HeartbeatConnector } from "../core/HeartbeatConnector";
@@ -15,6 +16,7 @@ import { serveStatic, setupVite } from "./vite";
 import { StartupOptimizationService } from "../managers/StartupOptimizationService";
 
 const startupOptimizationService = new StartupOptimizationService();
+const runtimeRequestMetrics = { total: 0, failed: 0, durationMsTotal: 0 };
 
 function isPortAvailable(port: number): Promise<boolean> {
   return new Promise(resolve => {
@@ -63,22 +65,36 @@ async function startServer() {
   
   registerStorageProxy(app);
   registerOAuthRoutes(app);
+
+  app.use((req, res, next) => {
+    const requestStartedAt = Date.now();
+    res.once('finish', () => {
+      runtimeRequestMetrics.total += 1;
+      runtimeRequestMetrics.durationMsTotal += Date.now() - requestStartedAt;
+      if (res.statusCode >= 500) runtimeRequestMetrics.failed += 1;
+    });
+    next();
+  });
   
   // Serve upload directory for testing
-  app.use('/upload', express.static('/home/ubuntu/upload'));
+  app.use('/upload', express.static(path.resolve(process.cwd(), 'uploads')));
   
-  // Health check endpoint
-  app.get('/health', (req: any, res: any) => {
+  // Local process health; deliberately does not claim DB or external-service availability.
+  const reportHealth = (_req: any, res: any) => {
     res.json({
       status: 'ok',
       timestamp: new Date().toISOString(),
       startupDurationMs: serverReadyAt === null ? null : serverReadyAt - startupStartedAt,
       startupMetrics: startupOptimizationService.getAllStartupMetrics(),
+      runtime: {
+        uptimeSeconds: Math.floor(process.uptime()),
+        memoryBytes: process.memoryUsage(),
+        requests: { ...runtimeRequestMetrics, averageDurationMs: runtimeRequestMetrics.total ? Math.round(runtimeRequestMetrics.durationMsTotal / runtimeRequestMetrics.total) : 0 },
+      },
     });
-  });
-  
-  // Serve test HTML files
-  app.use(express.static('/home/ubuntu/poipoi/client/public'));
+  };
+  app.get('/health', reportHealth);
+  app.get('/api/health', reportHealth);
   
   // Test video endpoint for development
   app.get('/api/test-video', (req: any, res: any) => {

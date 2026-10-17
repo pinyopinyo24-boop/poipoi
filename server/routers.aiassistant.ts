@@ -1,8 +1,31 @@
 import { z } from 'zod';
 import { router, protectedProcedure } from './_core/trpc';
 import { PreviewAIAssistant } from './_core/previewAIAssistant';
+import { MultimodalProcessor } from './_core/multimodal';
+
+const multimodalProcessor = new MultimodalProcessor();
 
 export const aiAssistantRouter = router({
+  transcribeAudio: protectedProcedure
+    .input(z.object({ audioDataUri: z.string().max(14 * 1024 * 1024), language: z.string().regex(/^[a-z]{2,3}(?:-[A-Z]{2})?$/).default('ja') }))
+    .mutation(async ({ input }) => {
+      if (!/^data:audio\/[a-z0-9.+-]+;base64,/i.test(input.audioDataUri)) {
+        throw new Error('音声data URIを指定してください');
+      }
+      const transcription = await multimodalProcessor.transcribeAudio(input.audioDataUri, input.language);
+      return { transcription, timestamp: Date.now() };
+    }),
+
+  analyzeImage: protectedProcedure
+    .input(z.object({ imageDataUri: z.string().max(7 * 1024 * 1024), question: z.string().max(500).default('画像内の文字を可能な限り原文どおりに読み取り、読み取れない箇所と画像の要点を説明してください。') }))
+    .mutation(async ({ input }) => {
+      if (!/^data:image\/(?:jpeg|png|webp);base64,/i.test(input.imageDataUri)) {
+        throw new Error('JPEG、PNG、WebP画像を指定してください');
+      }
+      const analysis = await multimodalProcessor.analyzeImage(input.imageDataUri, input.question);
+      if (!analysis.trim()) throw new Error('画像分析結果が空です');
+      return { analysis, timestamp: Date.now() };
+    }),
   // テキスト要約
   summarizeText: protectedProcedure
     .input(

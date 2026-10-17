@@ -210,8 +210,30 @@ export class MobileAPIConnector {
    * 音声メッセージ送信
    */
   async sendVoiceMessage(request: VoiceRequest): Promise<APIResponse<ChatResponse>> {
-    void request;
-    return { success: false, error: '音声文字起こしAPIはサーバー側に未実装です', code: 'NOT_IMPLEMENTED' };
+    try {
+      if (!request.audioUrl.startsWith('data:audio/')) throw new Error('音声データがありません');
+      const response = await this.apiClient.post('/api/trpc/aiAssistant.transcribeAudio', {
+        json: { audioDataUri: request.audioUrl, language: request.language || 'ja' },
+      }, { timeout: 60000 });
+      const result = this.getTrpcData<{ transcription: string; timestamp: number }>(response.data);
+      if (!result?.transcription?.trim()) throw new Error('文字起こし結果がありません');
+      return { success: true, data: { message: result.transcription, timestamp: result.timestamp } };
+    } catch (error) {
+      return this.handleError(error, '音声を文字起こしできませんでした');
+    }
+  }
+
+  async analyzeImage(imageDataUri: string, question?: string): Promise<APIResponse<{ analysis: string; timestamp: number }>> {
+    try {
+      const response = await this.apiClient.post('/api/trpc/aiAssistant.analyzeImage', {
+        json: { imageDataUri, question: question || '画像内の文字を可能な限り原文どおりに読み取り、読み取れない箇所と画像の要点を説明してください。' },
+      }, { timeout: 60000 });
+      const result = this.getTrpcData<{ analysis: string; timestamp: number }>(response.data);
+      if (!result?.analysis?.trim()) throw new Error('画像分析結果がありません');
+      return { success: true, data: result };
+    } catch (error) {
+      return this.handleError(error, '画像を分析できませんでした');
+    }
   }
 
   /**

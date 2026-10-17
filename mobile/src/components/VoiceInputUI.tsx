@@ -132,6 +132,7 @@ export const VoiceInputUI: React.FC<VoiceInputProps> = ({
 
       await recordingRef.current.stopAndUnloadAsync();
       const uri = recordingRef.current.getURI();
+      recordingRef.current = null;
 
       setIsRecording(false);
       setRecordingUri(uri);
@@ -155,16 +156,19 @@ export const VoiceInputUI: React.FC<VoiceInputProps> = ({
     try {
       const levelInterval = setInterval(async () => {
         if (recordingRef.current) {
-          const status = await recordingRef.current.getStatusAsync();
-          if (status.metering !== undefined) {
-            // メータリング値を0-100に正規化
-            const normalizedLevel = Math.max(0, Math.min(100, status.metering + 100));
-            setSoundLevel(normalizedLevel);
+          try {
+            const status = await recordingRef.current.getStatusAsync();
+            if (status.metering !== undefined) {
+              const normalizedLevel = Math.max(0, Math.min(100, status.metering + 100));
+              setSoundLevel(normalizedLevel);
+            }
+          } catch (error) {
+            console.warn('Audio level read failed:', error);
           }
+        } else {
+          clearInterval(levelInterval);
         }
       }, 100);
-
-      return () => clearInterval(levelInterval);
     } catch (error) {
       console.error('Failed to monitor audio level:', error);
     }
