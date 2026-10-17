@@ -252,6 +252,108 @@ describe('STEP 46: EvolutionAIManager', () => {
       expect(feedback.comment).toBe('Great product!');
     });
 
+    it('should persist created feedback in the user collection', async () => {
+      const created = await feedbackService.createFeedback(
+        'test_user', 5, 'Helpful feature', 'feature'
+      );
+
+      const collected = await feedbackService.collectFeedback('test_user');
+      expect(collected.some(item => item.id === created.id)).toBe(true);
+    });
+
+    it('should reject non-integer ratings', async () => {
+      await expect(
+        feedbackService.createFeedback('test_user', 4.5, 'Feedback', 'feature')
+      ).rejects.toThrow('Rating must be between 1 and 5');
+    });
+
+    it('should reject unsupported feedback categories', async () => {
+      await expect(
+        feedbackService.createFeedback('test_user', 4, 'Feedback', 'unknown')
+      ).rejects.toThrow('Invalid feedback category');
+    });
+
+    it('should retrieve created feedback by its identifier', async () => {
+      const created = await feedbackService.createFeedback(
+        'test_user', 4, 'Useful', 'feature'
+      );
+
+      await expect(feedbackService.getFeedback(created.id)).resolves.toEqual(created);
+    });
+
+    it('should update feedback while preserving its owner and identifier', async () => {
+      const created = await feedbackService.createFeedback(
+        'test_user', 3, 'Okay', 'ui'
+      );
+
+      const updated = await feedbackService.updateFeedback(created.id, {
+        userId: 'other_user',
+        id: 'other_id',
+        rating: 5,
+        comment: 'Improved',
+      });
+
+      expect(updated).toMatchObject({
+        id: created.id,
+        userId: 'test_user',
+        rating: 5,
+        comment: 'Improved',
+      });
+    });
+
+    it('should reject invalid rating updates without changing feedback', async () => {
+      const created = await feedbackService.createFeedback(
+        'test_user', 3, 'Okay', 'ui'
+      );
+
+      await expect(
+        feedbackService.updateFeedback(created.id, { rating: 6 })
+      ).rejects.toThrow('Rating must be between 1 and 5');
+      await expect(feedbackService.getFeedback(created.id)).resolves.toMatchObject({
+        rating: 3,
+      });
+    });
+
+    it('should delete feedback and report missing identifiers', async () => {
+      const created = await feedbackService.createFeedback(
+        'test_user', 3, 'Okay', 'ui'
+      );
+
+      await expect(feedbackService.deleteFeedback(created.id)).resolves.toBe(true);
+      await expect(feedbackService.getFeedback(created.id)).resolves.toBeNull();
+      await expect(feedbackService.deleteFeedback('missing')).resolves.toBe(false);
+    });
+
+    it('should limit feedback history to the requested number of records', async () => {
+      await feedbackService.createFeedback('test_user', 5, 'First', 'feature');
+      await feedbackService.createFeedback('test_user', 4, 'Second', 'feature');
+
+      const history = await feedbackService.getUserFeedbackHistory('test_user', 1);
+      expect(history).toHaveLength(1);
+      expect(history[0].comment).toBe('Second');
+    });
+
+    it('should include new feedback in category filtering', async () => {
+      const created = await feedbackService.createFeedback(
+        'test_user', 5, 'Secure', 'security'
+      );
+
+      const securityFeedback = await feedbackService.getFeedbackByCategory(
+        'test_user', 'security'
+      );
+      expect(securityFeedback.map(item => item.id)).toContain(created.id);
+    });
+
+    it('should keep feedback isolated between users', async () => {
+      const created = await feedbackService.createFeedback(
+        'test_user', 4, 'Private', 'feature'
+      );
+
+      expect(await feedbackService.getUserFeedbackHistory('other_user')).not.toContainEqual(
+        expect.objectContaining({ id: created.id })
+      );
+    });
+
     it('should collect feedback', async () => {
       const feedback = await feedbackService.collectFeedback('test_user');
       

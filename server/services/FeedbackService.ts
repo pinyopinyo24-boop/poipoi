@@ -13,6 +13,8 @@ export interface UserFeedback {
 }
 
 export class FeedbackService {
+  private feedbackStore = new Map<string, UserFeedback[]>();
+
   /**
    * フィードバックを収集
    */
@@ -50,6 +52,7 @@ export class FeedbackService {
         createdAt: new Date(Date.now() - 259200000),
         isAnonymous: false,
       },
+      ...(this.feedbackStore.get(userId) || []),
     ];
   }
 
@@ -64,27 +67,44 @@ export class FeedbackService {
     tags: string[] = [],
     isAnonymous = false
   ): Promise<UserFeedback> {
-    if (rating < 1 || rating > 5) {
+    if (!Number.isInteger(rating) || rating < 1 || rating > 5) {
       throw new Error('Rating must be between 1 and 5');
     }
+    if (!userId.trim()) {
+      throw new Error('User ID is required');
+    }
+    const validCategories = ['feature', 'performance', 'ui', 'security', 'other'];
+    if (!validCategories.includes(category)) {
+      throw new Error('Invalid feedback category');
+    }
+    if (typeof comment !== 'string' || !Array.isArray(tags)) {
+      throw new Error('Invalid feedback content');
+    }
 
-    return {
-      id: `feedback_${Date.now()}`,
+    const feedback: UserFeedback = {
+      id: `feedback_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
       userId,
       rating,
       comment,
-      category: category as any,
-      tags,
+      category: category as UserFeedback['category'],
+      tags: [...tags],
       createdAt: new Date(),
       isAnonymous,
     };
+    const userFeedback = this.feedbackStore.get(userId) || [];
+    userFeedback.unshift(feedback);
+    this.feedbackStore.set(userId, userFeedback);
+    return feedback;
   }
 
   /**
    * フィードバックを取得
    */
   async getFeedback(feedbackId: string): Promise<UserFeedback | null> {
-    // ここで実際のデータベースクエリを実行
+    for (const feedback of this.feedbackStore.values()) {
+      const match = feedback.find(item => item.id === feedbackId);
+      if (match) return match;
+    }
     return null;
   }
 
@@ -103,7 +123,31 @@ export class FeedbackService {
     feedbackId: string,
     updates: Partial<UserFeedback>
   ): Promise<UserFeedback | null> {
-    // ここで実際のデータベース更新を実行
+    for (const feedback of this.feedbackStore.values()) {
+      const index = feedback.findIndex(item => item.id === feedbackId);
+      if (index === -1) continue;
+
+      const current = feedback[index];
+      const rating = updates.rating ?? current.rating;
+      const category = updates.category ?? current.category;
+      if (!Number.isInteger(rating) || rating < 1 || rating > 5) {
+        throw new Error('Rating must be between 1 and 5');
+      }
+      if (!['feature', 'performance', 'ui', 'security', 'other'].includes(category)) {
+        throw new Error('Invalid feedback category');
+      }
+
+      feedback[index] = {
+        ...current,
+        ...updates,
+        id: current.id,
+        userId: current.userId,
+        rating,
+        category,
+        tags: updates.tags ? [...updates.tags] : current.tags,
+      };
+      return feedback[index];
+    }
     return null;
   }
 
@@ -111,8 +155,13 @@ export class FeedbackService {
    * フィードバックを削除
    */
   async deleteFeedback(feedbackId: string): Promise<boolean> {
-    // ここで実際のデータベース削除を実行
-    return true;
+    for (const feedback of this.feedbackStore.values()) {
+      const index = feedback.findIndex(item => item.id === feedbackId);
+      if (index === -1) continue;
+      feedback.splice(index, 1);
+      return true;
+    }
+    return false;
   }
 
   /**
