@@ -53,9 +53,9 @@ async function startServer() {
     credentials: false,
   }));
   
-  // Configure body parser with larger size limit for file uploads (500MB for video processing)
-  app.use(express.json({ limit: "500mb" }));
-  app.use(express.urlencoded({ limit: "500mb", extended: true }));
+  // Face-swap JSON requests allow at most a 128MB video plus a 20MB image (base64 encoded).
+  app.use(express.json({ limit: "220mb" }));
+  app.use(express.urlencoded({ limit: "1mb", extended: true }));
   
   registerStorageProxy(app);
   registerOAuthRoutes(app);
