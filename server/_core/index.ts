@@ -12,6 +12,9 @@ import { registerStorageProxy } from "./storageProxy";
 import { appRouter } from "../routers";
 import { createContext } from "./context";
 import { serveStatic, setupVite } from "./vite";
+import { StartupOptimizationService } from "../managers/StartupOptimizationService";
+
+const startupOptimizationService = new StartupOptimizationService();
 
 function isPortAvailable(port: number): Promise<boolean> {
   return new Promise(resolve => {
@@ -39,6 +42,7 @@ async function findAvailablePort(startPort: number = 3000): Promise<number> {
 }
 
 async function startServer() {
+  const startupStartedAt = Date.now();
   const app = express();
   const server = createServer(app);
   
@@ -65,7 +69,12 @@ async function startServer() {
   
   // Health check endpoint
   app.get('/health', (req: any, res: any) => {
-    res.json({ status: 'ok', timestamp: new Date().toISOString() });
+    res.json({
+      status: 'ok',
+      timestamp: new Date().toISOString(),
+      startupDurationMs: serverReadyAt === null ? null : serverReadyAt - startupStartedAt,
+      startupMetrics: startupOptimizationService.getAllStartupMetrics(),
+    });
   });
   
   // Serve test HTML files
@@ -121,16 +130,25 @@ async function startServer() {
       },
     })
   );
+  startupOptimizationService.recordStartupMetric('initialization', Date.now() - startupStartedAt);
+
   // development mode uses Vite, production mode uses static files
+  const resourceLoadingStartedAt = Date.now();
   if (process.env.NODE_ENV === "development") {
     await setupVite(app, server);
   } else {
     serveStatic(app);
   }
+  startupOptimizationService.recordStartupMetric('resource_loading', Date.now() - resourceLoadingStartedAt);
   const port = await findAvailablePort();
+  const listenStartedAt = Date.now();
   server.listen(port, () => {
+    serverReadyAt = Date.now();
+    startupOptimizationService.recordStartupMetric('api_connection', serverReadyAt - listenStartedAt);
     console.log(`Server running on http://localhost:${port}/`);
   });
 }
+
+let serverReadyAt: number | null = null;
 
 startServer().catch(console.error);
