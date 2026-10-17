@@ -54,7 +54,7 @@ function getChatCoreManager(): ChatCoreManager {
 }
 
 export const chatRouter = router({
-  processMessage: publicProcedure
+  processMessage: protectedProcedure
     .input(
       z.object({
         userId: z.string(),
@@ -101,10 +101,15 @@ export const chatRouter = router({
           };
         }
 
+        const userId = String(ctx.user.id);
         const manager = getChatCoreManager();
+        const existingSession = await manager.getSession(userId, input.sessionId);
+        if (existingSession.userId !== userId) {
+          throw new TRPCError({ code: 'NOT_FOUND', message: 'チャットセッションが見つかりません' });
+        }
 
         const response = await manager.processMessage(
-          input.userId,
+          userId,
           input.sessionId,
           input.message
         );
@@ -121,68 +126,81 @@ export const chatRouter = router({
       }
     }),
 
-  getSession: publicProcedure
+  getSession: protectedProcedure
     .input(
       z.object({
         userId: z.string(),
         sessionId: z.string(),
       })
     )
-    .query(async ({ input }) =>
-      getChatCoreManager().getSession(input.userId, input.sessionId)
-    ),
+    .query(async ({ ctx, input }) => {
+      const userId = String(ctx.user.id);
+      const session = await getChatCoreManager().getSession(userId, input.sessionId);
+      if (session.userId !== userId) {
+        throw new TRPCError({ code: 'NOT_FOUND', message: 'チャットセッションが見つかりません' });
+      }
+      return { ...session, messages: session.messages.filter((message: { userId: string }) => message.userId === userId) };
+    }),
 
-  getMessages: publicProcedure
+  getMessages: protectedProcedure
     .input(
       z.object({
         userId: z.string(),
         sessionId: z.string(),
       })
     )
-    .query(async ({ input }) =>
-      getChatCoreManager().getMessages(input.userId, input.sessionId)
-    ),
+    .query(async ({ ctx, input }) => {
+      const userId = String(ctx.user.id);
+      const messages = await getChatCoreManager().getMessages(userId, input.sessionId);
+      return messages.filter((message) => message.userId === userId);
+    }),
 
-  createSession: publicProcedure
+  createSession: protectedProcedure
     .input(
       z.object({
         userId: z.string(),
         title: z.string().optional(),
       })
     )
-    .mutation(async ({ input }) =>
-      getChatCoreManager().createSession(input.userId, input.title || "チャットセッション")
+    .mutation(async ({ ctx, input }) =>
+      getChatCoreManager().createSession(String(ctx.user.id), input.title || "チャットセッション")
     ),
 
-  deleteSession: publicProcedure
+  deleteSession: protectedProcedure
     .input(
       z.object({
         userId: z.string(),
         sessionId: z.string(),
       })
     )
-    .mutation(async ({ input }) =>
-      getChatCoreManager().deleteSession(input.userId, input.sessionId)
-    ),
+    .mutation(async ({ ctx, input }) => {
+      const userId = String(ctx.user.id);
+      const manager = getChatCoreManager();
+      const session = await manager.getSession(userId, input.sessionId);
+      if (session.userId !== userId) {
+        throw new TRPCError({ code: 'NOT_FOUND', message: 'チャットセッションが見つかりません' });
+      }
+      return manager.deleteSession(userId, input.sessionId);
+    }),
 
-  getUserSessions: publicProcedure
+  getUserSessions: protectedProcedure
     .input(
       z.object({
         userId: z.string(),
       })
     )
-    .query(async ({ input }) =>
-      getChatCoreManager().getUserSessions(input.userId)
+    .query(async ({ ctx }) =>
+      getChatCoreManager().getUserSessions(String(ctx.user.id))
     ),
 
-  getStatistics: publicProcedure
+  getStatistics: protectedProcedure
     .input(
       z.object({
         userId: z.string(),
       })
     )
-    .query(async ({ input }) =>
-      getChatCoreManager().getChatStatistics(input.userId)
+    .query(async ({ ctx }) =>
+      getChatCoreManager().getChatStatistics(String(ctx.user.id))
     ),
 
   reportResponseIssue: protectedProcedure
