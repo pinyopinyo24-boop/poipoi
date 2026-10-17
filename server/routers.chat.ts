@@ -3,6 +3,9 @@ import { z } from 'zod';
 import { ChatCoreManager } from './core/ChatCoreManager';
 import { PoipoiCodeAgent } from './core/PoipoiCodeAgent';
 import { ChatQualityService } from './managers/ChatQualityService';
+import { getDb } from './db';
+import { feedback } from '../drizzle/schema';
+import { v4 as uuidv4 } from 'uuid';
 
 let chatCoreManager: ChatCoreManager | null = null;
 const chatQualityService = new ChatQualityService();
@@ -190,10 +193,26 @@ export const chatRouter = router({
         throw new Error('回答が見つからないか、報告する権限がありません');
       }
 
+      const db = await getDb();
+      if (!db) {
+        throw new Error('フィードバックを保存できません');
+      }
+
+      const description = `チャット回答の問題報告: ${input.issueType} (messageId: ${input.messageId})`;
+      await db.insert(feedback).values({
+        id: uuidv4(),
+        type: 'bug',
+        title: `チャット回答の報告: ${input.issueType}`,
+        message: description,
+        email: null,
+        userId: ctx.user.id,
+        status: 'new',
+      });
+
       return chatQualityService.reportChatIssue(
         input.messageId,
         input.issueType,
-        `ユーザーが回答を「${input.issueType}」として報告しました`
+        description
       );
     }),
 });
