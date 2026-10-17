@@ -165,7 +165,8 @@ export class SelfEvolutionWorkflow {
       summary: this.buildExecutionSummary(simulation, execution),
     };
 
-    // Step 3: MemoryEngine 縺ｫ菫晏ｭ・    this.memoryEngine.setMemory(userId, `workflow_exec_${workflowId}`, result);
+    // Step 3: Save the result in MemoryEngine.
+    this.memoryEngine.setMemory(userId, `workflow_exec_${workflowId}`, result);
     this.resultHistory.push(result);
 
     return result;
