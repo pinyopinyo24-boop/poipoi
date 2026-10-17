@@ -3,6 +3,10 @@
  * 処理時間、メモリ使用量、CPU使用率を監視
  */
 
+import * as fs from "fs";
+import * as path from "path";
+import * as os from "os";
+
 interface PerformanceMetric {
   name: string;
   startTime: number;
@@ -23,6 +27,14 @@ interface PerformanceReport {
 }
 
 const metrics: PerformanceMetric[] = [];
+const cacheClearers = new Set<() => void>();
+let previousCpuTimes: { idle: number; total: number } | null = null;
+let monitoringInterval: NodeJS.Timeout | null = null;
+
+export function registerPerformanceCache(clear: () => void): () => void {
+  cacheClearers.add(clear);
+  return () => cacheClearers.delete(clear);
+}
 
 /**
  * パフォーマンス測定を開始
@@ -34,6 +46,7 @@ export function startPerformanceMeasure(name: string): PerformanceMetric {
   };
 
   metrics.push(metric);
+  if (metrics.length > 1000) metrics.splice(0, metrics.length - 1000);
 
   console.log(`[Performance] 測定開始: ${name}`);
 
@@ -52,6 +65,7 @@ export function endPerformanceMeasure(metric: PerformanceMetric): PerformanceMet
     const memUsage = process.memoryUsage();
     metric.memoryUsed = memUsage.heapUsed / 1024 / 1024; // MB
   }
+  metric.cpuUsage = monitorCpuUsage();
 
   console.log(`[Performance] 測定終了: ${metric.name} (${metric.duration}ms, メモリ: ${metric.memoryUsed?.toFixed(2)}MB)`);
 
@@ -133,8 +147,13 @@ export function optimizePerformance(): void {
     console.log("[Performance] ガベージコレクション実行完了");
   }
 
-  // キャッシュをクリア
-  // TODO: キャッシュクリア処理
+  for (const clearCache of cacheClearers) {
+    try {
+      clearCache();
+    } catch (error) {
+      console.warn("[Performance] キャッシュクリアに失敗しました:", error);
+    }
+  }
 
   console.log("[Performance] パフォーマンス最適化完了");
 }
@@ -208,8 +227,25 @@ export function displayMemoryUsage(): void {
  * CPU使用率を監視
  */
 export function monitorCpuUsage(): number {
-  // 簡略版: 実装ではos.cpus()を使用
-  return 0;
+  const cpus = os.cpus();
+  const current = cpus.reduce(
+    (totals, cpu) => ({
+      idle: totals.idle + cpu.times.idle,
+      total: totals.total + Object.values(cpu.times).reduce((sum, value) => sum + value, 0),
+    }),
+    { idle: 0, total: 0 }
+  );
+
+  if (!previousCpuTimes) {
+    previousCpuTimes = current;
+    return 0;
+  }
+
+  const idleDelta = current.idle - previousCpuTimes.idle;
+  const totalDelta = current.total - previousCpuTimes.total;
+  previousCpuTimes = current;
+  if (totalDelta <= 0) return 0;
+  return Math.min(100, Math.max(0, ((totalDelta - idleDelta) / totalDelta) * 100));
 }
 
 /**
@@ -217,6 +253,7 @@ export function monitorCpuUsage(): number {
  */
 export function resetPerformanceMetrics(): void {
   metrics.length = 0;
+  previousCpuTimes = null;
   console.log("[Performance] パフォーマンスメトリクスをリセットしました");
 }
 
@@ -229,7 +266,11 @@ export async function savePerformanceReportToFile(filePath: string): Promise<voi
   try {
     const report = generatePerformanceReport();
 
-    // TODO: ファイル保存処理
+    await fs.promises.mkdir(path.dirname(path.resolve(filePath)), { recursive: true });
+    await fs.promises.writeFile(filePath, JSON.stringify(report, null, 2), {
+      encoding: "utf8",
+      mode: 0o600,
+    });
 
     console.log("[Performance] パフォーマンスレポート保存完了");
   } catch (error) {
@@ -244,8 +285,9 @@ export async function savePerformanceReportToFile(filePath: string): Promise<voi
 export function initializePerformanceMonitoring(): void {
   console.log("[Performance] パフォーマンス監視を初期化中...");
 
+  if (monitoringInterval) return;
   // 定期的にメモリ使用量を監視
-  setInterval(() => {
+  monitoringInterval = setInterval(() => {
     const memUsage = monitorMemoryUsage();
 
     if (memUsage.heapUsed > memUsage.heapTotal * 0.9) {
@@ -255,6 +297,12 @@ export function initializePerformanceMonitoring(): void {
   }, 30000); // 30秒ごと
 
   console.log("[Performance] パフォーマンス監視初期化完了");
+}
+
+export function stopPerformanceMonitoring(): void {
+  if (!monitoringInterval) return;
+  clearInterval(monitoringInterval);
+  monitoringInterval = null;
 }
 
 /**
