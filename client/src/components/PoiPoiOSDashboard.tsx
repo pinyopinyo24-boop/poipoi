@@ -9,6 +9,7 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { AlertCircle, CheckCircle, AlertTriangle, Zap, Brain, Cog, TrendingUp, Clock, Activity, Loader2, Send, BarChart3 } from 'lucide-react';
 import { trpc } from '@/lib/trpc';
+import { useAuth } from '@/_core/hooks/useAuth';
 
 // Status Badge Component
 function StatusBadge({ status }: { status: 'idle' | 'processing' | 'completed' | 'failed' | 'waiting' | 'pending' | 'analyzing' | 'designing' | 'implementing' | 'reviewing' }) {
@@ -249,6 +250,8 @@ function WorkflowHistoryDisplay({ workflows }: { workflows: any[] }) {
 
 // Main Dashboard Component
 export function PoiPoiOSDashboard() {
+  const { user } = useAuth();
+  const isAdmin = user?.role === 'admin';
   const [initialized, setInitialized] = useState(false);
   const [loading, setLoading] = useState(true);
   const [inputText, setInputText] = useState('');
@@ -263,6 +266,10 @@ export function PoiPoiOSDashboard() {
   const agentStatusesQuery = trpc.aiAgents.getAgentStatuses.useQuery(undefined, { enabled: initialized });
   const executeWorkflowMutation = trpc.aiAgents.executeWorkflow.useMutation();
   const workflowHistoryQuery = trpc.agentMemory.getMemorySummary.useQuery(undefined, { enabled: initialized });
+  const executionLogsQuery = trpc.executionLogs.getRecentLogs.useQuery(
+    { limit: 10 },
+    { enabled: initialized && isAdmin }
+  );
 
   // Initialize AI Core on mount
   useEffect(() => {
@@ -290,10 +297,11 @@ export function PoiPoiOSDashboard() {
       providerStatusesQuery.refetch();
       agentStatusesQuery.refetch();
       workflowHistoryQuery.refetch();
+      if (isAdmin) executionLogsQuery.refetch();
     }, 5000);
 
     return () => clearInterval(interval);
-  }, [initialized]);
+  }, [initialized, isAdmin]);
 
   // Handle workflow execution
   const handleExecuteWorkflow = async () => {
@@ -447,6 +455,52 @@ export function PoiPoiOSDashboard() {
 
       {/* Workflow History */}
       {Array.isArray(workflowHistory) && <WorkflowHistoryDisplay workflows={workflowHistory} />}
+
+      {isAdmin && (
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between space-y-0">
+            <div>
+              <CardTitle>実行履歴</CardTitle>
+              <CardDescription>直近10件のワークフローと各エージェントの状態</CardDescription>
+            </div>
+            <Button variant="outline" size="sm" onClick={() => executionLogsQuery.refetch()}>
+              更新
+            </Button>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            {executionLogsQuery.isLoading ? (
+              <p className="text-sm text-muted-foreground">読み込み中...</p>
+            ) : executionLogsQuery.data?.length ? (
+              [...executionLogsQuery.data].reverse().map((log) => (
+                <div key={log.workflowId} className="rounded-lg border p-4 space-y-2">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <div>
+                      <p className="font-medium">{log.workflowId}</p>
+                      <p className="text-xs text-muted-foreground">
+                        {new Date(log.startTime).toLocaleString()} · {log.primaryProvider} · {log.mode === 'real' ? '実運用' : 'デモ'}
+                      </p>
+                    </div>
+                    <Badge variant="outline">{log.status === 'completed' ? '完了' : log.status === 'failed' ? '失敗' : '実行中'}</Badge>
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    {log.entries.map((entry) => (
+                      <span key={entry.id} className="rounded bg-muted px-2 py-1 text-xs">
+                        {entry.agentType}: {entry.status}
+                        {typeof entry.executionTime === 'number' ? ` · ${entry.executionTime}ms` : ''}
+                      </span>
+                    ))}
+                  </div>
+                  {typeof log.totalExecutionTime === 'number' && (
+                    <p className="text-xs text-muted-foreground">合計 {log.totalExecutionTime}ms</p>
+                  )}
+                </div>
+              ))
+            ) : (
+              <p className="text-sm text-muted-foreground">実行履歴はまだありません。</p>
+            )}
+          </CardContent>
+        </Card>
+      )}
 
       {/* Providers Section */}
       <div className="space-y-4">

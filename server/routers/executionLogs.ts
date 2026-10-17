@@ -3,7 +3,7 @@
  * Provides access to AI Agent execution logs and statistics
  */
 
-import { router, publicProcedure } from '../_core/trpc';
+import { router, adminProcedure } from '../_core/trpc';
 import { getExecutionLogger } from '../_core/ai/ExecutionLogger';
 
 const executionLogger = getExecutionLogger();
@@ -12,14 +12,14 @@ export const executionLogsRouter = router({
   /**
    * Get all execution logs
    */
-  getAllLogs: publicProcedure.query(async () => {
+  getAllLogs: adminProcedure.query(async () => {
     return executionLogger.getAllLogs();
   }),
 
   /**
    * Get recent logs
    */
-  getRecentLogs: publicProcedure
+  getRecentLogs: adminProcedure
     .input((val: unknown) => {
       if (typeof val === 'object' && val !== null && 'limit' in val) {
         return { limit: (val as { limit: number }).limit };
@@ -33,7 +33,7 @@ export const executionLogsRouter = router({
   /**
    * Get logs by mode
    */
-  getLogsByMode: publicProcedure
+  getLogsByMode: adminProcedure
     .input((val: unknown) => {
       if (typeof val === 'object' && val !== null && 'mode' in val) {
         return { mode: (val as { mode: 'demo' | 'real' }).mode };
@@ -47,7 +47,7 @@ export const executionLogsRouter = router({
   /**
    * Get logs by provider
    */
-  getLogsByProvider: publicProcedure
+  getLogsByProvider: adminProcedure
     .input((val: unknown) => {
       if (typeof val === 'object' && val !== null && 'provider' in val) {
         return { provider: (val as { provider: string }).provider };
@@ -61,7 +61,7 @@ export const executionLogsRouter = router({
   /**
    * Get specific workflow log
    */
-  getWorkflowLog: publicProcedure
+  getWorkflowLog: adminProcedure
     .input((val: unknown) => {
       if (typeof val === 'object' && val !== null && 'workflowId' in val) {
         return { workflowId: (val as { workflowId: string }).workflowId };
@@ -75,14 +75,14 @@ export const executionLogsRouter = router({
   /**
    * Get statistics
    */
-  getStatistics: publicProcedure.query(async () => {
+  getStatistics: adminProcedure.query(async () => {
     return executionLogger.getStatistics();
   }),
 
   /**
    * Clear all logs
    */
-  clearLogs: publicProcedure.mutation(async () => {
+  clearLogs: adminProcedure.mutation(async () => {
     executionLogger.clearLogs();
     return { success: true };
   }),
