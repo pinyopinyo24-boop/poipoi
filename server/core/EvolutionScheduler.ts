@@ -309,7 +309,10 @@ export class EvolutionScheduler {
     }
 
     // Step 2: 実行フェーズ（simulation_only に留まらない場合のみ）
-    const execResult = await this.workflow.runExecution(userId);
+    const execResult = await this.workflow.runExecution(userId, {
+      ...simResult,
+      approvedCandidates: safeApproved,
+    });
 
     const changesApplied = execResult.execution.succeeded;
     const rollbacks = execResult.execution.rolledBack;

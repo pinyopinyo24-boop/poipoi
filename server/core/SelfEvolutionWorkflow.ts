@@ -135,11 +135,17 @@ export class SelfEvolutionWorkflow {
    *      - 謌仙粥 竊・謾ｹ蝟・ヱ繝ｩ繝｡繝ｼ繧ｿ遒ｺ螳壹・MemoryEngine / SelfLearningEngine 菫晏ｭ・   *      - 螟ｱ謨・竊・繝ｭ繝ｼ繝ｫ繝舌ャ繧ｯ
    *   3. 繝ｯ繝ｼ繧ｯ繝輔Ο繝ｼ蜈ｨ菴薙・邨先棡繧定ｿ斐☆
    */
-  public async runExecution(userId: string): Promise<ExecutionWorkflowResult> {
+  public async runExecution(
+    userId: string,
+    approvedSimulation?: SimulationResult
+  ): Promise<ExecutionWorkflowResult> {
     const workflowId = this.generateId('exec');
 
     // Step 1: 繧ｷ繝溘Η繝ｬ繝ｼ繧ｷ繝ｧ繝ｳ繝輔ぉ繝ｼ繧ｺ
-    const simulationResult = await this.runSimulation(userId);
+    if (approvedSimulation && approvedSimulation.userId !== userId) {
+      throw new Error('Simulation result does not belong to the requested user');
+    }
+    const simulationResult = approvedSimulation ?? await this.runSimulation(userId);
     // simulation 縺ｮ workflowId 縺ｯ繝ｯ繝ｼ繧ｯ繝輔Ο繝ｼID縺ｨ縺ｯ蛻･縺ｫ謖√◆縺帙ｋ
     const simulation: SimulationResult = { ...simulationResult, workflowId };
 
