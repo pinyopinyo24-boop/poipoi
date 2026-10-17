@@ -792,6 +792,16 @@ describe('STEP 46: EvolutionAIManager', () => {
       expect(restored).toBeDefined();
     });
 
+    it('should prevent restoring another user’s version', async () => {
+      const version = await manager.createVersion(
+        'version_owner', 'Private version', { data: 'private' }
+      );
+
+      await expect(manager.restoreVersion('different_user', version.id)).rejects.toThrow(
+        `Version not found: ${version.id}`
+      );
+    });
+
     it('should handle proposal approval workflow', async () => {
       const userId = 'approval_test_user';
 

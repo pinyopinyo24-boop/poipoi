@@ -177,7 +177,7 @@ export class EvolutionAIManager {
    */
   async restoreVersion(userId: string, versionId: string) {
     const version = await this.repository.getVersion(versionId);
-    if (!version) {
+    if (!version || version.userId !== userId) {
       throw new Error(`Version not found: ${versionId}`);
     }
 

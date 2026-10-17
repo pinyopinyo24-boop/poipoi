@@ -167,9 +167,14 @@ export class SelfEvolutionWorkflow {
   /**
    * 繝ｯ繝ｼ繧ｯ繝輔Ο繝ｼ螻･豁ｴ繧貞叙蠕・   */
   public getHistory(userId: string, limit = 20): WorkflowResult[] {
+    const normalizedLimit = Number.isFinite(limit)
+      ? Math.max(0, Math.trunc(limit))
+      : 20;
+    if (normalizedLimit === 0) return [];
+
     return this.resultHistory
       .filter((r) => r.userId === userId)
-      .slice(-limit);
+      .slice(-normalizedLimit);
   }
 
   /**

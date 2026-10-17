@@ -283,6 +283,13 @@ describe('SelfEvolutionWorkflow', () => {
       expect(workflow.getHistory(userId, 2).length).toBe(2);
     });
 
+    it('should return no results when the history limit is zero or negative', async () => {
+      await workflow.runSimulation(userId);
+
+      expect(workflow.getHistory(userId, 0)).toEqual([]);
+      expect(workflow.getHistory(userId, -1)).toEqual([]);
+    });
+
     it('should isolate by userId', async () => {
       const other = 'other-workflow-user-' + Date.now();
 
