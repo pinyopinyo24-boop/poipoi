@@ -185,7 +185,7 @@ await LocalCacheService.saveUserSettings(settings);
 `.env` ファイルで設定します:
 
 ```env
-API_BASE_URL=http://localhost:3000
+EXPO_PUBLIC_API_URL=http://localhost:3000
 API_TIMEOUT=30000
 CACHE_TTL=300000
 ```
@@ -194,7 +194,7 @@ CACHE_TTL=300000
 
 ### 接続エラー
 - Backend APIが起動しているか確認
-- API_BASE_URLが正しいか確認
+- EXPO_PUBLIC_API_URLが正しいか確認
 - ファイアウォール設定を確認
 
 ### キャッシュエラー

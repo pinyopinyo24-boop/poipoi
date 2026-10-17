@@ -34,8 +34,11 @@ export default function ChatScreen() {
   useEffect(() => {
     const initializeAPI = async () => {
       try {
-        // app.json から apiBaseUrl を取得
-        const apiBaseUrl = Constants.expoConfig?.extra?.apiBaseUrl || "https://3000-iocr6xxkalzfajqrgw1vp-917fb80f.sg1.manus.computer";
+        // app.config.js から apiBaseUrl を取得
+        const apiBaseUrl = Constants.expoConfig?.extra?.apiBaseUrl;
+        if (typeof apiBaseUrl !== "string" || !apiBaseUrl.trim()) {
+          throw new Error("API URL is not configured; set EXPO_PUBLIC_API_URL");
+        }
         if (__DEV__) console.log("[ChatScreen] API Base URL:", apiBaseUrl);
 
       const connector = new MobileAPIConnector(apiBaseUrl);
