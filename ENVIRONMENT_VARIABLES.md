@@ -54,6 +54,22 @@ node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
 
 ---
 
+### Google Colab 動画処理（任意）
+
+Colab処理を選んだ場合だけ使用します。Google Drive APIでノートブックを作成し、ユーザーがColab上で実行します。ローカル処理には不要です。
+
+| 変数名 | 必須 | 説明 |
+|--------|------|------|
+| `GOOGLE_COLAB_CLIENT_ID` | Colab利用時 | Google OAuth クライアント ID |
+| `GOOGLE_COLAB_CLIENT_SECRET` | Colab利用時 | Google OAuth クライアントシークレット |
+| `GOOGLE_COLAB_REDIRECT_URI` | Colab利用時 | OAuth クライアントに登録したリダイレクト URI |
+| `GOOGLE_COLAB_REFRESH_TOKEN` | Colab利用時 | Drive APIアクセス用の OAuth リフレッシュトークン |
+| `POIPOI_PUBLIC_URL` | 任意 | Colabから結果を返す公開HTTPS URL。未設定時はリダイレクトURIのオリジンを使用 |
+
+これらの資格情報はサーバー側だけに設定してください。Colab処理を選ぶと、選択した画像と動画がGoogle Driveのノートブックに含まれ、結果はジョブごとの一回限りのトークンでPoiPoiへ返されます。
+
+---
+
 ## Manus LLM 統合
 
 ### API キー

@@ -13,7 +13,7 @@ interface CloudProcessingTabProps {
 
 export function CloudProcessingTab({ sourceFileId, targetFileId }: CloudProcessingTabProps) {
   const [quality, setQuality] = useState(18);
-  const [model, setModel] = useState('inswapper_128');
+  const [model, setModel] = useState<'inswapper_128' | 'inswapper_128_fp16'>('inswapper_128');
   const [loading, setLoading] = useState(false);
   const [showScript, setShowScript] = useState(false);
 
@@ -30,10 +30,11 @@ export function CloudProcessingTab({ sourceFileId, targetFileId }: CloudProcessi
         throw new Error('Source and target files are required');
       }
 
-      // バックエンドで直接 Colab を実行
+      // Create a Colab notebook for the selected files.
       const result = await startProcessingMutation.mutateAsync({
         sourceFileId,
         targetFileId,
+        mode: 'colab',
         model,
         quality,
       });
@@ -47,7 +48,7 @@ export function CloudProcessingTab({ sourceFileId, targetFileId }: CloudProcessi
         window.open(result.colabUrl, '_blank');
       }
 
-      toast.success('Google Colab で処理が開始されました。完了後、自動的にポイポイに結果が返却されます。');
+      toast.success('Colabノートブックを作成しました。開いたページで実行ボタンを押してください。');
     } catch (error) {
       console.error('Error launching Colab:', error);
       toast.error('Google Colab の起動に失敗しました');
@@ -84,12 +85,16 @@ export function CloudProcessingTab({ sourceFileId, targetFileId }: CloudProcessi
             </label>
             <select
               value={model}
-              onChange={(e) => setModel(e.target.value)}
+              onChange={(e) => {
+                const nextModel = e.target.value;
+                if (nextModel === 'inswapper_128' || nextModel === 'inswapper_128_fp16') {
+                  setModel(nextModel);
+                }
+              }}
               className="w-full px-3 py-2 bg-slate-700 border border-slate-600 rounded text-white"
             >
               <option value="inswapper_128">InSwapper 128</option>
               <option value="inswapper_128_fp16">InSwapper 128 FP16</option>
-              <option value="gfpgan">GFPGAN</option>
             </select>
           </div>
 
@@ -174,21 +179,21 @@ export function CloudProcessingTab({ sourceFileId, targetFileId }: CloudProcessi
             <div className="text-2xl">1️⃣</div>
             <div>
               <p className="font-semibold text-white">「Google Colab で処理を開始」をクリック</p>
-              <p className="text-sm">Colab のページが開き、自動で処理が実行されます</p>
+              <p className="text-sm">Colab のページが開いたら、上部の実行ボタンを押してください</p>
             </div>
           </div>
           <div className="flex gap-3">
             <div className="text-2xl">2️⃣</div>
             <div>
-              <p className="font-semibold text-white">処理の完了を待つ</p>
+              <p className="font-semibold text-white">Colabで処理の完了を待つ</p>
               <p className="text-sm">Colab で FaceFusion による顔入れ替え処理が実行されます（初回は数分かかります）</p>
             </div>
           </div>
           <div className="flex gap-3">
             <div className="text-2xl">3️⃣</div>
             <div>
-              <p className="font-semibold text-white">結果が自動返却</p>
-              <p className="text-sm">処理完了後、自動的にポイポイに結果が返却されます</p>
+              <p className="font-semibold text-white">結果がPoiPoiに返却される</p>
+              <p className="text-sm">ノートブックの処理完了後、結果がPoiPoiに保存されます</p>
             </div>
           </div>
           <div className="flex gap-3">
@@ -207,7 +212,7 @@ export function CloudProcessingTab({ sourceFileId, targetFileId }: CloudProcessi
           <h3 className="text-lg font-semibold text-white mb-4">⏳ 処理中...</h3>
           <div className="flex items-center gap-3">
             <Spinner className="h-5 w-5" />
-            <p className="text-blue-100">Google Colab で処理が実行中です。完了後、自動的に結果がポイポイに返却されます。</p>
+            <p className="text-blue-100">Colabノートブックを作成しています。</p>
           </div>
         </Card>
       )}
@@ -215,7 +220,7 @@ export function CloudProcessingTab({ sourceFileId, targetFileId }: CloudProcessi
       {/* 注意事項 */}
       <Alert className="bg-yellow-900 border-yellow-700">
         <AlertDescription className="text-yellow-100">
-          <strong>⚠️ 注意:</strong> 初回実行時は FaceFusion のインストールに数分かかります。セッションが切断されないようにご注意ください。処理完了後、自動的にポイポイに結果が返却されます。
+          <strong>⚠️ 注意:</strong> Colabノートブックは開いた後に実行ボタンを押してください。処理中はセッションが切断されないようにしてください。
         </AlertDescription>
       </Alert>
     </div>

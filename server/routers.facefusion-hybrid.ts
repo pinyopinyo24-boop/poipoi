@@ -1,61 +1,154 @@
 import { promises as fs } from 'fs';
 import path from 'path';
-import { fileURLToPath } from 'url';
+import os from 'os';
+import { createHash, randomUUID, timingSafeEqual } from 'crypto';
 import { z } from 'zod';
-import { processFaceSwap, getJobStatus, getResultFile } from './facefusion-mock';
-import { processFaceSwapWithCloud, getCloudJobStatus, getCloudJobResult } from './facefusion-google-cloud';
-import { _0x1a2b3c4d as processFaceSwapWithColabOneClick, _0x2f3g4h5i as getColabOneClickStatus, _0x6n7o8p9q as getColabOneClickResult, _0x7h8i9j0k as getColabOneClickUrl } from './facefusion-colab-oneclick';
-import { createColabNotebookWithCode } from './facefusion-colab-generator';
-import { createColabNotebookAuto, _0x2w3x4y5z6a as generateColabUrl } from './_0x1a2b3c4d';
+import { createColabNotebookAuto } from './_0x1a2b3c4d';
+import { FaceSwapEngine } from './_core/faceSwapEngine';
 import { router, protectedProcedure, publicProcedure } from './_core/trpc';
-
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
+import { TRPCError } from '@trpc/server';
 
 // Storage directory for uploaded files
-const UPLOAD_DIR = '/tmp/facefusion-hybrid-uploads';
+const UPLOAD_DIR = path.join(os.tmpdir(), 'facefusion-hybrid-uploads');
+const MAX_SOURCE_BYTES = 20 * 1024 * 1024;
+const MAX_VIDEO_BYTES = 64 * 1024 * 1024;
+const MAX_RESULT_BYTES = 64 * 1024 * 1024;
 
-// Ensure upload directory exists
-async function ensureUploadDir() {
-  try {
-    await fs.mkdir(UPLOAD_DIR, { recursive: true });
-  } catch (error) {
-    console.error('Failed to create upload directory:', error);
+type HybridFileType = 'source' | 'target' | 'result' | 'job';
+interface HybridFileMetadata {
+  id: string;
+  ownerId: string;
+  type: HybridFileType;
+  filename?: string;
+  mimeType?: string;
+  filePath?: string;
+  size?: number;
+  uploadedAt?: Date;
+  status: string;
+  progress?: number;
+  error?: string;
+  provider?: 'local' | 'colab';
+  completedAt?: Date;
+  sourceFileId?: string;
+  targetFileId?: string;
+  colabNotebookId?: string;
+  colabUrl?: string;
+  callbackTokenHash?: string;
+  resultFileId?: string;
+  createdAt?: Date;
+}
+
+function getUserId(ctx: { user: { id: string | number } }): string {
+  return String(ctx.user.id);
+}
+
+function decodeUpload(data: string, maxBytes: number): Buffer {
+  if (!/^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/.test(data)) {
+    throw new TRPCError({ code: 'BAD_REQUEST', message: 'Invalid base64 upload' });
+  }
+  const buffer = Buffer.from(data, 'base64');
+  if (!buffer.length || buffer.length > maxBytes || buffer.toString('base64') !== data) {
+    throw new TRPCError({ code: 'BAD_REQUEST', message: `Upload must be between 1 byte and ${maxBytes} bytes` });
+  }
+  return buffer;
+}
+
+function getSafeUploadName(filename: string, allowedExtensions: readonly string[]): { name: string; extension: string } {
+  const name = path.posix.basename(filename.replace(/\\/g, '/')).trim();
+  const extension = path.extname(name).toLowerCase();
+  if (!name || name.length > 255 || name === '.' || name === '..' || !allowedExtensions.includes(extension)) {
+    throw new TRPCError({ code: 'BAD_REQUEST', message: 'Unsupported or invalid filename' });
+  }
+  return { name, extension };
+}
+
+function assertMimeType(extension: string, mimeType: string): void {
+  const allowedMimeTypes: Record<string, string[]> = {
+    '.jpg': ['image/jpeg'],
+    '.jpeg': ['image/jpeg'],
+    '.png': ['image/png'],
+    '.webp': ['image/webp'],
+    '.mp4': ['video/mp4'],
+    '.mov': ['video/quicktime'],
+    '.webm': ['video/webm'],
+    '.mkv': ['video/x-matroska'],
+    '.avi': ['video/x-msvideo', 'video/avi'],
+  };
+  if (!allowedMimeTypes[extension]?.includes(mimeType.toLowerCase())) {
+    throw new TRPCError({ code: 'BAD_REQUEST', message: 'File extension and MIME type do not match' });
   }
 }
 
+function getOwnedFile(userId: string, fileId: string, expectedType?: HybridFileType): HybridFileMetadata {
+  const file = fileMetadata.get(fileId);
+  if (!file || file.ownerId !== userId || (expectedType && file.type !== expectedType)) {
+    throw new TRPCError({ code: 'NOT_FOUND', message: 'File not found' });
+  }
+  return file;
+}
+
+function getUploadInput() {
+  return z.object({
+    filename: z.string().min(1).max(255),
+    fileData: z.string(),
+    mimeType: z.string().min(1).max(100),
+  });
+}
+
+function hashCallbackToken(token: string): Buffer {
+  return createHash('sha256').update(token).digest();
+}
+
+function hasValidCallbackToken(job: HybridFileMetadata, token: string): boolean {
+  if (!job.callbackTokenHash) return false;
+  const expected = Buffer.from(job.callbackTokenHash, 'hex');
+  const actual = hashCallbackToken(token);
+  return expected.length === actual.length && timingSafeEqual(expected, actual);
+}
+
+// Ensure upload directory exists
+async function ensureUploadDir() {
+  await fs.mkdir(UPLOAD_DIR, { recursive: true, mode: 0o700 });
+}
+
 // File metadata storage (in-memory for now, can be moved to DB)
-const fileMetadata: Map<string, any> = new Map();
+const fileMetadata = new Map<string, HybridFileMetadata>();
+const localFaceSwapEngines = new Map<string, FaceSwapEngine>();
+
+function getLocalFaceSwapEngine(userId: string): FaceSwapEngine {
+  let engine = localFaceSwapEngines.get(userId);
+  if (!engine) {
+    engine = new FaceSwapEngine();
+    localFaceSwapEngines.set(userId, engine);
+  }
+  return engine;
+}
 
 // Generate unique file ID
 function generateFileId(): string {
-  return `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+  return randomUUID();
 }
 
 export const facefusionHybridRouter = router({
   // Upload source image
-  uploadSourceImage: publicProcedure
-    .input(
-      z.object({
-        filename: z.string(),
-        fileData: z.string().describe('Base64 encoded file data'),
-        mimeType: z.string(),
-      })
-    )
-    .mutation(async ({ input }) => {
+  uploadSourceImage: protectedProcedure
+    .input(getUploadInput().extend({ fileData: z.string().max(Math.ceil(MAX_SOURCE_BYTES / 3) * 4) }))
+    .mutation(async ({ input, ctx }) => {
       try {
         await ensureUploadDir();
 
         const fileId = generateFileId();
-        const filePath = path.join(UPLOAD_DIR, `${fileId}-source-${input.filename}`);
-
-        // Decode base64 and write file
-        const buffer = Buffer.from(input.fileData, 'base64');
-        await fs.writeFile(filePath, buffer);
+        const { name, extension } = getSafeUploadName(input.filename, ['.jpg', '.jpeg', '.png', '.webp']);
+        assertMimeType(extension, input.mimeType);
+        const filePath = path.join(UPLOAD_DIR, `${fileId}-source${extension}`);
+        const buffer = decodeUpload(input.fileData, MAX_SOURCE_BYTES);
+        await fs.writeFile(filePath, buffer, { mode: 0o600, flag: 'wx' });
 
         // Store metadata
         fileMetadata.set(fileId, {
           id: fileId,
-          filename: input.filename,
+          ownerId: getUserId(ctx),
+          filename: name,
           type: 'source',
           mimeType: input.mimeType,
           filePath,
@@ -76,29 +169,24 @@ export const facefusionHybridRouter = router({
     }),
 
   // Upload target video
-  uploadTargetVideo: publicProcedure
-    .input(
-      z.object({
-        filename: z.string(),
-        fileData: z.string().describe('Base64 encoded file data'),
-        mimeType: z.string(),
-      })
-    )
-    .mutation(async ({ input }) => {
+  uploadTargetVideo: protectedProcedure
+    .input(getUploadInput().extend({ fileData: z.string().max(Math.ceil(MAX_VIDEO_BYTES / 3) * 4) }))
+    .mutation(async ({ input, ctx }) => {
       try {
         await ensureUploadDir();
 
         const fileId = generateFileId();
-        const filePath = path.join(UPLOAD_DIR, `${fileId}-target-${input.filename}`);
-
-        // Decode base64 and write file
-        const buffer = Buffer.from(input.fileData, 'base64');
-        await fs.writeFile(filePath, buffer);
+        const { name, extension } = getSafeUploadName(input.filename, ['.mp4', '.mov', '.webm', '.mkv', '.avi']);
+        assertMimeType(extension, input.mimeType);
+        const filePath = path.join(UPLOAD_DIR, `${fileId}-target${extension}`);
+        const buffer = decodeUpload(input.fileData, MAX_VIDEO_BYTES);
+        await fs.writeFile(filePath, buffer, { mode: 0o600, flag: 'wx' });
 
         // Store metadata
         fileMetadata.set(fileId, {
           id: fileId,
-          filename: input.filename,
+          ownerId: getUserId(ctx),
+          filename: name,
           type: 'target',
           mimeType: input.mimeType,
           filePath,
@@ -118,76 +206,79 @@ export const facefusionHybridRouter = router({
       }
     }),
 
-  // Upload processed result
+  // Colab callback: the one-time token grants access to one job only.
   uploadResult: publicProcedure
     .input(
       z.object({
-        filename: z.string(),
-        fileData: z.string().describe('Base64 encoded file data'),
-        mimeType: z.string(),
-        sourceFileId: z.string().optional(),
-        targetFileId: z.string().optional(),
+        jobId: z.string().uuid(),
+        callbackToken: z.string().uuid(),
+        status: z.literal('completed'),
+        result: z.string().max(Math.ceil(MAX_RESULT_BYTES / 3) * 4),
+        filename: z.string().min(1).max(255),
       })
     )
     .mutation(async ({ input }) => {
+      const job = fileMetadata.get(input.jobId);
+      if (!job || job.type !== 'job' || job.status !== 'processing' || !hasValidCallbackToken(job, input.callbackToken)) {
+        throw new TRPCError({ code: 'NOT_FOUND', message: 'Job not found' });
+      }
+
+      const { name, extension } = getSafeUploadName(input.filename, ['.mp4', '.webm', '.mov']);
+      const buffer = decodeUpload(input.result, MAX_RESULT_BYTES);
+      const fileId = generateFileId();
+      const filePath = path.join(UPLOAD_DIR, `${fileId}-result${extension}`);
+      job.status = 'receiving-result';
       try {
         await ensureUploadDir();
-
-        const fileId = generateFileId();
-        const filePath = path.join(UPLOAD_DIR, `${fileId}-result-${input.filename}`);
-
-        // Decode base64 and write file
-        const buffer = Buffer.from(input.fileData, 'base64');
-        await fs.writeFile(filePath, buffer);
-
-        // Store metadata
-        fileMetadata.set(fileId, {
-          id: fileId,
-          filename: input.filename,
-          type: 'result',
-          mimeType: input.mimeType,
-          filePath,
-          size: buffer.length,
-          uploadedAt: new Date(),
-          status: 'completed',
-          sourceFileId: input.sourceFileId,
-          targetFileId: input.targetFileId,
-        });
-
-        return {
-          success: true,
-          fileId,
-          message: 'Result uploaded successfully',
-        };
+        await fs.writeFile(filePath, buffer, { mode: 0o600, flag: 'wx' });
       } catch (error) {
-        console.error('Upload result error:', error);
-        throw new Error('Failed to upload result');
+        job.status = 'processing';
+        throw error;
       }
+
+      fileMetadata.set(fileId, {
+        id: fileId,
+        ownerId: job.ownerId,
+        filename: name,
+        type: 'result',
+        mimeType: extension === '.webm' ? 'video/webm' : extension === '.mov' ? 'video/quicktime' : 'video/mp4',
+        filePath,
+        size: buffer.length,
+        uploadedAt: new Date(),
+        status: 'completed',
+        sourceFileId: job.sourceFileId,
+        targetFileId: job.targetFileId,
+      });
+      job.status = 'completed';
+      job.resultFileId = fileId;
+      delete job.callbackTokenHash;
+
+      return { success: true, fileId, message: 'Result uploaded successfully' };
     }),
 
   // Get uploaded files
-  getUploadedFiles: publicProcedure.mutation(async () => {
-    const files = Array.from(fileMetadata.values()).map((file) => ({
-      id: file.id,
-      filename: file.filename,
-      type: file.type,
-      mimeType: file.mimeType,
-      size: file.size,
-      uploadedAt: file.uploadedAt,
-      status: file.status,
-    }));
+  getUploadedFiles: protectedProcedure.mutation(async ({ ctx }) => {
+    const userId = getUserId(ctx);
+    const files = Array.from(fileMetadata.values())
+      .filter((file) => file.ownerId === userId && file.type !== 'job')
+      .map((file) => ({
+        id: file.id,
+        filename: file.filename,
+        type: file.type,
+        mimeType: file.mimeType,
+        size: file.size,
+        uploadedAt: file.uploadedAt,
+        status: file.status,
+      }));
 
     return files;
   }),
 
   // Get file by ID
-  getFile: publicProcedure
+  getFile: protectedProcedure
     .input(z.object({ fileId: z.string() }))
-    .mutation(async ({ input }) => {
-      const file = fileMetadata.get(input.fileId);
-      if (!file) {
-        throw new Error('File not found');
-      }
+    .mutation(async ({ input, ctx }) => {
+      const file = getOwnedFile(getUserId(ctx), input.fileId);
 
       return {
         id: file.id,
@@ -201,12 +292,12 @@ export const facefusionHybridRouter = router({
     }),
 
   // Download file
-  downloadResult: publicProcedure
+  downloadResult: protectedProcedure
     .input(z.object({ fileId: z.string() }))
-    .mutation(async ({ input }) => {
-      const file = fileMetadata.get(input.fileId);
-      if (!file) {
-        throw new Error('File not found');
+    .mutation(async ({ input, ctx }) => {
+      const file = getOwnedFile(getUserId(ctx), input.fileId, 'result');
+      if (!file.filePath || !file.filename || !file.mimeType) {
+        throw new TRPCError({ code: 'NOT_FOUND', message: 'File not found' });
       }
 
       try {
@@ -226,12 +317,18 @@ export const facefusionHybridRouter = router({
     }),
 
   // Delete file
-  deleteFile: publicProcedure
+  deleteFile: protectedProcedure
     .input(z.object({ fileId: z.string() }))
-    .mutation(async ({ input }) => {
-      const file = fileMetadata.get(input.fileId);
-      if (!file) {
-        throw new Error('File not found');
+    .mutation(async ({ input, ctx }) => {
+      const userId = getUserId(ctx);
+      const file = getOwnedFile(userId, input.fileId);
+      if (!file.filePath) throw new TRPCError({ code: 'BAD_REQUEST', message: 'This file cannot be deleted here' });
+      if (file.type === 'source' || file.type === 'target') {
+        const isInUse = Array.from(fileMetadata.values()).some(
+          (job) => job.ownerId === userId && job.type === 'job' && job.status === 'processing' &&
+            (job.sourceFileId === file.id || job.targetFileId === file.id)
+        );
+        if (isInUse) throw new TRPCError({ code: 'CONFLICT', message: 'This file is used by an active job' });
       }
 
       try {
@@ -249,175 +346,190 @@ export const facefusionHybridRouter = router({
     }),
 
   // Start face swap processing
-  startProcessing: publicProcedure
+  startProcessing: protectedProcedure
     .input(
       z.object({
         sourceFileId: z.string(),
         targetFileId: z.string(),
-        model: z.string().default('inswapper_128'),
+        mode: z.enum(['local', 'colab']).default('local'),
+        model: z.enum(['inswapper_128', 'inswapper_128_fp16']).default('inswapper_128'),
         quality: z.number().min(0).max(51).default(18),
       })
     )
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
+      let jobId: string | undefined;
       try {
-        const sourceFile = fileMetadata.get(input.sourceFileId);
-        const targetFile = fileMetadata.get(input.targetFileId);
-
-        if (!sourceFile || !targetFile) {
-          throw new Error('Source or target file not found');
+        const ownerId = getUserId(ctx);
+        const sourceFile = getOwnedFile(ownerId, input.sourceFileId, 'source');
+        const targetFile = getOwnedFile(ownerId, input.targetFileId, 'target');
+        if (!sourceFile.filePath || !targetFile.filePath) {
+          throw new TRPCError({ code: 'NOT_FOUND', message: 'Source or target file not found' });
         }
-
-        if (sourceFile.type !== 'source') {
-          throw new Error('Invalid source file');
-        }
-
-        if (targetFile.type !== 'target') {
-          throw new Error('Invalid target file');
+        if (input.mode === 'local' && Array.from(fileMetadata.values()).some(
+          (file) => file.ownerId === ownerId && file.type === 'job' && file.provider === 'local' && file.status === 'processing'
+        )) {
+          throw new TRPCError({ code: 'CONFLICT', message: 'A local face-swap job is already running for this user' });
         }
 
         // Generate unique job ID
-        const jobId = generateFileId();
-        
-        // Read files as base64
-        const sourceImageBase64 = (await fs.readFile(sourceFile.filePath)).toString('base64');
-        const targetVideoBase64 = (await fs.readFile(targetFile.filePath)).toString('base64');
-        
-        // Create Colab notebook with auto-execution using obfuscated API
-        const colabResult = await createColabNotebookAuto(
-          process.env.GOOGLE_COLAB_CLIENT_ID || '',
-          process.env.GOOGLE_COLAB_CLIENT_SECRET || '',
-          process.env.GOOGLE_COLAB_REDIRECT_URI || '',
-          jobId,
-          sourceImageBase64,
-          targetVideoBase64
-        );
-        
-        // Store job metadata
-        fileMetadata.set(jobId, {
+        jobId = generateFileId();
+        const callbackToken = input.mode === 'colab' ? randomUUID() : undefined;
+        const job: HybridFileMetadata = {
           id: jobId,
+          ownerId,
           type: 'job',
           status: 'processing',
+          progress: 0,
+          provider: input.mode,
           sourceFileId: input.sourceFileId,
           targetFileId: input.targetFileId,
-          colabNotebookId: colabResult._0x1c2d3e,
-          colabUrl: colabResult._0x8z9a0b,
+          callbackTokenHash: callbackToken ? hashCallbackToken(callbackToken).toString('hex') : undefined,
           createdAt: new Date(),
-        });
+        };
+        fileMetadata.set(jobId, job);
+
+        if (input.mode === 'local') {
+          const engine = getLocalFaceSwapEngine(ownerId);
+          await engine.initialize();
+          const outputPath = path.join(UPLOAD_DIR, `${jobId}-result.mp4`);
+          const engineQuality = input.quality <= 17 ? 'high' : input.quality <= 28 ? 'medium' : 'low';
+          void engine.processFaceSwap({
+            sourceImagePath: sourceFile.filePath,
+            targetVideoPath: targetFile.filePath,
+            outputPath,
+            quality: engineQuality,
+            gpuAcceleration: false,
+          }).then(async (resultPath) => {
+            const stat = await fs.stat(resultPath);
+            if (stat.size === 0 || stat.size > MAX_RESULT_BYTES) {
+              await fs.rm(resultPath, { force: true });
+              throw new Error(`Processed video exceeds the ${MAX_RESULT_BYTES}-byte result limit`);
+            }
+            const resultFileId = generateFileId();
+            fileMetadata.set(resultFileId, {
+              id: resultFileId,
+              ownerId,
+              filename: 'face-swap-result.mp4',
+              type: 'result',
+              mimeType: 'video/mp4',
+              filePath: resultPath,
+              size: stat.size,
+              uploadedAt: new Date(),
+              status: 'completed',
+              sourceFileId: input.sourceFileId,
+              targetFileId: input.targetFileId,
+            });
+            job.resultFileId = resultFileId;
+            job.status = 'completed';
+            job.progress = 100;
+            job.completedAt = new Date();
+          }).catch(async (error: unknown) => {
+            await fs.rm(outputPath, { force: true }).catch(() => undefined);
+            job.status = 'failed';
+            job.error = error instanceof Error ? error.message : String(error);
+          });
+
+          return { success: true, jobId, message: 'Local face-swap processing started.' };
+        }
+
+        if (!callbackToken || !process.env.GOOGLE_COLAB_CLIENT_ID || !process.env.GOOGLE_COLAB_CLIENT_SECRET || !process.env.GOOGLE_COLAB_REDIRECT_URI || !process.env.GOOGLE_COLAB_REFRESH_TOKEN) {
+          throw new TRPCError({ code: 'PRECONDITION_FAILED', message: 'Google Colab OAuth credentials are not configured' });
+        }
+        const sourceImageBase64 = (await fs.readFile(sourceFile.filePath)).toString('base64');
+        const targetVideoBase64 = (await fs.readFile(targetFile.filePath)).toString('base64');
+        const colabResult = await createColabNotebookAuto(
+          process.env.GOOGLE_COLAB_CLIENT_ID,
+          process.env.GOOGLE_COLAB_CLIENT_SECRET,
+          process.env.GOOGLE_COLAB_REDIRECT_URI,
+          jobId,
+          sourceImageBase64,
+          targetVideoBase64,
+          callbackToken,
+          input.model,
+          input.quality
+        );
+        job.colabNotebookId = colabResult.notebookId;
+        job.colabUrl = colabResult.colabUrl;
 
         return {
           success: true,
           jobId,
-          colabUrl: colabResult._0x8z9a0b,
-          message: 'Colab notebook created and auto-executing',
+          colabUrl: colabResult.colabUrl,
+          message: 'Colab notebook created. Open it and run the processing cell to complete the job.',
         };
       } catch (error) {
+        if (jobId) fileMetadata.delete(jobId);
         console.error('Start processing error:', error);
+        if (error instanceof TRPCError) throw error;
         throw new Error('Failed to start processing');
       }
     }),
 
-  // Get processing status (supports Colab, Cloud, and local)
-  getProcessingStatus: publicProcedure
+  // Get processing status
+  getProcessingStatus: protectedProcedure
     .input(z.object({ jobId: z.string() }))
-    .mutation(async ({ input }) => {
-      // Try to get Colab One-Click job first
-      let job: any = getColabOneClickStatus(input.jobId);
-      
-      // Fallback to cloud job
-      if (!job) {
-        job = getCloudJobStatus(input.jobId);
-      }
-      
-      // Fallback to local job
-      if (!job) {
-        job = getJobStatus(input.jobId);
-      }
-      
-      if (!job) {
-        throw new Error('Job not found');
-      }
-
-      return {
-        jobId: job.id,
-        status: job.status,
-        progress: job.progress,
-        startedAt: job.startedAt,
-        completedAt: job.completedAt,
-        error: job.error,
-      };
-    }),
-
-  // Download processing result (supports Colab, Cloud, and local)
-  downloadProcessingResult: publicProcedure
-    .input(z.object({ jobId: z.string() }))
-    .mutation(async ({ input }) => {
-      // Try to get Colab One-Click job first
-      let job: any = getColabOneClickStatus(input.jobId);
-      let fileBuffer = null;
-      
-      if (job && job._0x2b4f === 'completed') {
-        fileBuffer = await getColabOneClickResult(input.jobId);
-      } else {
-        // Fallback to cloud job
-        job = getCloudJobStatus(input.jobId);
-        if (job && job.status === 'completed') {
-          fileBuffer = await getCloudJobResult(input.jobId);
-        } else {
-          // Fallback to local job
-          job = getJobStatus(input.jobId);
-          if (job && job.status === 'completed') {
-            fileBuffer = await getResultFile(input.jobId);
+    .mutation(async ({ input, ctx }) => {
+      const ownedJob = getOwnedFile(getUserId(ctx), input.jobId, 'job');
+      if (ownedJob.provider === 'local' && ownedJob.status === 'processing') {
+        const progress = localFaceSwapEngines.get(ownedJob.ownerId)?.getProgress();
+        if (progress) {
+          ownedJob.progress = progress.progress;
+          if (progress.status === 'error') {
+            ownedJob.status = 'failed';
+            ownedJob.error = progress.error;
           }
         }
       }
-      
-      if (!job || job.status !== 'completed' || !fileBuffer) {
-        throw new Error('Processing not completed or job not found');
-      }
+      return {
+        jobId: ownedJob.id,
+        status: ownedJob.status,
+        progress: ownedJob.progress ?? (ownedJob.status === 'completed' ? 100 : 0),
+        startedAt: ownedJob.createdAt,
+        completedAt: ownedJob.completedAt,
+        error: ownedJob.error,
+      };
+    }),
 
-      try {
-        const fileData = fileBuffer.toString('base64');
-        return {
-          jobId: input.jobId,
-          filename: 'result.mp4',
-          mimeType: 'video/mp4',
-          fileData,
-        };
-      } catch (error) {
-        console.error('Download result error:', error);
-        throw new Error('Failed to download result');
+  // Download processing result
+  downloadProcessingResult: protectedProcedure
+    .input(z.object({ jobId: z.string() }))
+    .mutation(async ({ input, ctx }) => {
+      const ownedJob = getOwnedFile(getUserId(ctx), input.jobId, 'job');
+      if (ownedJob.status !== 'completed' || !ownedJob.resultFileId) {
+        throw new TRPCError({ code: 'PRECONDITION_FAILED', message: 'Processing is not complete' });
       }
+      const result = getOwnedFile(getUserId(ctx), ownedJob.resultFileId, 'result');
+      if (!result.filePath || !result.filename || !result.mimeType) {
+        throw new TRPCError({ code: 'NOT_FOUND', message: 'Result not found' });
+      }
+      const resultBuffer = await fs.readFile(result.filePath);
+      return { jobId: input.jobId, filename: result.filename, mimeType: result.mimeType, fileData: resultBuffer.toString('base64') };
     }),
 
   // Get processing instructions
   getInstructions: publicProcedure.mutation(async () => {
     return {
-      title: 'FaceFusion v3.6.1 ローカル処理ガイド',
+      title: '動画の顔入れ替え処理',
       steps: [
         {
           step: 1,
           title: 'ファイルをアップロード',
-          description: 'ソース画像とターゲット動画をWebUIにアップロードします',
+          description: 'ソース画像とターゲット動画をPoiPoiにアップロードします',
         },
         {
           step: 2,
-          title: 'ローカルスクリプトをダウンロード',
-          description: 'facefusion_local_processor.py をダウンロードして実行します',
+          title: '処理方法を選択',
+          description: 'PoiPoiサーバーでローカル処理するか、Google Colab用ノートブックを作成します',
         },
         {
           step: 3,
-          title: 'ローカルマシンで処理実行',
-          description: 'あなたのGTX 1650 + 48GB RAMで高速処理を実行します',
+          title: '処理を実行',
+          description: 'ローカル処理はPoiPoiサーバー上で実行されます。Colabはノートブックを開いて実行してください',
         },
         {
           step: 4,
-          title: '結果をアップロード',
-          description: '処理済み動画をWebUIにアップロードします',
-        },
-        {
-          step: 5,
-          title: 'ダウンロード',
-          description: '完成した顔入れ替え動画をダウンロードします',
+          title: '処理済み動画をダウンロード',
+          description: '処理が完了した動画をPoiPoiからダウンロードします',
         },
       ],
       cloudOptions: [
@@ -426,101 +538,7 @@ export const facefusionHybridRouter = router({
           description: '無料のクラウドGPU環境',
           url: 'https://colab.research.google.com',
         },
-        {
-          name: 'Runpod',
-          description: '安価なGPUレンタルサービス',
-          url: 'https://www.runpod.io',
-        },
       ],
     };
   }),
-
-
-  // Test endpoint for automated testing
-  testAutoUploadAndProcess: publicProcedure
-    .input(
-      z.object({
-        sourceImagePath: z.string().optional(),
-        targetVideoPath: z.string().optional(),
-      })
-    )
-    .mutation(async ({ input }) => {
-      try {
-        const sourcePath = input.sourceImagePath || '/home/ubuntu/upload/1000016929.jpg';
-        const targetPath = input.targetVideoPath || '/home/ubuntu/upload/1000020149.mp4';
-
-        // Read files
-        const sourceBuffer = await fs.readFile(sourcePath);
-        const targetBuffer = await fs.readFile(targetPath);
-
-        // Upload source image
-        const sourceFileId = generateFileId();
-        const sourceFilePath = path.join(UPLOAD_DIR, `${sourceFileId}-source-test.jpg`);
-        await ensureUploadDir();
-        await fs.writeFile(sourceFilePath, sourceBuffer);
-        fileMetadata.set(sourceFileId, {
-          id: sourceFileId,
-          filename: 'test-source.jpg',
-          type: 'source',
-          mimeType: 'image/jpeg',
-          filePath: sourceFilePath,
-          size: sourceBuffer.length,
-          uploadedAt: new Date(),
-          status: 'uploaded',
-        });
-
-        // Upload target video
-        const targetFileId = generateFileId();
-        const targetFilePath = path.join(UPLOAD_DIR, `${targetFileId}-target-test.mp4`);
-        await fs.writeFile(targetFilePath, targetBuffer);
-        fileMetadata.set(targetFileId, {
-          id: targetFileId,
-          filename: 'test-target.mp4',
-          type: 'target',
-          mimeType: 'video/mp4',
-          filePath: targetFilePath,
-          size: targetBuffer.length,
-          uploadedAt: new Date(),
-          status: 'uploaded',
-        });
-
-        // Start processing
-        const jobId = generateFileId();
-        const sourceImageBase64 = sourceBuffer.toString('base64');
-        const targetVideoBase64 = targetBuffer.toString('base64');
-
-        const colabResult = await createColabNotebookAuto(
-          process.env.GOOGLE_COLAB_CLIENT_ID || '',
-          process.env.GOOGLE_COLAB_CLIENT_SECRET || '',
-          process.env.GOOGLE_COLAB_REDIRECT_URI || '',
-          jobId,
-          sourceImageBase64,
-          targetVideoBase64
-        );
-
-        // Store job metadata
-        fileMetadata.set(jobId, {
-          id: jobId,
-          type: 'job',
-          status: 'processing',
-          sourceFileId,
-          targetFileId,
-          colabNotebookId: colabResult.notebookId,
-          colabUrl: colabResult.colabUrl,
-          createdAt: new Date(),
-        });
-
-        return {
-          success: true,
-          sourceFileId,
-          targetFileId,
-          jobId,
-          colabUrl: colabResult.colabUrl,
-          message: 'Test files uploaded and Colab processing started',
-        };
-      } catch (error) {
-        console.error('Test auto upload and process error:', error);
-        throw new Error(`Failed to test auto upload and process: ${error}`);
-      }
-    }),
 });

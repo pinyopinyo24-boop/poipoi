@@ -75,6 +75,7 @@ export function LocalProcessingTab({
       const result = await startProcessingMutation.mutateAsync({
         sourceFileId,
         targetFileId,
+        mode: 'local',
         model: 'inswapper_128',
         quality: 18,
       });

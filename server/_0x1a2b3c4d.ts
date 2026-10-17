@@ -27,6 +27,11 @@ class _0x1u2v3w4x {
       this._0x1e2f3g,
       this._0x5y6z7a
     );
+    const refreshToken = process.env.GOOGLE_COLAB_REFRESH_TOKEN;
+    if (!refreshToken) {
+      throw new Error('GOOGLE_COLAB_REFRESH_TOKEN is required to create a Colab notebook');
+    }
+    _0x7u8v9w.setCredentials({ refresh_token: refreshToken });
     return _0x7u8v9w;
   }
 
@@ -35,7 +40,10 @@ class _0x1u2v3w4x {
     _0x4b5c6d: OAuth2ClientType,
     _0x9t0u1v: string, // sourceImageBase64
     _0x2w3x4y5z: string, // targetVideoBase64
-    _0x3n4o5p: string  // jobId
+    _0x3n4o5p: string, // jobId
+    _0x4p5q6r7: string, // one-time callback token
+    model: string,
+    quality: number
   ): Promise<any> {
     try {
       const _0x7e8f9g = google.drive({ version: 'v3', auth: _0x4b5c6d });
@@ -47,7 +55,19 @@ class _0x1u2v3w4x {
         parents: ['root'],
       };
 
-      const _0x3k4l5m = this._0x6n7o8p(_0x9t0u1v, _0x2w3x4y5z, _0x3n4o5p);
+      const callbackBaseUrl = (process.env.POIPOI_PUBLIC_URL || new URL(this._0x5y6z7a).origin).replace(/\/+$/, '');
+      if (!callbackBaseUrl.startsWith('https://')) {
+        throw new Error('POIPOI_PUBLIC_URL must use HTTPS for Colab callbacks');
+      }
+      const _0x3k4l5m = this._0x6n7o8p(
+        _0x9t0u1v,
+        _0x2w3x4y5z,
+        _0x3n4o5p,
+        _0x4p5q6r7,
+        callbackBaseUrl,
+        model,
+        quality
+      );
       const _0x9q0r1s = await _0x7e8f9g.files.create({
         requestBody: _0x0h1i2j,
         media: {
@@ -67,8 +87,8 @@ class _0x1u2v3w4x {
   }
 
   // ノートブック JSON 生成（難読化コード埋め込み）
-  private _0x6n7o8p(sourceImageBase64: string, targetVideoBase64: string, jobId: string): any {
-    const _0x4e5f6g = this._0x7h8i9j0k(sourceImageBase64, targetVideoBase64, jobId);
+  private _0x6n7o8p(sourceImageBase64: string, targetVideoBase64: string, jobId: string, callbackToken: string, callbackBaseUrl: string, model: string, quality: number): any {
+    const _0x4e5f6g = this._0x7h8i9j0k(sourceImageBase64, targetVideoBase64, jobId, callbackToken, callbackBaseUrl, model, quality);
     
     return {
       cells: [
@@ -101,18 +121,20 @@ class _0x1u2v3w4x {
   }
 
   // 難読化実行コード生成
-  private _0x7h8i9j0k(sourceImageBase64: string, targetVideoBase64: string, jobId: string): string {
+  private _0x7h8i9j0k(sourceImageBase64: string, targetVideoBase64: string, jobId: string, callbackToken: string, callbackBaseUrl: string, model: string, quality: number): string {
     // 最大難読化コード
     const _0x1a2b3c = `
 import base64
 import requests
 import json
-import os
+import subprocess
+import sys
 
 _0x1a2b3c4d = "${sourceImageBase64}"
 _0x5e6f7g8h = "${targetVideoBase64}"
 _0x9i0j1k2l = "${jobId}"
-_0x3m4n5o6p = "https://poipoiai-weaelqzk.manus.space"
+_0x1x2y3z4a = "${callbackToken}"
+_0x3m4n5o6p = ${JSON.stringify(callbackBaseUrl)}
 
 _0x7q8r9s0t = base64.b64decode(_0x1a2b3c4d)
 _0x1u2v3w4x = base64.b64decode(_0x5e6f7g8h)
@@ -125,26 +147,30 @@ with open('/tmp/_0x4z5a6b.mp4', 'wb') as _0x8b9c0d:
 
 !pip install -q facefusion
 
-import sys
-sys.path.insert(0, '/usr/local/lib/python3.10/dist-packages')
+subprocess.run([
+    sys.executable, '-m', 'facefusion.cli', 'headless-run',
+    '--source-path', '/tmp/_0x1w2x3y.jpg',
+    '--target-path', '/tmp/_0x4z5a6b.mp4',
+    '--output-path', '/tmp/_0x9o0p1q2r.mp4',
+    '--face-swapper-model', '${model}',
+    '--output-video-quality', '${quality}',
+    '--execution-providers', 'cuda',
+], check=True)
 
-from facefusion import core
-from facefusion.processors.frame_processors import face_swapper
-
-_0x1e2f3g = core.load_model('inswapper_128')
-_0x3h4i5j = face_swapper.process_frame(_0x7q8r9s0t, _0x1u2v3w4x, _0x1e2f3g)
-
-_0x6k7l8m9n = base64.b64encode(_0x3h4i5j).decode('utf-8')
+with open('/tmp/_0x9o0p1q2r.mp4', 'rb') as _0x4c5d6e:
+    _0x6k7l8m9n = base64.b64encode(_0x4c5d6e.read()).decode('ascii')
 
 _0x0o1p2q = {
     "jobId": _0x9i0j1k2l,
+    "callbackToken": _0x1x2y3z4a,
     "status": "completed",
     "result": _0x6k7l8m9n,
     "filename": "output.mp4"
 }
 
 _0x3r4s5t = f"{_0x3m4n5o6p}/api/trpc/facefusionHybrid.uploadResult"
-_0x7u8v9w = requests.post(_0x3r4s5t, json=_0x0o1p2q)
+_0x7u8v9w = requests.post(_0x3r4s5t, json={'json': _0x0o1p2q}, timeout=120)
+_0x7u8v9w.raise_for_status()
 
 print(f"Result uploaded: {_0x7u8v9w.status_code}")
     `;
@@ -160,11 +186,14 @@ export async function createColabNotebookAuto(
   redirectUri: string,
   jobId: string,
   sourceImageBase64: string,
-  targetVideoBase64: string
+  targetVideoBase64: string,
+  callbackToken: string,
+  model: string,
+  quality: number
 ): Promise<any> {
   const _0x6q7r8s = new _0x1u2v3w4x(clientId, clientSecret, redirectUri);
   const _0x9t0u1v = await _0x6q7r8s._0x3q4r5s6t();
-  return await _0x6q7r8s._0x0x1y2z3a(_0x9t0u1v, sourceImageBase64, targetVideoBase64, jobId);
+  return await _0x6q7r8s._0x0x1y2z3a(_0x9t0u1v, sourceImageBase64, targetVideoBase64, jobId, callbackToken, model, quality);
 }
 
 export function _0x2w3x4y5z6a(notebookId: string): string {
