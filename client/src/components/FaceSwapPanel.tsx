@@ -26,12 +26,14 @@ export default function FaceSwapPanel({ onClose }: FaceSwapPanelProps) {
   const [progress, setProgress] = useState(0);
   const [hdQuality, setHdQuality] = useState(true);
   const [useHD1080p, setUseHD1080p] = useState(true);
+  const [activeVideoJobId, setActiveVideoJobId] = useState<string | null>(null);
   
   const sourceInputRef = useRef<HTMLInputElement>(null);
   const targetInputRef = useRef<HTMLInputElement>(null);
   
   const faceSwapMutation = trpc.fileUpload.swap.useMutation();
   const videoFaceSwapMutation = trpc.fileUpload.swapVideo.useMutation();
+  const cancelVideoSwapMutation = trpc.fileUpload.cancelVideoSwap.useMutation();
 
   const handleImageUpload = (
     e: React.ChangeEvent<HTMLInputElement>,
@@ -78,28 +80,35 @@ export default function FaceSwapPanel({ onClose }: FaceSwapPanelProps) {
     }
     
     if (targetFileType === 'video') {
-      setProgress(50);
-      // Extract base64 from data URLs
-      const sourceBase64 = sourceImage.includes(',') ? sourceImage.split(',')[1] : sourceImage;
-      const targetBase64 = targetFile.includes(',') ? targetFile.split(',')[1] : targetFile;
-      
-      const result = await videoFaceSwapMutation.mutateAsync({
-        sourceImage: sourceBase64,
-        targetVideo: targetBase64,
-        quality,
-      });
-      
-      setProgress(90);
-      
-      if (result.success && result.resultVideo) {
-        setResultFile(result.resultVideo);
-        setResultFileType('video');
-        toast.success(`動画顔入れ替え完了（${result.processingTime}ms）`);
-      } else {
-        toast.error(result.message || '動画顔入れ替えに失敗しました');
+      const jobId = crypto.randomUUID();
+      setActiveVideoJobId(jobId);
+      setIsProcessing(true);
+      setProgress(5);
+      try {
+        const sourceBase64 = sourceImage.includes(',') ? sourceImage.split(',')[1] : sourceImage;
+        const targetBase64 = targetFile.includes(',') ? targetFile.split(',')[1] : targetFile;
+        const result = await videoFaceSwapMutation.mutateAsync({
+          sourceImage: sourceBase64,
+          targetVideo: targetBase64,
+          quality,
+          jobId,
+        });
+        setProgress(90);
+        if (result.success && result.resultVideo) {
+          setResultFile(result.resultVideo);
+          setResultFileType('video');
+          toast.success(`動画顔入れ替え完了（${result.processingTime}ms）`);
+          setProgress(100);
+        } else if (result.message !== '処理をキャンセルしました') {
+          toast.error(result.message || '動画顔入れ替えに失敗しました');
+        }
+      } catch (error) {
+        toast.error(error instanceof Error ? error.message : '動画処理に失敗しました');
+      } finally {
+        setIsProcessing(false);
+        setActiveVideoJobId(null);
+        setProgress(0);
       }
-      setIsProcessing(false);
-      setProgress(100);
       return;
     }
 
@@ -134,6 +143,17 @@ export default function FaceSwapPanel({ onClose }: FaceSwapPanelProps) {
     }
 
     setIsProcessing(false);
+  };
+
+  const handleCancelVideoSwap = async () => {
+    if (!activeVideoJobId) return;
+    try {
+      const result = await cancelVideoSwapMutation.mutateAsync({ jobId: activeVideoJobId });
+      if (result.cancelled) toast.info('動画処理をキャンセルしています');
+      else toast.info('動画処理はすでに終了しています');
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'キャンセルに失敗しました');
+    }
   };
 
   const handleDownload = useCallback(() => {
@@ -343,6 +363,16 @@ export default function FaceSwapPanel({ onClose }: FaceSwapPanelProps) {
           '処理実行'
         )}
       </Button>
+      {isProcessing && targetFileType === 'video' && activeVideoJobId && (
+        <Button
+          onClick={handleCancelVideoSwap}
+          disabled={cancelVideoSwapMutation.isPending}
+          variant="destructive"
+          className="w-full"
+        >
+          {cancelVideoSwapMutation.isPending ? 'キャンセル中...' : '動画処理をキャンセル'}
+        </Button>
+      )}
 
       {/* 結果表示 */}
       {resultFile && (

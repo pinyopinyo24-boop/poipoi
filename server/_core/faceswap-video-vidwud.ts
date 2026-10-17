@@ -12,6 +12,7 @@ interface VideoProcessingOptions {
   fps?: number;
   bitrate?: string;
   maxFrames?: number;
+  signal?: AbortSignal;
 }
 
 interface ProcessingStats {
@@ -28,7 +29,8 @@ interface ProcessingStats {
 export async function extractVideoFrames(
   videoPath: string,
   outputDir: string,
-  fps: number = 2
+  fps: number = 2,
+  signal?: AbortSignal
 ): Promise<string[]> {
   try {
     console.log(`[VideoFrameExtraction] Extracting frames from ${videoPath} at ${fps} fps`);
@@ -36,7 +38,7 @@ export async function extractVideoFrames(
     // FFmpegでフレーム抽出
     const command = `ffmpeg -i "${videoPath}" -vf "fps=${fps}" "${outputDir}/frame_%04d.png" -y 2>&1`;
     
-    const { stdout, stderr } = await execAsync(command, { timeout: 600000 });
+    const { stdout, stderr } = await execAsync(command, { timeout: 600000, signal });
     
     // 抽出されたフレームを取得
     const files = fs.readdirSync(outputDir)
@@ -106,7 +108,8 @@ export async function reconstructVideo(
   frameDir: string,
   outputPath: string,
   fps: number = 2,
-  bitrate: string = '5000k'
+  bitrate: string = '5000k',
+  signal?: AbortSignal
 ): Promise<void> {
   try {
     console.log(`[VideoReconstruction] Reconstructing video from frames at ${fps} fps`);
@@ -115,7 +118,7 @@ export async function reconstructVideo(
     const framePattern = path.join(frameDir, 'frame_%04d.png');
     const command = `ffmpeg -framerate ${fps} -i "${framePattern}" -c:v libx264 -pix_fmt yuv420p -b:v ${bitrate} "${outputPath}" -y 2>&1`;
     
-    await execAsync(command, { timeout: 600000 });
+    await execAsync(command, { timeout: 600000, signal });
     console.log('[VideoReconstruction] Video reconstruction completed');
   } catch (error) {
     console.error('[VideoReconstruction] Video reconstruction error:', error);
@@ -164,7 +167,7 @@ export async function performVideoFaceSwapVidwud(
     
     // フレーム抽出
     const fps = options.fps || 2;
-    const frames = await extractVideoFrames(videoPath, frameDir, fps);
+    const frames = await extractVideoFrames(videoPath, frameDir, fps, options.signal);
     stats.totalFrames = frames.length;
     
     if (frames.length === 0) {
@@ -179,6 +182,7 @@ export async function performVideoFaceSwapVidwud(
     
     // フレーム処理：各フレームに顔入れ替え処理を適用
     for (let i = 0; i < frames.length; i++) {
+      if (options.signal?.aborted) throw new Error('処理をキャンセルしました');
       try {
         const frameNumber = String(i).padStart(4, '0');
         const outputFramePath = path.join(outputFrameDir, `frame_${frameNumber}.png`);
@@ -198,6 +202,7 @@ export async function performVideoFaceSwapVidwud(
           stats.skippedFrames++;
         }
       } catch (error) {
+        if (options.signal?.aborted) throw new Error('処理をキャンセルしました');
         console.error(`[VideoFaceSwap] Error processing frame ${i}:`, error);
         stats.skippedFrames++;
       }
@@ -207,7 +212,8 @@ export async function performVideoFaceSwapVidwud(
     
     // 動画を再構成
     const bitrate = options.quality === 'high' ? '8000k' : options.quality === 'medium' ? '5000k' : '2000k';
-    await reconstructVideo(outputFrameDir, outputVideoPath, fps, bitrate);
+    if (options.signal?.aborted) throw new Error('処理をキャンセルしました');
+    await reconstructVideo(outputFrameDir, outputVideoPath, fps, bitrate, options.signal);
     
     // 出力ファイルを読み込み
     const videoBuffer = fs.readFileSync(outputVideoPath);
@@ -224,6 +230,13 @@ export async function performVideoFaceSwapVidwud(
       stats
     };
   } catch (error) {
+    if (options.signal?.aborted) {
+      return {
+        success: false,
+        message: '処理をキャンセルしました',
+        stats,
+      };
+    }
     console.error('[VideoFaceSwap] Video face swap error:', error);
     return {
       success: false,

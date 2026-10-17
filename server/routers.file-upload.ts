@@ -1,4 +1,5 @@
 import { router, publicProcedure } from "./_core/trpc";
+import { TRPCError } from "@trpc/server";
 import { z } from "zod";
 import * as fs from "fs";
 import * as path from "path";
@@ -15,6 +16,8 @@ const uploadDir = "/tmp/faceswap-uploads";
 if (!fs.existsSync(uploadDir)) {
   fs.mkdirSync(uploadDir, { recursive: true });
 }
+
+const activeVideoSwapJobs = new Map<string, AbortController>();
 
 /**
  * Pythonを使用した顔入れ替え処理
@@ -219,8 +222,14 @@ export const fileUploadRouter = router({
       sourceImage: z.string().describe("Source face image as base64"),
       targetVideo: z.string().describe("Target video as base64"),
       quality: z.enum(["low", "medium", "high"]).default("medium"),
+      jobId: z.string().uuid(),
     }))
     .mutation(async ({ input }) => {
+      if (activeVideoSwapJobs.has(input.jobId)) {
+        throw new TRPCError({ code: "CONFLICT", message: "この動画処理IDはすでに使用されています" });
+      }
+      const controller = new AbortController();
+      activeVideoSwapJobs.set(input.jobId, controller);
       let sourceImagePath = "";
       let targetVideoPath = "";
       
@@ -263,7 +272,7 @@ export const fileUploadRouter = router({
         const result = await performVideoFaceSwapVidwud(
           sourceImagePath,
           targetVideoPath,
-          { quality: input.quality, fps: 2 }
+          { quality: input.quality, fps: 2, signal: controller.signal }
         );
 
         if (result.success && result.videoBuffer) {
@@ -295,6 +304,7 @@ export const fileUploadRouter = router({
           error: errorMessage,
         };
       } finally {
+        activeVideoSwapJobs.delete(input.jobId);
         // Clean up temporary files
         try {
           if (sourceImagePath && fs.existsSync(sourceImagePath)) {
@@ -307,6 +317,15 @@ export const fileUploadRouter = router({
           console.error("Cleanup error:", e);
         }
       }
+    }),
+
+  cancelVideoSwap: publicProcedure
+    .input(z.object({ jobId: z.string().uuid() }))
+    .mutation(({ input }) => {
+      const controller = activeVideoSwapJobs.get(input.jobId);
+      if (!controller) return { cancelled: false };
+      controller.abort();
+      return { cancelled: true };
     }),
 
   /**
