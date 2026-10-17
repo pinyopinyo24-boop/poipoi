@@ -1,4 +1,4 @@
-import { publicProcedure, router } from "./_core/trpc";
+import { adminProcedure, publicProcedure, router } from "./_core/trpc";
 import { z } from "zod";
 import { getDb } from "./db";
 import { feedback } from "../drizzle/schema";
@@ -46,11 +46,11 @@ export const feedbackRouter = router({
   /**
    * フィードバック一覧取得（管理者用）
    */
-  list: publicProcedure
+  list: adminProcedure
     .input(
       z.object({
-        limit: z.number().default(20),
-        offset: z.number().default(0),
+        limit: z.number().int().min(1).max(100).default(20),
+        offset: z.number().int().min(0).default(0),
         type: z.enum(["bug", "feature", "suggestion", "other"]).optional(),
         status: z.enum(["new", "reviewing", "resolved"]).optional(),
       })
@@ -60,16 +60,19 @@ export const feedbackRouter = router({
         const db = await getDb();
         if (!db) throw new Error("Database not available");
         
-        const feedbacks = await db
-          .select()
-          .from(feedback)
-          .limit(input.limit)
-          .offset(input.offset);
+        const allFeedbacks = (await db.select().from(feedback)).sort(
+          (left, right) => right.createdAt.getTime() - left.createdAt.getTime()
+        );
+        const filteredFeedbacks = allFeedbacks.filter((entry) =>
+          (!input.type || entry.type === input.type) &&
+          (!input.status || entry.status === input.status)
+        );
+        const feedbacks = filteredFeedbacks.slice(input.offset, input.offset + input.limit);
 
         return {
           success: true,
           data: feedbacks,
-          total: feedbacks.length,
+          total: filteredFeedbacks.length,
         };
       } catch (error) {
         console.error("[Feedback] 取得エラー:", error);
@@ -80,7 +83,7 @@ export const feedbackRouter = router({
   /**
    * フィードバック詳細取得
    */
-  getById: publicProcedure
+  getById: adminProcedure
     .input(z.object({ id: z.string() }))
     .query(async ({ input }) => {
       try {
@@ -110,7 +113,7 @@ export const feedbackRouter = router({
   /**
    * フィードバックステータス更新（管理者用）
    */
-  updateStatus: publicProcedure
+  updateStatus: adminProcedure
     .input(
       z.object({
         id: z.string(),
@@ -140,7 +143,7 @@ export const feedbackRouter = router({
   /**
    * フィードバック統計取得
    */
-  getStats: publicProcedure.query(async () => {
+  getStats: adminProcedure.query(async () => {
     try {
       const db = await getDb();
       if (!db) throw new Error("Database not available");

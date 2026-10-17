@@ -10,7 +10,22 @@ const COLORS = ["#3b82f6", "#ef4444", "#f59e0b", "#10b981"];
 
 export default function AdminDashboard() {
   const { user } = useAuth();
-  const feedbackStats = trpc.feedback.getStats.useQuery();
+  const feedbackStats = trpc.feedback.getStats.useQuery(undefined, {
+    enabled: user?.role === "admin",
+  });
+  const feedbackList = trpc.feedback.list.useQuery(
+    { limit: 50, offset: 0 },
+    { enabled: user?.role === "admin" }
+  );
+  const utils = trpc.useUtils();
+  const updateFeedbackStatus = trpc.feedback.updateStatus.useMutation({
+    onSuccess: async () => {
+      await Promise.all([
+        utils.feedback.list.invalidate(),
+        utils.feedback.getStats.invalidate(),
+      ]);
+    },
+  });
 
   // Check if user is admin
   if (!user || user.role !== "admin") {
@@ -83,6 +98,7 @@ export default function AdminDashboard() {
         <TabsList>
           <TabsTrigger value="type">フィードバック種別</TabsTrigger>
           <TabsTrigger value="status">ステータス分布</TabsTrigger>
+          <TabsTrigger value="items">フィードバック一覧</TabsTrigger>
         </TabsList>
 
         <TabsContent value="type" className="space-y-4">
@@ -149,6 +165,55 @@ export default function AdminDashboard() {
                     <Tooltip />
                   </PieChart>
                 </ResponsiveContainer>
+              )}
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        <TabsContent value="items" className="space-y-4">
+          <Card>
+            <CardHeader>
+              <CardTitle>ユーザーからのフィードバック</CardTitle>
+              <CardDescription>新しいものから最大50件を表示します。ステータスを更新できます。</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              {updateFeedbackStatus.error && (
+                <Alert variant="destructive">
+                  <AlertDescription>ステータスを更新できませんでした。</AlertDescription>
+                </Alert>
+              )}
+              {feedbackList.isLoading ? (
+                <p className="text-sm text-gray-500">読み込み中...</p>
+              ) : feedbackList.data?.data.length ? (
+                feedbackList.data.data.map((entry) => (
+                  <div key={entry.id} className="rounded-lg border p-4 space-y-2">
+                    <div className="flex flex-wrap items-start justify-between gap-3">
+                      <div>
+                        <p className="font-medium">{entry.title}</p>
+                        <p className="text-xs text-gray-500">{entry.type} · {entry.status}</p>
+                      </div>
+                      <div className="flex gap-2">
+                        {entry.status !== "reviewing" && (
+                          <button
+                            className="rounded border px-3 py-1 text-sm disabled:opacity-50"
+                            disabled={updateFeedbackStatus.isPending}
+                            onClick={() => updateFeedbackStatus.mutate({ id: entry.id, status: "reviewing" })}
+                          >確認中</button>
+                        )}
+                        {entry.status !== "resolved" && (
+                          <button
+                            className="rounded border px-3 py-1 text-sm disabled:opacity-50"
+                            disabled={updateFeedbackStatus.isPending}
+                            onClick={() => updateFeedbackStatus.mutate({ id: entry.id, status: "resolved" })}
+                          >解決済み</button>
+                        )}
+                      </div>
+                    </div>
+                    <p className="whitespace-pre-wrap text-sm text-gray-700">{entry.message}</p>
+                  </div>
+                ))
+              ) : (
+                <p className="text-sm text-gray-500">フィードバックはまだありません。</p>
               )}
             </CardContent>
           </Card>
