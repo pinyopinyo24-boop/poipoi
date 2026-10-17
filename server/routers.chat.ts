@@ -1,9 +1,11 @@
-﻿import { router, publicProcedure } from './_core/trpc';
+﻿import { router, publicProcedure, protectedProcedure } from './_core/trpc';
 import { z } from 'zod';
 import { ChatCoreManager } from './core/ChatCoreManager';
 import { PoipoiCodeAgent } from './core/PoipoiCodeAgent';
+import { ChatQualityService } from './managers/ChatQualityService';
 
 let chatCoreManager: ChatCoreManager | null = null;
+const chatQualityService = new ChatQualityService();
 
 function getChatCoreManager(): ChatCoreManager {
   if (!chatCoreManager) {
@@ -170,6 +172,30 @@ export const chatRouter = router({
     .query(async ({ input }) =>
       getChatCoreManager().getChatStatistics(input.userId)
     ),
+
+  reportResponseIssue: protectedProcedure
+    .input(
+      z.object({
+        sessionId: z.string().min(1),
+        messageId: z.string().min(1),
+        issueType: z.enum(['irrelevant', 'unclear', 'unhelpful']),
+      })
+    )
+    .mutation(async ({ ctx, input }) => {
+      const userId = String(ctx.user.id);
+      const messages = await getChatCoreManager().getMessages(userId, input.sessionId);
+      const message = messages.find((item) => item.id === input.messageId);
+
+      if (!message || message.userId !== userId || message.role !== 'assistant') {
+        throw new Error('回答が見つからないか、報告する権限がありません');
+      }
+
+      return chatQualityService.reportChatIssue(
+        input.messageId,
+        input.issueType,
+        `ユーザーが回答を「${input.issueType}」として報告しました`
+      );
+    }),
 });
 
 

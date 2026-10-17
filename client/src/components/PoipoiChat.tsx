@@ -72,6 +72,7 @@ export const PoipoiChat: React.FC<PoipoiChatProps> = ({
   const [isLoading, setIsLoading] = useState(false);
   const [currentSession, setCurrentSession] = useState<ChatSession | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [reportedMessages, setReportedMessages] = useState<Set<string>>(new Set());
   const [selectedContext, setSelectedContext] = useState<string>('general');
   const [memories, setMemories] = useState<MemoryItem[]>([]);
   const [processingState, setProcessingState] = useState<AIProcessingState>({
@@ -84,6 +85,7 @@ export const PoipoiChat: React.FC<PoipoiChatProps> = ({
 
   // tRPCクエリ
   const processMessageMutation = trpc.chat.processMessage.useMutation();
+  const reportResponseIssueMutation = trpc.chat.reportResponseIssue.useMutation();
   const userId = typeof user?.id === 'string' ? user.id : '';
   const getSessionQuery = trpc.chat.getSession.useQuery(
     { sessionId: sessionId || '', userId },
@@ -205,6 +207,25 @@ export const PoipoiChat: React.FC<PoipoiChatProps> = ({
     }
   };
 
+  const reportResponseIssue = async (
+    messageId: string,
+    issueType: 'irrelevant' | 'unclear' | 'unhelpful'
+  ) => {
+    const activeSessionId = currentSession?.id || sessionId;
+    if (!activeSessionId || reportedMessages.has(messageId)) return;
+
+    try {
+      await reportResponseIssueMutation.mutateAsync({
+        sessionId: activeSessionId,
+        messageId,
+        issueType,
+      });
+      setReportedMessages((previous) => new Set(previous).add(messageId));
+    } catch (reportError) {
+      setError(reportError instanceof Error ? reportError.message : '回答を報告できませんでした');
+    }
+  };
+
   const contextOptions = [
     { value: 'general', label: '一般' },
     { value: 'manufacturing', label: '生産管理' },
@@ -289,6 +310,20 @@ export const PoipoiChat: React.FC<PoipoiChatProps> = ({
                         )}
                         {msg.metadata.context && (
                           <p>コンテキスト: {msg.metadata.context}</p>
+                        )}
+                      </div>
+                    )}
+                    {msg.role === 'assistant' && (
+                      <div className="mt-3 border-t border-gray-200 pt-2">
+                        {reportedMessages.has(msg.id) ? (
+                          <p className="text-xs text-gray-500">報告を受け付けました</p>
+                        ) : (
+                          <div className="flex flex-wrap gap-2">
+                            <span className="w-full text-xs text-gray-500">回答に問題がある場合</span>
+                            <button type="button" className="text-xs underline underline-offset-2" disabled={reportResponseIssueMutation.isPending} onClick={() => void reportResponseIssue(msg.id, 'unclear')}>わかりにくい</button>
+                            <button type="button" className="text-xs underline underline-offset-2" disabled={reportResponseIssueMutation.isPending} onClick={() => void reportResponseIssue(msg.id, 'irrelevant')}>質問とずれている</button>
+                            <button type="button" className="text-xs underline underline-offset-2" disabled={reportResponseIssueMutation.isPending} onClick={() => void reportResponseIssue(msg.id, 'unhelpful')}>役に立たない</button>
+                          </div>
                         )}
                       </div>
                     )}
