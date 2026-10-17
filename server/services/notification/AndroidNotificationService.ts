@@ -29,6 +29,15 @@ export class AndroidNotificationService {
     scheduleId?: string
   ): Promise<boolean> {
     try {
+      const projectId = process.env.FCM_PROJECT_ID;
+      const accessToken = process.env.FCM_ACCESS_TOKEN;
+      if (!projectId || !/^[a-zA-Z0-9-]+$/.test(projectId) || !accessToken) {
+        await addNotificationHistory(userId, scheduleId || null, "push", "failed", {
+          error: "FCM_PROJECT_ID and FCM_ACCESS_TOKEN must be configured",
+        });
+        return false;
+      }
+
       const payload = {
         message: {
           token: fcmToken,
@@ -49,11 +58,11 @@ export class AndroidNotificationService {
       };
 
       // Call FCM API (Firebase Cloud Messaging)
-      const response = await fetch("https://fcm.googleapis.com/v1/projects/YOUR_PROJECT_ID/messages:send", {
+      const response = await fetch(`https://fcm.googleapis.com/v1/projects/${projectId}/messages:send`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          Authorization: `Bearer ${process.env.FCM_ACCESS_TOKEN}`,
+          Authorization: `Bearer ${accessToken}`,
         },
         body: JSON.stringify(payload),
       });

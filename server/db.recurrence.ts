@@ -234,6 +234,18 @@ export async function registerDevice(
 ) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
+  const [existingDevice] = await db
+    .select({ id: notificationChannels.id })
+    .from(notificationChannels)
+    .where(and(eq(notificationChannels.userId, userId), eq(notificationChannels.deviceId, deviceId)))
+    .limit(1);
+  if (existingDevice) {
+    await db
+      .update(notificationChannels)
+      .set({ fcmToken, platform, isActive: true, lastUpdatedAt: new Date() })
+      .where(and(eq(notificationChannels.userId, userId), eq(notificationChannels.deviceId, deviceId)));
+    return { id: existingDevice.id };
+  }
   const id = uuidv4();
   await db.insert(notificationChannels).values({
     id,

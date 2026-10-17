@@ -68,6 +68,18 @@ export async function getSchedulesByDate(userId: number, date: string) {
   return results;
 }
 
+/** Get one schedule owned by the user. */
+export async function getScheduleById(userId: number, id: string) {
+  const db = await getDb();
+  if (!db) return null;
+  const [schedule] = await db
+    .select()
+    .from(schedules)
+    .where(and(eq(schedules.userId, userId), eq(schedules.id, id)))
+    .limit(1);
+  return schedule ?? null;
+}
+
 /**
  * Get today's schedules
  */

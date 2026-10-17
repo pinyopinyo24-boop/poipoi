@@ -20,13 +20,16 @@ import { Badge } from "@/components/ui/badge";
 import { AlertCircle, Calendar, Clock, Flag, Trash2 } from "lucide-react";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { ScheduleMemoryChat } from "../components/ScheduleMemoryChat";
+import { RecurringScheduleForm } from "../components/RecurringScheduleForm";
+import { PriorityRecommendations } from "../components/PriorityRecommendations";
+import { NotificationSettings } from "../components/NotificationSettings";
 
 interface Schedule {
   [key: string]: any;
 }
 
 export default function ScheduleMemory() {
-  const [activeTab, setActiveTab] = useState<"today" | "tomorrow" | "upcoming" | "add">("today");
+  const [activeTab, setActiveTab] = useState<"today" | "tomorrow" | "upcoming" | "add" | "priority" | "notifications">("today");
   const [schedules, setSchedules] = useState<Schedule[]>([]);
   const [summary, setSummary] = useState<string>("");
   const [loading, setLoading] = useState(false);
@@ -46,6 +49,9 @@ export default function ScheduleMemory() {
 
   // tRPC hooks
   const getTodayQuery = trpc.scheduleMemory.getToday.useQuery();
+  const tomorrowDate = new Date();
+  tomorrowDate.setDate(tomorrowDate.getDate() + 1);
+  const getTomorrowQuery = trpc.scheduleMemory.getByDate.useQuery({ date: tomorrowDate.toISOString().split("T")[0] });
   const getUpcomingQuery = trpc.scheduleMemory.getUpcoming.useQuery();
   const addScheduleMutation = trpc.scheduleMemory.addSchedule.useMutation();
   const deleteScheduleMutation = trpc.scheduleMemory.deleteSchedule.useMutation();
@@ -58,6 +64,14 @@ export default function ScheduleMemory() {
       setSummary(getTodayQuery.data.summary || "");
     }
   }, [activeTab, getTodayQuery.data]);
+
+  // Load upcoming schedules
+  useEffect(() => {
+    if (activeTab === "tomorrow" && getTomorrowQuery.data) {
+      setSchedules(getTomorrowQuery.data.schedules || []);
+      setSummary("");
+    }
+  }, [activeTab, getTomorrowQuery.data]);
 
   // Load upcoming schedules
   useEffect(() => {
@@ -103,6 +117,7 @@ export default function ScheduleMemory() {
 
       // Refresh data
       getTodayQuery.refetch();
+      getTomorrowQuery.refetch();
       getUpcomingQuery.refetch();
       setActiveTab("today");
     } catch (error) {
@@ -120,6 +135,7 @@ export default function ScheduleMemory() {
     try {
       await deleteScheduleMutation.mutateAsync({ id });
       getTodayQuery.refetch();
+      getTomorrowQuery.refetch();
       getUpcomingQuery.refetch();
     } catch (error) {
       console.error("Failed to delete schedule:", error);
@@ -241,7 +257,7 @@ export default function ScheduleMemory() {
 
           {/* Tabs */}
           <div className="flex gap-2 mb-8 border-b border-gray-200">
-            {["today", "tomorrow", "upcoming", "add"].map((tab) => (
+            {["today", "tomorrow", "upcoming", "add", "priority", "notifications"].map((tab) => (
               <button
                 key={tab}
                 onClick={() => setActiveTab(tab as any)}
@@ -255,12 +271,18 @@ export default function ScheduleMemory() {
                 {tab === "tomorrow" && "明日"}
                 {tab === "upcoming" && "今後"}
                 {tab === "add" && "追加"}
+                {tab === "priority" && "優先度・時間管理"}
+                {tab === "notifications" && "通知設定"}
               </button>
             ))}
           </div>
 
           {/* Content */}
-          {activeTab === "add" ? (
+          {activeTab === "priority" ? (
+            <PriorityRecommendations />
+          ) : activeTab === "notifications" ? (
+            <NotificationSettings />
+          ) : activeTab === "add" ? (
             // Add Schedule Form
             <Card className="bg-white">
               <CardHeader>
@@ -459,6 +481,21 @@ export default function ScheduleMemory() {
                         </Button>
                       </div>
                     </CardContent>
+                    <div className="border-t px-6 pb-6">
+                      <details>
+                        <summary className="cursor-pointer py-4 text-sm font-medium text-blue-700">
+                          繰り返しルールを設定
+                        </summary>
+                        <RecurringScheduleForm
+                          scheduleId={String(schedule.id)}
+                          onSuccess={() => {
+                            getTodayQuery.refetch();
+                            getTomorrowQuery.refetch();
+                            getUpcomingQuery.refetch();
+                          }}
+                        />
+                      </details>
+                    </div>
                   </Card>
                 ))
               )}

@@ -4,6 +4,7 @@
  */
 
 import { router, protectedProcedure } from "../_core/trpc";
+import { TRPCError } from "@trpc/server";
 import { z } from "zod";
 import * as scheduleDb from "../db.schedule";
 import * as recurrenceDb from "../db.recurrence";
@@ -246,14 +247,21 @@ export const scheduleMemoryRouter = router({
       z.object({
         scheduleId: z.string(),
         frequency: z.enum(["daily", "weekly", "monthly", "yearly"]),
-        interval: z.number().min(1).default(1),
+        interval: z.number().int().min(1).default(1),
         endDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
-        daysOfWeek: z.array(z.number()).optional(),
+        daysOfWeek: z.array(z.number().int().min(0).max(6)).optional(),
       })
     )
     .mutation(async ({ ctx, input }) => {
-      const startDate = new Date();
+      const schedule = await scheduleDb.getScheduleById(ctx.user.id, input.scheduleId);
+      if (!schedule) {
+        throw new TRPCError({ code: "NOT_FOUND", message: "予定が見つかりません" });
+      }
+      const startDate = new Date(`${schedule.scheduledDate}T00:00:00`);
       const endDate = input.endDate ? new Date(input.endDate) : undefined;
+      if (endDate && endDate < startDate) {
+        throw new TRPCError({ code: "BAD_REQUEST", message: "終了日は予定日以降を指定してください" });
+      }
       return recurrenceDb.addRecurrenceRule(
         ctx.user.id,
         input.scheduleId,
@@ -282,9 +290,9 @@ export const scheduleMemoryRouter = router({
       z.object({
         id: z.string(),
         frequency: z.enum(["daily", "weekly", "monthly", "yearly"]).optional(),
-        interval: z.number().min(1).optional(),
+        interval: z.number().int().min(1).optional(),
         endDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
-        daysOfWeek: z.array(z.number()).optional(),
+        daysOfWeek: z.array(z.number().int().min(0).max(6)).optional(),
       })
     )
     .mutation(async ({ ctx, input }) => {
@@ -320,16 +328,18 @@ export const scheduleMemoryRouter = router({
     .input(
       z.object({
         scheduleId: z.string(),
-        title: z.string(),
-        description: z.string().optional(),
       })
     )
     .query(async ({ ctx, input }) => {
+      const schedule = await scheduleDb.getScheduleById(ctx.user.id, input.scheduleId);
+      if (!schedule) {
+        throw new TRPCError({ code: "NOT_FOUND", message: "予定が見つかりません" });
+      }
       return AIPriorityAssistant.getSchedulePriorityRecommendation(
         ctx.user.id,
-        input.scheduleId,
-        input.title,
-        input.description
+        schedule.id,
+        schedule.title,
+        schedule.description ?? undefined
       );
     }),
 
@@ -354,15 +364,18 @@ export const scheduleMemoryRouter = router({
     .input(
       z.object({
         scheduleId: z.string(),
-        title: z.string(),
-        minutesBefore: z.number().default(15),
+        minutesBefore: z.number().int().min(0).max(1440).default(15),
       })
     )
     .mutation(async ({ ctx, input }) => {
+      const schedule = await scheduleDb.getScheduleById(ctx.user.id, input.scheduleId);
+      if (!schedule) {
+        throw new TRPCError({ code: "NOT_FOUND", message: "予定が見つかりません" });
+      }
       return AndroidNotificationService.sendReminderNotification(
         ctx.user.id,
-        input.title,
-        input.scheduleId,
+        schedule.title,
+        schedule.id,
         input.minutesBefore
       );
     }),
@@ -373,8 +386,8 @@ export const scheduleMemoryRouter = router({
   registerAndroidDevice: protectedProcedure
     .input(
       z.object({
-        deviceId: z.string(),
-        fcmToken: z.string(),
+        deviceId: z.string().min(1).max(255),
+        fcmToken: z.string().min(1),
         platform: z.enum(["android", "ios", "web"]).default("android"),
       })
     )
@@ -387,13 +400,29 @@ export const scheduleMemoryRouter = router({
       );
     }),
 
+  getAndroidDevices: protectedProcedure.query(async ({ ctx }) => {
+    const devices = await recurrenceDb.getActiveDevices(ctx.user.id);
+    return devices.map(({ id, deviceId, platform, lastUpdatedAt }) => ({
+      id,
+      deviceId,
+      platform,
+      lastUpdatedAt,
+    }));
+  }),
+
+  unregisterAndroidDevice: protectedProcedure
+    .input(z.object({ deviceId: z.string().min(1) }))
+    .mutation(async ({ ctx, input }) => {
+      return recurrenceDb.unregisterDevice(ctx.user.id, input.deviceId);
+    }),
+
   /**
    * Get notification history
    */
   getNotificationHistory: protectedProcedure
     .input(
       z.object({
-        limit: z.number().default(50),
+        limit: z.number().int().min(1).max(100).default(50),
       })
     )
     .query(async ({ ctx, input }) => {
@@ -406,8 +435,8 @@ export const scheduleMemoryRouter = router({
   updateNotificationSettings: protectedProcedure
     .input(
       z.object({
-        deviceId: z.string(),
-        fcmToken: z.string(),
+        deviceId: z.string().min(1).max(255),
+        fcmToken: z.string().min(1),
       })
     )
     .mutation(async ({ ctx, input }) => {

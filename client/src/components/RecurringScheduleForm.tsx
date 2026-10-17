@@ -6,6 +6,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { trpc } from "@/lib/trpc";
 import { useToast } from "@/hooks/use-toast";
+import { Trash2 } from "lucide-react";
 
 interface RecurringScheduleFormProps {
   scheduleId: string;
@@ -18,6 +19,21 @@ export function RecurringScheduleForm({ scheduleId, onSuccess }: RecurringSchedu
   const [interval, setInterval] = useState(1);
   const [endDate, setEndDate] = useState("");
   const [daysOfWeek, setDaysOfWeek] = useState<number[]>([]);
+  const [editingRuleId, setEditingRuleId] = useState<string | null>(null);
+  const [editFrequency, setEditFrequency] = useState<"daily" | "weekly" | "monthly" | "yearly">("weekly");
+  const [editInterval, setEditInterval] = useState(1);
+  const recurrenceRules = trpc.scheduleMemory.getRecurrences.useQuery();
+  const updateRecurrence = trpc.scheduleMemory.updateRecurrence.useMutation({
+    onSuccess: () => {
+      setEditingRuleId(null);
+      recurrenceRules.refetch();
+    },
+    onError: (error: any) => toast({ title: "エラー", description: error.message, variant: "destructive" }),
+  });
+  const deleteRecurrence = trpc.scheduleMemory.deleteRecurrence.useMutation({
+    onSuccess: () => recurrenceRules.refetch(),
+    onError: (error: any) => toast({ title: "エラー", description: error.message, variant: "destructive" }),
+  });
 
   const addRecurrence = trpc.scheduleMemory.addRecurrence.useMutation({
     onSuccess: () => {
@@ -29,6 +45,7 @@ export function RecurringScheduleForm({ scheduleId, onSuccess }: RecurringSchedu
       setInterval(1);
       setEndDate("");
       setDaysOfWeek([]);
+      recurrenceRules.refetch();
       onSuccess?.();
     },
     onError: (error: any) => {
@@ -130,6 +147,59 @@ export function RecurringScheduleForm({ scheduleId, onSuccess }: RecurringSchedu
             {addRecurrence.isPending ? "追加中..." : "繰り返しルールを追加"}
           </Button>
         </form>
+        <div className="mt-6 space-y-2">
+          <h3 className="text-sm font-semibold">登録済みのルール</h3>
+          {(recurrenceRules.data ?? [])
+            .filter((rule: any) => rule.scheduleId === scheduleId && rule.isActive)
+            .map((rule: any) => (
+              <div key={rule.id} className="flex flex-wrap items-center justify-between gap-2 rounded border p-3 text-sm">
+                {editingRuleId === rule.id ? (
+                  <div className="flex flex-wrap items-center gap-2">
+                    <Select value={editFrequency} onValueChange={(value: any) => setEditFrequency(value)}>
+                      <SelectTrigger className="w-32"><SelectValue /></SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="daily">毎日</SelectItem>
+                        <SelectItem value="weekly">毎週</SelectItem>
+                        <SelectItem value="monthly">毎月</SelectItem>
+                        <SelectItem value="yearly">毎年</SelectItem>
+                      </SelectContent>
+                    </Select>
+                    <Input type="number" min="1" className="w-20" value={editInterval} onChange={(event) => setEditInterval(Math.max(1, Number(event.target.value) || 1))} />
+                    <Button type="button" size="sm" disabled={updateRecurrence.isPending} onClick={() => updateRecurrence.mutate({ id: rule.id, frequency: editFrequency, interval: editInterval })}>保存</Button>
+                    <Button type="button" size="sm" variant="ghost" onClick={() => setEditingRuleId(null)}>取消</Button>
+                  </div>
+                ) : (
+                  <>
+                    <span>
+                      {rule.frequency === "daily" ? "毎日" : rule.frequency === "weekly" ? "毎週" : rule.frequency === "monthly" ? "毎月" : "毎年"}
+                      {rule.interval > 1 ? `（${rule.interval}間隔）` : ""}
+                      {rule.endDate ? ` ・終了 ${new Date(rule.endDate).toLocaleDateString("ja-JP")}` : " ・終了日なし"}
+                    </span>
+                    <div className="flex items-center">
+                      <Button type="button" variant="ghost" size="sm" onClick={() => {
+                        setEditingRuleId(rule.id);
+                        setEditFrequency(rule.frequency);
+                        setEditInterval(rule.interval);
+                      }}>編集</Button>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        aria-label="繰り返しルールを削除"
+                        disabled={deleteRecurrence.isPending}
+                        onClick={() => deleteRecurrence.mutate({ id: rule.id })}
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </Button>
+                    </div>
+                  </>
+                )}
+              </div>
+            ))}
+          {!recurrenceRules.isLoading && !(recurrenceRules.data ?? []).some((rule: any) => rule.scheduleId === scheduleId && rule.isActive) && (
+            <p className="text-sm text-gray-500">繰り返しルールはありません</p>
+          )}
+        </div>
       </CardContent>
     </Card>
   );

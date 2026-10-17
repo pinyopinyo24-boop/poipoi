@@ -3863,10 +3863,6 @@ STEP 71: Real-time Collaboration Engine - リアルタイム協働エンジン
 - [ ] 100%成功率
 - [ ] TypeScript errors: 0
 - [ ] Build成功
-<<<<<<< HEAD
-=======
-
-
 ## STEP110: Release Stabilization Phase
 
 ### Phase A: GitHub Backup (PENDING USER ACTION)
@@ -3946,26 +3942,27 @@ STEP 71: Real-time Collaboration Engine - リアルタイム協働エンジン
 - [x] FCM (Firebase Cloud Messaging) 統合
 - [x] TypeScript エラー 0
 
-#### Phase 7.4: tRPC Router Integration (PENDING)
-- [ ] scheduleMemory.addRecurrence
-- [ ] scheduleMemory.getRecurrences
-- [ ] scheduleMemory.updateRecurrence
-- [ ] scheduleMemory.deleteRecurrence
-- [ ] scheduleMemory.analyzePriorities
-- [ ] scheduleMemory.getSchedulePriority
-- [ ] scheduleMemory.getDailyFocus
-- [ ] scheduleMemory.getTimeManagementSuggestions
-- [ ] scheduleMemory.sendReminder
-- [ ] scheduleMemory.registerAndroidDevice
-- [ ] scheduleMemory.getNotificationHistory
-- [ ] scheduleMemory.updateNotificationSettings
+#### Phase 7.4: tRPC Router Integration (COMPLETE)
+- [x] scheduleMemory.addRecurrence (予定所有権と日付検証を追加)
+- [x] scheduleMemory.getRecurrences
+- [x] scheduleMemory.updateRecurrence
+- [x] scheduleMemory.deleteRecurrence
+- [x] scheduleMemory.analyzePriorities
+- [x] scheduleMemory.getSchedulePriority
+- [x] scheduleMemory.getDailyFocus
+- [x] scheduleMemory.getTimeManagementSuggestions
+- [x] scheduleMemory.sendReminder (所有予定のみ送信)
+- [x] scheduleMemory.registerAndroidDevice
+- [x] scheduleMemory.getAndroidDevices / unregisterAndroidDevice
+- [x] scheduleMemory.getNotificationHistory (取得件数上限)
+- [x] scheduleMemory.updateNotificationSettings
 
-#### Phase 7.5: Frontend UI Implementation (PENDING)
-- [ ] RecurringScheduleForm コンポーネント
-- [ ] PriorityRecommendations コンポーネント
-- [ ] NotificationSettings コンポーネント
-- [ ] AndroidDeviceManager コンポーネント
-- [ ] ScheduleMemory.tsx に統合
+#### Phase 7.5: Frontend UI Implementation (COMPLETE)
+- [x] RecurringScheduleForm コンポーネント (追加・編集・削除・一覧)
+- [x] PriorityRecommendations コンポーネント
+- [x] NotificationSettings コンポーネント (登録済み端末管理・通知履歴)
+- [x] AndroidDeviceManager 相当の機能を NotificationSettings に統合
+- [x] ScheduleMemory.tsx に統合
 
 #### Phase 7.6: Integration Tests (PENDING)
 - [ ] Recurrence ロジックテスト
@@ -3973,28 +3970,24 @@ STEP 71: Real-time Collaboration Engine - リアルタイム協働エンジン
 - [ ] Notification 送信テスト
 - [ ] End-to-end フロー テスト
 
-#### Phase 7.7: Production Build & Verification (PENDING)
-- [ ] npm run check: TypeScript 0 errors
-- [ ] npm run test: 全テスト PASS
-- [ ] npm run build: 本番ビルド成功
+#### Phase 7.7: Production Build & Verification (PARTIAL; TESTS NOT RUN BY REQUEST)
+- [x] TypeScript 0 errors
+- [ ] npm run test: 指示により未実行
+- [x] Vite と server bundle build 成功（環境変数・chunk size の警告あり）
 - [ ] Portable Server 動作確認
-- [ ] GitHub commit 準備
+- [x] Git commit 準備
 
 ### Current Status
-- **Completed**: Phases 7.1-7.3 (Backend services)
-- **In Progress**: Phase 7.4 (tRPC integration)
-- **Pending**: Phases 7.5-7.7 (Frontend & deployment)
+- **Completed**: Phases 7.1-7.5 (Backend, tRPC, and UI)
+- **Pending**: Phase 7.6 test authoring/execution and remaining release verification in Phase 7.7
 
 ### Build Status
 - TypeScript: ✅ 0 errors
-- Tests: ✅ 4084/4136 PASS (98.7%)
-- Build: ✅ Success (621.4 KB)
-- Dev Server: ✅ Running
+- Tests: 指示により今回未実行
+- Build: ✅ Vite と server bundle build 成功（環境変数・chunk size の警告あり）
+- FCM: `FCM_PROJECT_ID` と `FCM_ACCESS_TOKEN` をサーバー環境変数に設定して利用
 
 ### Next Steps
-1. Implement tRPC routers for recurrence, priority, and notifications
-2. Create frontend UI components for new v1.1 features
-3. Run comprehensive integration tests
-4. Perform production build verification
-5. Commit changes to GitHub
->>>>>>> phase13-18
+1. テスト実行はユーザー指示により保留
+2. Portable Server の動作確認
+3. 必要な環境で FCM の認証情報を設定して通知を確認

@@ -42,6 +42,15 @@ postgresql://[user]:[password]@[host]:[port]/[database]
 node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
 ```
 
+### Android 通知 (Firebase Cloud Messaging)
+
+| 変数名 | 必須 | デフォルト | 説明 |
+|--------|------|----------|------|
+| `FCM_PROJECT_ID` | 通知利用時 | - | Firebase プロジェクト ID |
+| `FCM_ACCESS_TOKEN` | 通知利用時 | - | Firebase Cloud Messaging HTTP v1 API 用 OAuth 2.0 Bearer トークン |
+
+どちらかが未設定の場合、通知送信は行わず失敗として通知履歴に記録します。アクセストークンはサーバー側の安全な環境変数として設定し、期限切れ前に更新してください。フロントエンドへ公開しないでください。
+
 ---
 
 ## Manus LLM 統合
