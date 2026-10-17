@@ -1962,22 +1962,22 @@ AI_AGENT_FEATURES.md   # 完全なドキュメント
 ## フェーズ29: 高品質顔入れ替え動画生成機能
 
 ### バックエンド実装
-- [ ] faceSwapEngine.ts - Facefusion統合エンジン
-- [ ] 動画処理パイプライン
-- [ ] GPU対応処理
-- [ ] 出力ファイル管理
+- [x] faceSwapEngine.ts - 既存のPython動画処理エンジンを接続
+- [x] 動画処理パイプライン
+- [x] CUDA対応環境でGPU推論、非対応環境はCPUへフォールバック
+- [x] 出力ファイル管理
 
 ### フロントエンドUI
-- [ ] FaceSwapUI.tsx - ファイルアップロード＆プレビュー
-- [ ] 進捗表示
-- [ ] 結果ダウンロード
+- [x] FaceSwapUI.tsx - ファイルアップロード＆プレビュー
+- [x] 進捗表示
+- [x] 結果ダウンロード
 
 ### tRPC API
-- [ ] faceSwap.uploadSource - ソース画像アップロード
-- [ ] faceSwap.uploadTarget - ターゲット動画アップロード
-- [ ] faceSwap.process - 処理実行
-- [ ] faceSwap.getStatus - ステータス取得
-- [ ] faceSwap.download - 結果ダウンロード
+- [x] faceSwap.uploadSource - 認証・サイズ/形式制限付きソース画像アップロード
+- [x] faceSwap.uploadTarget - 認証・サイズ/形式制限付きターゲット動画アップロード
+- [x] faceSwap.process - 所有ファイル限定で処理実行
+- [x] faceSwap.getStatus - ユーザーごとのステータス取得
+- [x] faceSwap.download - 所有ストレージキー限定ダウンロード
 
 ### テスト＆デバッグ
 - [ ] ユニットテスト

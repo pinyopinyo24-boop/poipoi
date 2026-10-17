@@ -10,13 +10,13 @@ import { spawn } from 'child_process';
 import { promises as fs } from 'fs';
 import path from 'path';
 import os from 'os';
+import { randomUUID } from 'crypto';
 
 export interface FaceSwapOptions {
   sourceImagePath: string;
   targetVideoPath: string;
   outputPath: string;
   quality?: 'low' | 'medium' | 'high';
-  enableEnhancer?: boolean;
   gpuAcceleration?: boolean;
 }
 
@@ -27,13 +27,14 @@ export interface FaceSwapProgress {
   error?: string;
 }
 
-class FaceSwapEngine {
+export class FaceSwapEngine {
   private tempDir: string;
   private currentProgress: FaceSwapProgress = {
     status: 'idle',
     progress: 0,
     message: 'Ready',
   };
+  private progressBuffer = '';
 
   constructor() {
     this.tempDir = path.join(os.tmpdir(), 'poipoi-faceswap');
@@ -50,12 +51,16 @@ class FaceSwapEngine {
   }
 
   async processFaceSwap(options: FaceSwapOptions): Promise<string> {
+    if (this.currentProgress.status === 'processing') {
+      throw new Error('A face swap job is already processing for this user');
+    }
     try {
       this.currentProgress = {
         status: 'processing',
         progress: 0,
         message: 'Starting face swap process...',
       };
+      this.progressBuffer = '';
 
       // Validate input files
       await this.validateInputFiles(options.sourceImagePath, options.targetVideoPath);
@@ -97,58 +102,60 @@ class FaceSwapEngine {
   private async runCompleteFacefusion(options: FaceSwapOptions): Promise<void> {
     // Use Python script to run the complete implementation
     return new Promise((resolve, reject) => {
-      const scriptPath = path.join(__dirname, '../../facefusion_complete.py');
+      const scriptPath = path.resolve(process.cwd(), 'server/facefusion_complete.py');
+      const pythonExecutable = process.env.PYTHON_EXECUTABLE || (process.platform === 'win32' ? 'python' : 'python3');
+      const workDir = path.join(path.dirname(options.outputPath), `.faceswap-work-${randomUUID()}`);
       
       const args = [
+        '-u',
         scriptPath,
+        '--work-dir', workDir,
         '--source', options.sourceImagePath,
         '--target', options.targetVideoPath,
         '--output', options.outputPath,
         '--quality', options.quality || 'high',
       ];
+      if (options.gpuAcceleration) args.push('--gpu');
 
-      if (options.enableEnhancer) {
-        args.push('--enable-enhancer');
-      }
-
-      if (options.gpuAcceleration) {
-        args.push('--gpu');
-      }
-
-      const process = spawn('python3', args, {
+      const child = spawn(pythonExecutable, args, {
         stdio: ['pipe', 'pipe', 'pipe'],
         timeout: 600000, // 10 minutes timeout
       });
 
-      let output = '';
       let errorOutput = '';
 
-      process.stdout?.on('data', (data) => {
-        output += data.toString();
+      child.stdout?.on('data', (data) => {
         this.parseProgress(data.toString());
       });
 
-      process.stderr?.on('data', (data) => {
-        errorOutput += data.toString();
+      child.stderr?.on('data', (data) => {
+        errorOutput = `${errorOutput}${data.toString()}`.slice(-20000);
         console.error('[FaceSwap] Error:', data.toString());
       });
 
-      process.on('close', (code) => {
-        if (code === 0) {
-          console.log('[FaceSwap] Process completed successfully');
-          resolve();
-        } else {
-          reject(new Error(`Face swap process failed with code ${code}: ${errorOutput}`));
-        }
+      child.on('close', (code) => {
+        void fs.rm(workDir, { recursive: true, force: true }).catch(() => undefined).then(() => {
+          if (code === 0) {
+            console.log('[FaceSwap] Process completed successfully');
+            resolve();
+          } else {
+            reject(new Error(`Face swap process failed with code ${code}: ${errorOutput}`));
+          }
+        });
       });
 
-      process.on('error', (error) => {
-        reject(new Error(`Failed to start face swap: ${error.message}`));
+      child.on('error', (error) => {
+        void fs.rm(workDir, { recursive: true, force: true }).catch(() => undefined).then(() => {
+          reject(new Error(`Failed to start face swap: ${error.message}`));
+        });
       });
     });
   }
 
-  private parseProgress(output: string): void {
+  private parseProgress(chunk: string): void {
+    const lines = `${this.progressBuffer}${chunk}`.split(/\r?\n/);
+    this.progressBuffer = lines.pop()?.slice(-2000) || '';
+    const output = lines.join('\n');
     // Parse progress from output
     const progressMatch = output.match(/(\d+)%/);
     if (progressMatch) {
@@ -175,6 +182,26 @@ class FaceSwapEngine {
       this.currentProgress.progress = 100;
       this.currentProgress.message = 'Finalizing...';
     }
+
+    const swapFrames = output.match(/処理中:\s*(\d+)\/(\d+)フレーム/);
+    if (swapFrames) {
+      const completed = Number(swapFrames[1]);
+      const total = Number(swapFrames[2]);
+      if (total > 0) {
+        this.currentProgress.progress = 20 + Math.floor((completed / total) * 60);
+        this.currentProgress.message = `顔入れ替え処理中: ${completed}/${total}フレーム`;
+      }
+    }
+
+    const mergedFrames = output.match(/結合中:\s*(\d+)\/(\d+)フレーム/);
+    if (mergedFrames) {
+      const completed = Number(mergedFrames[1]);
+      const total = Number(mergedFrames[2]);
+      if (total > 0) {
+        this.currentProgress.progress = 80 + Math.floor((completed / total) * 19);
+        this.currentProgress.message = `動画を再構成中: ${completed}/${total}フレーム`;
+      }
+    }
   }
 
   private async verifyOutput(outputPath: string): Promise<void> {
@@ -193,43 +220,24 @@ class FaceSwapEngine {
     return this.currentProgress;
   }
 
-  async cleanup(): Promise<void> {
+  async cleanup(userTempDir?: string): Promise<void> {
     try {
-      // Clean up temporary files
-      const files = await fs.readdir(this.tempDir);
-      for (const file of files) {
-        const filePath = path.join(this.tempDir, file);
-        const stats = await fs.stat(filePath);
-        if (stats.isDirectory()) {
-          // Recursively remove directories
-          await this.removeDirectory(filePath);
-        } else {
-          await fs.unlink(filePath);
-        }
+      if (!userTempDir) {
+        throw new Error('A user-scoped temporary directory is required');
       }
+      const root = path.resolve(this.tempDir);
+      const target = path.resolve(userTempDir);
+      if (target === root || !target.startsWith(`${root}${path.sep}`)) {
+        throw new Error('Refusing to clean a directory outside the user-scoped temporary root');
+      }
+      await fs.rm(target, { recursive: true, force: true });
       console.log('[FaceSwap] Cleanup completed');
     } catch (error) {
       console.error('[FaceSwap] Cleanup error:', error);
+      throw error;
     }
   }
 
-  private async removeDirectory(dirPath: string): Promise<void> {
-    try {
-      const files = await fs.readdir(dirPath);
-      for (const file of files) {
-        const filePath = path.join(dirPath, file);
-        const stats = await fs.stat(filePath);
-        if (stats.isDirectory()) {
-          await this.removeDirectory(filePath);
-        } else {
-          await fs.unlink(filePath);
-        }
-      }
-      await fs.rmdir(dirPath);
-    } catch (error) {
-      console.error(`[FaceSwap] Error removing directory ${dirPath}:`, error);
-    }
-  }
 }
 
 // Export singleton instance

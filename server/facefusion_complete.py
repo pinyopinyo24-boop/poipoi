@@ -13,6 +13,7 @@ import os
 import subprocess
 import sys
 import argparse
+import tempfile
 from pathlib import Path
 
 # Parse command-line arguments
@@ -20,7 +21,9 @@ parser = argparse.ArgumentParser(description='Face swap using Facefusion')
 parser.add_argument('--source', type=str, default='/home/ubuntu/source_face.jpg', help='Source face image')
 parser.add_argument('--target', type=str, default='/home/ubuntu/target_video.mp4', help='Target video')
 parser.add_argument('--output', type=str, default='/home/ubuntu/face_swap_facefusion.mp4', help='Output video')
-parser.add_argument('--quality', type=str, default='high', help='Quality level')
+parser.add_argument('--quality', choices=['low', 'medium', 'high'], default='high', help='Quality level')
+parser.add_argument('--work-dir', type=str, default=None, help='Directory for temporary processing files')
+parser.add_argument('--gpu', action='store_true', help='Use CUDA for face inference when available')
 args = parser.parse_args()
 
 print("="*70)
@@ -34,14 +37,27 @@ print(f"Output: {args.output}")
 print("\n[ステップ1] 動画を1フレームずつ分解中...")
 
 target_video = args.target
-frames_dir = '/tmp/frames_facefusion'
+if args.work_dir:
+    os.makedirs(args.work_dir, exist_ok=True)
+    work_dir = tempfile.mkdtemp(prefix='job-', dir=args.work_dir)
+else:
+    work_dir = tempfile.mkdtemp(prefix='poipoi-faceswap-')
+frames_dir = os.path.join(work_dir, 'frames')
 os.makedirs(frames_dir, exist_ok=True)
+frame_jpeg_quality = {'low': 85, 'medium': 93, 'high': 98}[args.quality]
 
 cap = cv2.VideoCapture(target_video)
+if not cap.isOpened():
+    print(f"❌ ターゲット動画を開けません: {target_video}")
+    sys.exit(1)
 fps = int(cap.get(cv2.CAP_PROP_FPS))
 width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
 height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
 total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+if fps <= 0 or width <= 0 or height <= 0:
+    cap.release()
+    print("❌ ターゲット動画の情報を読み取れません")
+    sys.exit(1)
 
 print(f"  動画情報: {width}x{height}, {fps}fps, {total_frames}フレーム")
 
@@ -52,10 +68,13 @@ while True:
         break
     
     frame_path = os.path.join(frames_dir, f'frame_{frame_count:06d}.jpg')
-    cv2.imwrite(frame_path, frame, [cv2.IMWRITE_JPEG_QUALITY, 95])
+    cv2.imwrite(frame_path, frame, [cv2.IMWRITE_JPEG_QUALITY, frame_jpeg_quality])
     frame_count += 1
 
 cap.release()
+if frame_count == 0:
+    print("❌ ターゲット動画に処理可能なフレームがありません")
+    sys.exit(1)
 print(f"✅ ステップ1完了: {frame_count}フレームを分解")
 
 # ===== ステップ2: 各フレームで顔入れ替え処理（高度なブレンディング） =====
@@ -64,9 +83,22 @@ print("\n[ステップ2] 各フレームで顔入れ替え処理中...")
 try:
     import insightface
     
-    # 顔検出器を初期化
-    detector = insightface.app.FaceAnalysis(name='buffalo_l', providers=['CPUExecutionProvider'])
-    detector.prepare(ctx_id=-1, det_size=(640, 640))
+    # 顔検出器を初期化し、利用可能な場合のみCUDAを使用する
+    providers = ['CPUExecutionProvider']
+    context_id = -1
+    if args.gpu:
+        try:
+            import onnxruntime as ort
+            if 'CUDAExecutionProvider' in ort.get_available_providers():
+                providers = ['CUDAExecutionProvider', 'CPUExecutionProvider']
+                context_id = 0
+                print('CUDA face inference enabled')
+            else:
+                print('CUDA provider unavailable; falling back to CPU')
+        except ImportError:
+            print('ONNX Runtime unavailable; falling back to CPU')
+    detector = insightface.app.FaceAnalysis(name='buffalo_l', providers=providers)
+    detector.prepare(ctx_id=context_id, det_size=(640, 640))
     
     # ソース画像を読み込み
     source_image = cv2.imread(args.source)
@@ -171,9 +203,12 @@ except Exception as e:
 # ===== ステップ3: 処理後のフレームを動画に再結合 =====
 print("\n[ステップ3] 処理後のフレームを動画に再結合中...")
 
-temp_video = '/tmp/face_swap_temp.mp4'
+temp_video = os.path.join(work_dir, 'face_swap_temp.mp4')
 fourcc = cv2.VideoWriter_fourcc(*'mp4v')
 out = cv2.VideoWriter(temp_video, fourcc, fps, (width, height))
+if not out.isOpened():
+    print("❌ 出力動画を作成できません")
+    sys.exit(1)
 
 # Ensure output directory exists
 os.makedirs(os.path.dirname(args.output) or '.', exist_ok=True)
@@ -194,7 +229,7 @@ print(f"✅ フレームを動画に再結合しました")
 # ===== 音声データを戻す =====
 print("\n  音声データを処理中...")
 
-audio_temp = '/tmp/audio_extract.aac'
+audio_temp = os.path.join(work_dir, 'audio_extract.aac')
 final_output = args.output
 
 # 音声抽出
@@ -225,6 +260,7 @@ print(f"✅ ステップ3完了: 音声データを戻しました")
 # クリーンアップ
 import shutil
 shutil.rmtree(frames_dir, ignore_errors=True)
+shutil.rmtree(work_dir, ignore_errors=True)
 
 print("\n" + "="*70)
 print("🎉 完成！")

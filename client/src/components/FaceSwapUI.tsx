@@ -3,7 +3,7 @@
  * 高品質顔入れ替え動画生成インターフェース
  */
 
-import React, { useState, useRef } from 'react';
+import React, { useEffect, useState, useRef } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Progress } from '@/components/ui/progress';
@@ -19,9 +19,12 @@ export const FaceSwapUI: React.FC<FaceSwapUIProps> = ({ onComplete }) => {
   const [sourceImage, setSourceImage] = useState<File | null>(null);
   const [targetVideo, setTargetVideo] = useState<File | null>(null);
   const [isProcessing, setIsProcessing] = useState(false);
+  const [gpuAcceleration, setGpuAcceleration] = useState(false);
   const [progress, setProgress] = useState(0);
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<any | null>(null);
+  const [sourcePreviewUrl, setSourcePreviewUrl] = useState<string | null>(null);
+  const [targetPreviewUrl, setTargetPreviewUrl] = useState<string | null>(null);
 
   const sourceInputRef = useRef<HTMLInputElement>(null);
   const targetInputRef = useRef<HTMLInputElement>(null);
@@ -29,21 +32,63 @@ export const FaceSwapUI: React.FC<FaceSwapUIProps> = ({ onComplete }) => {
   const uploadSourceMutation = trpc.faceswapHQ?.uploadSource?.useMutation();
   const uploadTargetMutation = trpc.faceswapHQ?.uploadTarget?.useMutation();
   const processMutation = trpc.faceswapHQ?.process?.useMutation();
-  const statusQuery = trpc.faceswapHQ?.getStatus?.useQuery();
+  const statusQuery = trpc.faceswapHQ.getStatus.useQuery(undefined, {
+    enabled: isProcessing,
+    refetchInterval: isProcessing ? 1000 : false,
+  });
+
+  useEffect(() => {
+    if (!sourceImage) {
+      setSourcePreviewUrl(null);
+      return;
+    }
+    const previewUrl = URL.createObjectURL(sourceImage);
+    setSourcePreviewUrl(previewUrl);
+    return () => URL.revokeObjectURL(previewUrl);
+  }, [sourceImage]);
+
+  useEffect(() => {
+    if (!targetVideo) {
+      setTargetPreviewUrl(null);
+      return;
+    }
+    const previewUrl = URL.createObjectURL(targetVideo);
+    setTargetPreviewUrl(previewUrl);
+    return () => URL.revokeObjectURL(previewUrl);
+  }, [targetVideo]);
+
+  useEffect(() => {
+    const currentProgress = statusQuery.data?.progress;
+    if (isProcessing && typeof currentProgress === 'number') {
+      setProgress(Math.max(30, Math.min(99, currentProgress)));
+    }
+  }, [isProcessing, statusQuery.data?.progress]);
 
   const handleSourceChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
+      if (file.size > 20 * 1024 * 1024) {
+        setError('画像ファイルは20 MB以下にしてください');
+        e.target.value = '';
+        return;
+      }
       setSourceImage(file);
       setError(null);
+      setResult(null);
     }
   };
 
   const handleTargetChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
+      if (file.size > 64 * 1024 * 1024) {
+        setError('動画ファイルは64 MB以下にしてください');
+        e.target.value = '';
+        return;
+      }
       setTargetVideo(file);
       setError(null);
+      setResult(null);
     }
   };
 
@@ -91,8 +136,7 @@ export const FaceSwapUI: React.FC<FaceSwapUIProps> = ({ onComplete }) => {
         sourceImagePath: sourceResult.path,
         targetVideoPath: targetResult.path,
         quality: 'high',
-        enableEnhancer: true,
-        gpuAcceleration: true,
+        gpuAcceleration,
       });
 
       setProgress(100);
@@ -138,11 +182,14 @@ export const FaceSwapUI: React.FC<FaceSwapUIProps> = ({ onComplete }) => {
               <input
                 ref={sourceInputRef}
                 type="file"
-                accept="image/*"
+                accept="image/jpeg,image/png,image/webp"
                 onChange={handleSourceChange}
                 className="hidden"
               />
             </div>
+            {sourcePreviewUrl && (
+              <img src={sourcePreviewUrl} alt="ソース画像のプレビュー" className="max-h-64 rounded-lg object-contain" />
+            )}
           </div>
 
           {/* Target Video Upload */}
@@ -164,12 +211,24 @@ export const FaceSwapUI: React.FC<FaceSwapUIProps> = ({ onComplete }) => {
               <input
                 ref={targetInputRef}
                 type="file"
-                accept="video/*"
+                accept="video/mp4,video/quicktime,video/webm,video/x-matroska,video/x-msvideo"
                 onChange={handleTargetChange}
                 className="hidden"
               />
             </div>
+            {targetPreviewUrl && (
+              <video src={targetPreviewUrl} controls className="max-h-64 w-full rounded-lg" />
+            )}
           </div>
+
+          <label className="flex items-center gap-2 text-sm">
+            <input
+              type="checkbox"
+              checked={gpuAcceleration}
+              onChange={event => setGpuAcceleration(event.target.checked)}
+            />
+            CUDA対応GPUが利用可能なら推論に使用する（利用不可の場合はCPUに切り替え）
+          </label>
 
           {/* Error Alert */}
           {error && (
@@ -232,7 +291,7 @@ export const FaceSwapUI: React.FC<FaceSwapUIProps> = ({ onComplete }) => {
               <li>• ソース画像は正面向き、高解像度、照明が良い画像を使用してください</li>
               <li>• ターゲット動画は MP4 形式、30fps 推奨です</li>
               <li>• 処理時間は動画の長さと解像度によって異なります</li>
-              <li>• GPU 対応で大幅に高速化されます</li>
+              <li>• 動画は最大64 MBです。CUDA推論は対応環境でのみ使用されます</li>
             </ul>
           </div>
         </CardContent>
