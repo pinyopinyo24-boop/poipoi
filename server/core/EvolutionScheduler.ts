@@ -267,7 +267,7 @@ export class EvolutionScheduler {
     }
 
     // ─ 安全条件 4: 累積失敗率チェック ─
-    this.checkFailureRate(userId);
+    this.checkFailureRate(userId, result);
 
     // 結果を保存して履歴へ
     this.saveRunResult(userId, result);
@@ -470,8 +470,9 @@ export class EvolutionScheduler {
   }
 
   /** 累積失敗率チェック */
-  private checkFailureRate(userId: string): void {
+  private checkFailureRate(userId: string, latestResult: ScheduledRunResult): void {
     const history = this.runHistory.filter((r) => r.userId === userId || r.userId === 'system');
+    history.push(latestResult);
     if (history.length < 5) return; // サンプルが少なすぎる場合はスキップ
 
     const recent = history.slice(-20);
