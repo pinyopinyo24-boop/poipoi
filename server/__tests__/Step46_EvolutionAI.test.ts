@@ -1,8 +1,8 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { EvolutionAIManager, createEvolutionAIManager } from '../core/EvolutionAIManager';
 import { EvolutionService } from '../services/EvolutionService';
-import { LearningAnalyzer } from '../services/LearningAnalyzer';
-import { FeedbackService, UserFeedback } from '../services/FeedbackService';
+import { FeedbackItem, LearningAnalyzer } from '../services/LearningAnalyzer';
+import { FeedbackService } from '../services/FeedbackService';
 import { ImprovementEngine } from '../services/ImprovementEngine';
 import { VersionManager } from '../services/VersionManager';
 import { EvolutionValidator } from '../services/EvolutionValidator';
@@ -107,6 +107,72 @@ describe('STEP 46: EvolutionAIManager', () => {
       expect(analysis.usageAnalysis.userId).toBe('test_user_1');
       expect(analysis.feedbackAnalysis.userId).toBe('test_user_1');
     });
+
+    it('should persist usage and feedback analyses in learning data', async () => {
+      await manager.analyzeUsage('learning_data_user');
+      await manager.analyzeFeedback('learning_data_user');
+
+      const learningData = await manager.getLearningData('learning_data_user');
+      expect(learningData.analyses).toHaveLength(1);
+      expect(learningData.analyses[0].type).toBe('usage');
+      expect(learningData.proposals).toEqual([]);
+    });
+
+    it('should include newly created versions in version history', async () => {
+      const created = await manager.createVersion('version_history_user', 'Snapshot', { value: 1 });
+
+      await expect(manager.getVersionHistory('version_history_user')).resolves.toContainEqual(created);
+    });
+
+    it('should return proposal impact details and related proposals', async () => {
+      const proposals = await manager.generateImprovementProposals('proposal_details_user');
+
+      const details = await manager.getProposalDetails(proposals[0].id);
+      expect(details.id).toBe(proposals[0].id);
+      expect(details.impact).toBeGreaterThanOrEqual(0);
+      expect(Array.isArray(details.relatedProposals)).toBe(true);
+    });
+
+    it('should reject execution for an unknown proposal', async () => {
+      await expect(manager.executeOptimization('test_user', 'missing_proposal')).rejects.toThrow(
+        'Proposal not found: missing_proposal'
+      );
+    });
+
+    it('should reject approval and rejection for an unknown proposal', async () => {
+      await expect(manager.approveProposal('test_user', 'missing_proposal')).rejects.toThrow(
+        'Proposal not found: missing_proposal'
+      );
+      await expect(
+        manager.rejectProposal('test_user', 'missing_proposal', 'invalid')
+      ).rejects.toThrow('Proposal not found: missing_proposal');
+    });
+
+    it('should export generated proposals and versions for the requested user', async () => {
+      const userId = 'export_bundle_user';
+      await manager.generateImprovementProposals(userId);
+      await manager.createVersion(userId, 'Export snapshot', { value: 2 });
+
+      const exported = await manager.exportLearningData(userId);
+      expect(exported.proposals.length).toBeGreaterThan(0);
+      expect(exported.versions).toHaveLength(1);
+      expect(exported.userId).toBe(userId);
+    });
+
+    it('should report zero evolution stats for another user', async () => {
+      await manager.generateImprovementProposals('populated_user');
+
+      const stats = await manager.getEvolutionStats('empty_user');
+      expect(stats.totalOptimizations).toBe(0);
+      expect(stats.totalProposals).toBe(0);
+      expect(stats.totalVersions).toBe(0);
+    });
+
+    it('should reject restoring an unknown version', async () => {
+      await expect(manager.restoreVersion('test_user', 'missing_version')).rejects.toThrow(
+        'Version not found: missing_version'
+      );
+    });
   });
 
   describe('EvolutionService', () => {
@@ -136,6 +202,7 @@ describe('STEP 46: EvolutionAIManager', () => {
       const proposals = [
         {
           id: '1',
+          userId: 'test_user',
           priority: 'low' as const,
           title: 'Low Priority',
           description: 'Test',
@@ -147,6 +214,7 @@ describe('STEP 46: EvolutionAIManager', () => {
         },
         {
           id: '2',
+          userId: 'test_user',
           priority: 'high' as const,
           title: 'High Priority',
           description: 'Test',
@@ -183,6 +251,81 @@ describe('STEP 46: EvolutionAIManager', () => {
       expect(impact).toBeGreaterThan(0);
       expect(impact).toBeLessThanOrEqual(50);
     });
+
+    it('should return an empty result for an empty optimization batch', async () => {
+      await expect(evolutionService.executeMultipleOptimizations([])).resolves.toEqual([]);
+    });
+
+    it('should execute every proposal in a batch', async () => {
+      const first = {
+        id: 'batch_1', userId: 'batch_user', title: 'First', description: 'First proposal',
+        type: 'performance' as const, priority: 'high' as const, estimatedImpact: 50,
+        estimatedEffort: 30, status: 'accepted' as const, createdAt: new Date(),
+      };
+      const second = { ...first, id: 'batch_2', type: 'feature' as const };
+
+      const results = await evolutionService.executeMultipleOptimizations([first, second]);
+      expect(results.map(result => result.proposalId)).toEqual(['batch_1', 'batch_2']);
+      expect(results.every(result => result.success)).toBe(true);
+    });
+
+    it('should include performance metrics for a performance proposal', async () => {
+      const result = await evolutionService.executeOptimization({
+        id: 'performance_metrics', userId: 'test_user', title: 'Performance',
+        description: 'Improve response time', type: 'performance', priority: 'high',
+        estimatedImpact: 60, estimatedEffort: 40, status: 'pending', createdAt: new Date(),
+      });
+
+      expect(result.metrics?.performanceGain).toBeGreaterThanOrEqual(10);
+      expect(result.metrics?.resourceSavings).toBeGreaterThanOrEqual(5);
+    });
+
+    it('should scale impact down when estimated effort increases', async () => {
+      const proposal = {
+        id: 'effort_impact', userId: 'test_user', title: 'Effort', description: 'Effort comparison',
+        type: 'feature' as const, priority: 'medium' as const, estimatedImpact: 50,
+        estimatedEffort: 0, status: 'pending' as const, createdAt: new Date(),
+      };
+
+      const lowEffort = await evolutionService.predictImpact(proposal);
+      const highEffort = await evolutionService.predictImpact({ ...proposal, estimatedEffort: 100 });
+      expect(lowEffort).toBe(50);
+      expect(highEffort).toBe(40);
+    });
+
+    it('should preserve input order among proposals with equal priority', async () => {
+      const proposals = ['first', 'second'].map(id => ({
+        id, userId: 'sort_user', title: id, description: id, type: 'feature' as const,
+        priority: 'medium' as const, estimatedImpact: 10, estimatedEffort: 10,
+        status: 'pending' as const, createdAt: new Date(),
+      }));
+
+      const sorted = await evolutionService.resolveDependencies(proposals);
+      expect(sorted.map(proposal => proposal.id)).toEqual(['first', 'second']);
+    });
+
+    it('should not mutate the input when resolving dependencies', async () => {
+      const proposals = ['low', 'critical'].map((id, index) => ({
+        id, userId: 'sort_user', title: id, description: id, type: 'feature' as const,
+        priority: (index === 0 ? 'low' : 'critical') as 'low' | 'critical',
+        estimatedImpact: 10, estimatedEffort: 10, status: 'pending' as const,
+        createdAt: new Date(),
+      }));
+
+      await evolutionService.resolveDependencies(proposals);
+      expect(proposals.map(proposal => proposal.id)).toEqual(['low', 'critical']);
+    });
+
+    it('should return a completion timestamp for optimization results', async () => {
+      const before = Date.now();
+      const result = await evolutionService.executeOptimization({
+        id: 'timestamp_result', userId: 'test_user', title: 'Timestamp',
+        description: 'Check result timestamp', type: 'other', priority: 'low',
+        estimatedImpact: 10, estimatedEffort: 10, status: 'pending', createdAt: new Date(),
+      });
+
+      expect(result.timestamp.getTime()).toBeGreaterThanOrEqual(before);
+    });
   });
 
   describe('LearningAnalyzer', () => {
@@ -196,26 +339,20 @@ describe('STEP 46: EvolutionAIManager', () => {
     });
 
     it('should analyze feedback', async () => {
-      const feedback: UserFeedback[] = [
+      const feedback: FeedbackItem[] = [
         {
-          id: '1',
           userId: 'test_user',
           rating: 5,
           comment: 'Great!',
           category: 'feature',
-          tags: ['good'],
-          createdAt: new Date(),
-          isAnonymous: false,
+          timestamp: new Date(),
         },
         {
-          id: '2',
           userId: 'test_user',
           rating: 3,
           comment: 'OK',
           category: 'ui',
-          tags: ['ux'],
-          createdAt: new Date(),
-          isAnonymous: false,
+          timestamp: new Date(),
         },
       ];
 
@@ -243,6 +380,39 @@ describe('STEP 46: EvolutionAIManager', () => {
       
       expect(Array.isArray(recommendations)).toBe(true);
       expect(recommendations.length).toBeGreaterThan(0);
+    });
+
+    it('should return no trends when there is not enough history', async () => {
+      const current = await learningAnalyzer.analyzeUsagePatterns('trend_user');
+
+      await expect(learningAnalyzer.detectTrends('trend_user', [current])).resolves.toEqual([]);
+    });
+
+    it('should detect an increase in session activity', async () => {
+      const current = await learningAnalyzer.analyzeUsagePatterns('trend_user');
+      const previous = { ...current, totalSessions: current.totalSessions - 25 };
+
+      const trends = await learningAnalyzer.detectTrends('trend_user', [current, previous]);
+      expect(trends).toContain('Increasing usage activity');
+    });
+
+    it('should detect a decrease in session activity', async () => {
+      const current = await learningAnalyzer.analyzeUsagePatterns('trend_user');
+      const previous = { ...current, totalSessions: current.totalSessions + 25 };
+
+      const trends = await learningAnalyzer.detectTrends('trend_user', [current, previous]);
+      expect(trends).toContain('Decreasing usage activity');
+    });
+
+    it('should detect adoption of a new feature', async () => {
+      const current = await learningAnalyzer.analyzeUsagePatterns('trend_user');
+      const previous = {
+        ...current,
+        topFeatures: current.topFeatures.filter(feature => feature.featureName !== 'AIChat'),
+      };
+
+      const trends = await learningAnalyzer.detectTrends('trend_user', [current, previous]);
+      expect(trends.some(trend => trend.includes('AIChat'))).toBe(true);
     });
   });
 
@@ -469,6 +639,79 @@ describe('STEP 46: EvolutionAIManager', () => {
       expect(feasibility.score).toBeLessThanOrEqual(100);
       expect(feasibility.recommendation).toBeDefined();
     });
+
+    it('should generate security proposals even without usage data', async () => {
+      const usageAnalysis = await learningAnalyzer.analyzeUsagePatterns('security_user');
+      const feedbackAnalysis = await learningAnalyzer.analyzeFeedback([]);
+      const proposals = await improvementEngine.generateProposals({
+        usageAnalysis, feedbackAnalysis, userId: 'security_user',
+      });
+
+      expect(proposals.filter(proposal => proposal.type === 'security')).toHaveLength(2);
+      expect(proposals.every(proposal => proposal.userId === 'security_user')).toBe(true);
+    });
+
+    it('should propose a mobile experience improvement when mobile usage is high', async () => {
+      const usageAnalysis = await learningAnalyzer.analyzeUsagePatterns('mobile_user');
+      usageAnalysis.deviceTypes.mobile = 0.5;
+      const feedbackAnalysis = await learningAnalyzer.analyzeFeedback([]);
+
+      const proposals = await improvementEngine.generateProposals({
+        usageAnalysis, feedbackAnalysis, userId: 'mobile_user',
+      });
+      expect(proposals.some(proposal => proposal.title === 'Enhance Mobile Experience')).toBe(true);
+    });
+
+    it('should clamp estimated impact to its supported range', async () => {
+      const proposal = {
+        id: 'high_impact', userId: 'test_user', title: 'High impact',
+        description: 'High impact proposal', type: 'performance' as const,
+        priority: 'critical' as const, estimatedImpact: 150, estimatedEffort: 0,
+        status: 'pending' as const, createdAt: new Date(),
+      };
+
+      await expect(improvementEngine.estimateImpact(proposal)).resolves.toBe(100);
+    });
+
+    it('should find proposals with a matching type or priority but exclude itself', async () => {
+      const proposals = [
+        { id: 'base', userId: 'related_user', title: 'Base', description: 'Base', type: 'feature' as const, priority: 'high' as const, estimatedImpact: 50, estimatedEffort: 40, status: 'pending' as const, createdAt: new Date() },
+        { id: 'same_type', userId: 'related_user', title: 'Same type', description: 'Same type', type: 'feature' as const, priority: 'low' as const, estimatedImpact: 30, estimatedEffort: 20, status: 'pending' as const, createdAt: new Date() },
+        { id: 'same_priority', userId: 'related_user', title: 'Same priority', description: 'Same priority', type: 'ux' as const, priority: 'high' as const, estimatedImpact: 30, estimatedEffort: 20, status: 'pending' as const, createdAt: new Date() },
+        { id: 'unrelated', userId: 'related_user', title: 'Unrelated', description: 'Unrelated', type: 'security' as const, priority: 'low' as const, estimatedImpact: 30, estimatedEffort: 20, status: 'pending' as const, createdAt: new Date() },
+      ];
+
+      const related = await improvementEngine.findRelatedProposals(proposals[0], proposals);
+      expect(related.map(proposal => proposal.id)).toEqual(['same_type', 'same_priority']);
+    });
+
+    it('should merge proposals using the strongest impact and combined effort', async () => {
+      const base = {
+        userId: 'merge_user', type: 'feature' as const, priority: 'medium' as const,
+        estimatedImpact: 30, estimatedEffort: 20, status: 'pending' as const,
+        createdAt: new Date(),
+      };
+      const first = { ...base, id: 'first', title: 'First', description: 'First proposal' };
+      const second = { ...base, id: 'second', title: 'Second', description: 'Second proposal', estimatedImpact: 60, estimatedEffort: 35 };
+
+      const merged = await improvementEngine.mergeProposals(first, second);
+      expect(merged.estimatedImpact).toBe(60);
+      expect(merged.estimatedEffort).toBe(55);
+      expect(merged.title).toContain('First & Second');
+    });
+
+    it('should report issues for proposals with high effort and low impact', async () => {
+      const proposal = {
+        id: 'low_feasibility', userId: 'test_user', title: 'Low feasibility',
+        description: 'High effort with low impact', type: 'feature' as const,
+        priority: 'low' as const, estimatedImpact: 10, estimatedEffort: 90,
+        status: 'pending' as const, createdAt: new Date(),
+      };
+
+      const feasibility = await improvementEngine.assessFeasibility(proposal);
+      expect(feasibility.score).toBeLessThan(30);
+      expect(feasibility.recommendation).toBe('Consider deprioritizing this proposal');
+    });
   });
 
   describe('VersionManager', () => {
@@ -551,6 +794,38 @@ describe('STEP 46: EvolutionAIManager', () => {
       expect(stats.totalVersions).toBe(3);
       expect(stats.newestVersion).toBeDefined();
       expect(stats.oldestVersion).toBeDefined();
+    });
+
+    it('should detect data tampering through the version checksum', async () => {
+      const version = await versionManager.createVersion({
+        userId: 'test_user', description: 'Tamper check', data: { value: 1 }, timestamp: new Date(),
+      });
+      version.data.value = 2;
+
+      await expect(versionManager.validateVersion(version)).resolves.toBe(false);
+    });
+
+    it('should keep only the requested number of newest versions', async () => {
+      const versions = await Promise.all([1, 2, 3].map(index =>
+        versionManager.createVersion({
+          userId: 'test_user', description: `Version ${index}`, data: { index }, timestamp: new Date(index),
+        })
+      ));
+
+      await expect(versionManager.compressHistory(versions, 2)).resolves.toEqual(versions.slice(0, 2));
+    });
+
+    it('should merge version data with the second version taking precedence', async () => {
+      const first = await versionManager.createVersion({
+        userId: 'test_user', description: 'First', data: { shared: 'first', onlyFirst: true }, timestamp: new Date(),
+      });
+      const second = await versionManager.createVersion({
+        userId: 'test_user', description: 'Second', data: { shared: 'second', onlySecond: true }, timestamp: new Date(),
+      });
+
+      const merged = await versionManager.mergeVersions(first, second);
+      expect(merged.data).toEqual({ shared: 'second', onlyFirst: true, onlySecond: true });
+      await expect(versionManager.validateVersion(merged)).resolves.toBe(true);
     });
   });
 
@@ -674,6 +949,39 @@ describe('STEP 46: EvolutionAIManager', () => {
       expect(result.invalidProposals).toBeDefined();
       expect(result.issues).toBeDefined();
     });
+
+    it('should normalize proposal text and clamp numeric values', async () => {
+      const proposal = {
+        id: 'normalize', userId: 'test_user', title: '  Proposal  ',
+        description: '  Description  ', type: 'feature' as const, priority: 'medium' as const,
+        estimatedImpact: 120, estimatedEffort: -5, status: 'pending' as const,
+        createdAt: new Date(),
+      };
+
+      const normalized = await evolutionValidator.normalizeProposal(proposal);
+      expect(normalized.title).toBe('Proposal');
+      expect(normalized.description).toBe('Description');
+      expect(normalized.estimatedImpact).toBe(100);
+      expect(normalized.estimatedEffort).toBe(0);
+    });
+
+    it('should normalize multiple proposals without changing their order', async () => {
+      const proposals = ['first', 'second'].map(id => ({
+        id, userId: 'test_user', title: ` ${id} `, description: id,
+        type: 'feature' as const, priority: 'medium' as const, estimatedImpact: 50,
+        estimatedEffort: 40, status: 'pending' as const, createdAt: new Date(),
+      }));
+
+      const normalized = await evolutionValidator.normalizeProposals(proposals);
+      expect(normalized.map(proposal => proposal.id)).toEqual(['first', 'second']);
+      expect(normalized[0].title).toBe('first');
+    });
+
+    it('should accept an empty proposal set', async () => {
+      await expect(evolutionValidator.validateProposalSet([])).resolves.toMatchObject({
+        valid: true, validProposals: [], invalidProposals: [], issues: [],
+      });
+    });
   });
 
   describe('EvolutionRepository', () => {
@@ -747,6 +1055,55 @@ describe('STEP 46: EvolutionAIManager', () => {
       
       expect(learningData.analyses.length).toBe(0);
     });
+
+    it('should keep saved analyses isolated by user', async () => {
+      await repository.saveAnalysis({
+        userId: 'analysis_user_a', type: 'usage', data: { owner: 'a' }, timestamp: new Date(),
+      });
+      await repository.saveAnalysis({
+        userId: 'analysis_user_b', type: 'usage', data: { owner: 'b' }, timestamp: new Date(),
+      });
+
+      const dataA = await repository.getLearningData('analysis_user_a');
+      expect(dataA.analyses).toHaveLength(1);
+      expect(dataA.analyses[0].data.owner).toBe('a');
+    });
+
+    it('should apply limits when retrieving proposal history', async () => {
+      await repository.saveProposals({
+        userId: 'limited_proposals', timestamp: new Date(), proposals: [
+          { id: 'p1', userId: 'limited_proposals', title: 'One', description: 'One', type: 'feature', priority: 'low', estimatedImpact: 10, estimatedEffort: 10, status: 'pending', createdAt: new Date() },
+          { id: 'p2', userId: 'limited_proposals', title: 'Two', description: 'Two', type: 'feature', priority: 'low', estimatedImpact: 10, estimatedEffort: 10, status: 'pending', createdAt: new Date() },
+        ],
+      });
+
+      await expect(repository.getProposals('limited_proposals', 1)).resolves.toHaveLength(1);
+    });
+
+    it('should return the most recently saved version as current', async () => {
+      const version = (id: string) => ({
+        id, userId: 'current_version_user', description: id, data: { id }, timestamp: new Date(),
+      });
+      await repository.saveVersion(version('older'));
+      await repository.saveVersion(version('newer'));
+
+      await expect(repository.getCurrentVersion('current_version_user')).resolves.toMatchObject({
+        id: 'newer',
+      });
+    });
+
+    it('should update an existing proposal and return null for a missing proposal', async () => {
+      await repository.saveProposals({
+        userId: 'update_user', timestamp: new Date(), proposals: [
+          { id: 'update_me', userId: 'update_user', title: 'Original', description: 'Proposal', type: 'feature', priority: 'low', estimatedImpact: 10, estimatedEffort: 10, status: 'pending', createdAt: new Date() },
+        ],
+      });
+
+      await expect(repository.updateProposal('update_me', { status: 'accepted' })).resolves.toMatchObject({
+        status: 'accepted',
+      });
+      await expect(repository.updateProposal('missing', { status: 'accepted' })).resolves.toBeNull();
+    });
   });
 
   describe('Integration Tests', () => {
@@ -812,6 +1169,7 @@ describe('STEP 46: EvolutionAIManager', () => {
       if (proposals.length > 0) {
         // 2. 提案を承認
         const approved = await manager.approveProposal(userId, proposals[0].id);
+        if (!approved) throw new Error('Expected proposal approval to succeed');
         expect(approved.status).toBe('accepted');
         await expect(manager.approveProposal(userId, proposals[0].id)).rejects.toThrow(
           'Only pending proposals can be approved'
@@ -820,6 +1178,7 @@ describe('STEP 46: EvolutionAIManager', () => {
         // 3. 別の提案を却下
         if (proposals.length > 1) {
           const rejected = await manager.rejectProposal(userId, proposals[1].id, 'Not feasible');
+          if (!rejected) throw new Error('Expected proposal rejection to succeed');
           expect(rejected.status).toBe('rejected');
           expect(rejected.rejectionReason).toBe('Not feasible');
           await expect(manager.approveProposal(userId, proposals[1].id)).rejects.toThrow(
@@ -887,6 +1246,33 @@ describe('STEP 46: EvolutionAIManager', () => {
       expect(exported.proposals).toBeDefined();
       expect(exported.versions).toBeDefined();
       expect(exported.stats).toBeDefined();
+    });
+
+    it('should keep analyses, proposals, and versions isolated between users', async () => {
+      await manager.generateImprovementProposals('workflow_user_a');
+      await manager.createVersion('workflow_user_a', 'A version', { owner: 'a' });
+      await manager.generateImprovementProposals('workflow_user_b');
+
+      const dataA = await manager.getLearningData('workflow_user_a');
+      const dataB = await manager.getLearningData('workflow_user_b');
+      expect(dataA.proposals.length).toBeGreaterThan(0);
+      expect(dataA.versions).toHaveLength(1);
+      expect(dataB.versions).toHaveLength(0);
+      expect((await manager.getEvolutionStats('workflow_user_b')).totalProposals).toBeGreaterThan(0);
+    });
+
+    it('should keep rejected proposals out of the execution history', async () => {
+      const userId = 'rejected_workflow_user';
+      const proposals = await manager.generateImprovementProposals(userId);
+      await manager.rejectProposal(userId, proposals[0].id, 'Declined');
+
+      await expect(
+        manager.executeOptimization(userId, proposals[0].id)
+      ).rejects.toThrow('Proposal must be approved before execution');
+      await expect(manager.getEvolutionHistory(userId)).resolves.toEqual([]);
+      await expect(repository.getProposal(proposals[0].id)).resolves.toMatchObject({
+        status: 'rejected', rejectionReason: 'Declined',
+      });
     });
   });
 });

@@ -140,7 +140,7 @@ export class EvolutionService {
    */
   async resolveDependencies(proposals: ImprovementProposal[]): Promise<ImprovementProposal[]> {
     // 優先度とタイプに基づいて順序を決定
-    return proposals.sort((a, b) => {
+    return [...proposals].sort((a, b) => {
       const priorityOrder = { critical: 4, high: 3, medium: 2, low: 1 };
       const priorityA = priorityOrder[a.priority];
       const priorityB = priorityOrder[b.priority];

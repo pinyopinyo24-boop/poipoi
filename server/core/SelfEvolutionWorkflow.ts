@@ -102,9 +102,11 @@ export class SelfEvolutionWorkflow {
   public async runSimulation(userId: string): Promise<SimulationResult> {
     const workflowId = this.generateId('sim');
 
-    // Step 1: 謾ｹ蝟・し繧､繧ｯ繝ｫ・郁ｨｺ譁ｭ 竊・蛟呵｣懃函謌・竊・繧ｷ繝溘Η繝ｬ繝ｼ繧ｷ繝ｧ繝ｳ繝・せ繝茨ｼ・    const cycle = await this.improvementManager.runImprovementCycle(userId);
+    // Step 1: 改善サイクル（診断 → 候補生成 → シミュレーションテスト）
+    const cycle = await this.improvementManager.runImprovementCycle(userId);
 
-    // Step 2: 謇ｿ隱・蜊ｴ荳九↓蛻・｡・    const approvedCandidates = this.improvementManager.getApprovedCandidates(cycle);
+    // Step 2: 承認候補と却下候補に分類
+    const approvedCandidates = this.improvementManager.getApprovedCandidates(cycle);
     const rejectedCandidates = this.improvementManager.getRejectedCandidates(cycle);
 
     const result: SimulationResult = {
@@ -118,7 +120,8 @@ export class SelfEvolutionWorkflow {
       summary: this.buildSimulationSummary(cycle, approvedCandidates, rejectedCandidates),
     };
 
-    // Step 3: MemoryEngine 縺ｫ菫晏ｭ・    this.memoryEngine.setMemory(userId, `workflow_sim_${workflowId}`, result);
+    // Step 3: MemoryEngine に保存
+    this.memoryEngine.setMemory(userId, `workflow_sim_${workflowId}`, result);
     this.resultHistory.push(result);
 
     return result;

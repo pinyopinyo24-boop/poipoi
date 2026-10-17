@@ -101,7 +101,7 @@ export class FeedbackService {
    * フィードバックを取得
    */
   async getFeedback(feedbackId: string): Promise<UserFeedback | null> {
-    for (const feedback of this.feedbackStore.values()) {
+    for (const feedback of Array.from(this.feedbackStore.values())) {
       const match = feedback.find(item => item.id === feedbackId);
       if (match) return match;
     }
@@ -123,7 +123,7 @@ export class FeedbackService {
     feedbackId: string,
     updates: Partial<UserFeedback>
   ): Promise<UserFeedback | null> {
-    for (const feedback of this.feedbackStore.values()) {
+    for (const feedback of Array.from(this.feedbackStore.values())) {
       const index = feedback.findIndex(item => item.id === feedbackId);
       if (index === -1) continue;
 
@@ -155,7 +155,7 @@ export class FeedbackService {
    * フィードバックを削除
    */
   async deleteFeedback(feedbackId: string): Promise<boolean> {
-    for (const feedback of this.feedbackStore.values()) {
+    for (const feedback of Array.from(this.feedbackStore.values())) {
       const index = feedback.findIndex(item => item.id === feedbackId);
       if (index === -1) continue;
       feedback.splice(index, 1);

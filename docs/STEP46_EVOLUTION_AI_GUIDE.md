@@ -50,6 +50,22 @@ const feedbackAnalysis = await manager.analyzeFeedback(userId);
 // - categoryBreakdown: カテゴリ別分析
 ```
 
+`FeedbackService` ではフィードバックを作成・取得・更新・削除できます。新規データはプロセス内メモリに保存されるため、サーバー再起動後も保持する用途には永続ストレージ接続が必要です。分析には既存のサンプルフィードバックも含まれます。
+
+```typescript
+const feedback = await feedbackService.createFeedback(
+  userId,
+  5,
+  '使いやすいです',
+  'feature',
+  ['使いやすさ']
+);
+
+const stored = await feedbackService.getFeedback(feedback.id);
+await feedbackService.updateFeedback(feedback.id, { rating: 4 });
+await feedbackService.deleteFeedback(feedback.id);
+```
+
 ### 3. AI改善提案生成 (Improvement Proposals)
 
 利用状況分析とフィードバック分析に基づいて、AI改善提案を自動生成します。
@@ -79,6 +95,8 @@ const result = await manager.executeOptimization(userId, proposalId);
 // - metrics: パフォーマンスメトリクス
 ```
 
+提案を実行できるのは所有ユーザーが承認した後だけです。実行に成功すると状態が `implemented` になり、再実行は拒否されます。却下した提案の理由は `rejectionReason` に保存されます。
+
 ### 5. バージョン管理 (Version Management)
 
 システムの状態をバージョンとして保存し、必要に応じてロールバックできます。
@@ -93,6 +111,8 @@ const history = await manager.getVersionHistory(userId);
 // バージョンを復元
 const restored = await manager.restoreVersion(userId, versionId);
 ```
+
+バージョンの復元も作成したユーザーに限定されます。
 
 ### 6. 改善履歴管理 (Evolution History)
 
