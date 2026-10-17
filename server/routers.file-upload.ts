@@ -19,7 +19,6 @@ if (!fs.existsSync(uploadDir)) {
 }
 
 const activeVideoSwapJobs = new Map<string, AbortController>();
-const uploadedFileOwners = new Map<string, number>();
 
 const MAX_IMAGE_BYTES = 20 * 1024 * 1024;
 const MAX_VIDEO_BYTES = 128 * 1024 * 1024;
@@ -40,10 +39,10 @@ function decodeBase64(value: string, maxBytes: number, label: string): Buffer {
   return buffer;
 }
 
-function resolveUploadedFile(filePath: string): string {
-  const root = path.resolve(uploadDir);
+function resolveUploadedFile(filePath: string, userId: number): string {
+  const userDirectory = path.resolve(uploadDir, `user-${userId}`);
   const resolved = path.resolve(filePath);
-  if (path.dirname(resolved) !== root || path.basename(resolved) === "." || path.basename(resolved) === "..") {
+  if (path.dirname(resolved) !== userDirectory || path.basename(resolved) === "." || path.basename(resolved) === "..") {
     throw new TRPCError({ code: "BAD_REQUEST", message: "Invalid file path" });
   }
   return resolved;
@@ -118,11 +117,12 @@ export const fileUploadRouter = router({
           throw new TRPCError({ code: "BAD_REQUEST", message: "Unsupported file extension" });
         }
         const uniqueName = `${input.fileType}-${randomUUID()}${ext}`;
-        const filePath = path.join(uploadDir, uniqueName);
+        const userDirectory = path.join(uploadDir, `user-${ctx.user.id}`);
+        fs.mkdirSync(userDirectory, { recursive: true, mode: 0o700 });
+        const filePath = path.join(userDirectory, uniqueName);
         
         // Save file
         fs.writeFileSync(filePath, buffer, { flag: "wx", mode: 0o600 });
-        uploadedFileOwners.set(path.resolve(filePath), ctx.user.id);
         
         return {
           success: true,
@@ -146,10 +146,7 @@ export const fileUploadRouter = router({
     .query(async ({ input, ctx }) => {
       try {
         // Security: ensure path is within upload directory
-        const resolvedPath = resolveUploadedFile(input.filePath);
-        if (uploadedFileOwners.get(resolvedPath) !== ctx.user.id) {
-          throw new TRPCError({ code: "NOT_FOUND", message: "File not found" });
-        }
+        const resolvedPath = resolveUploadedFile(input.filePath, ctx.user.id);
         
         if (!fs.existsSync(resolvedPath)) {
           throw new Error("File not found");
@@ -183,15 +180,11 @@ export const fileUploadRouter = router({
     .mutation(async ({ input, ctx }) => {
       try {
         // Security: ensure path is within upload directory
-        const resolvedPath = resolveUploadedFile(input.filePath);
-        if (uploadedFileOwners.get(resolvedPath) !== ctx.user.id) {
-          throw new TRPCError({ code: "NOT_FOUND", message: "File not found" });
-        }
+        const resolvedPath = resolveUploadedFile(input.filePath, ctx.user.id);
         
         if (fs.existsSync(resolvedPath)) {
           fs.unlinkSync(resolvedPath);
         }
-        uploadedFileOwners.delete(resolvedPath);
         
         return { success: true };
       } catch (error) {
