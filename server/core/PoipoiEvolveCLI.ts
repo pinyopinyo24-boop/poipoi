@@ -149,7 +149,13 @@ function assertGitSafe() {
     );
   }
 }
-function validateBeforeCommit(changedFiles: string[]): void {
+function validateBeforeCommit(
+  changedFiles: string[],
+  verificationApproved = false
+): void {
+  if (!verificationApproved) {
+    throw new Error("検証の明示的な許可がないため処理を中止します");
+  }
   const result = spawnSync(
     process.platform === "win32" ? "pnpm.cmd" : "pnpm",
     ["exec", "tsc", "--noEmit", "--pretty", "false"],
