@@ -664,6 +664,40 @@ if (targetStatusBeforeEvolution.trim()) {
     targetStatusBeforeEvolution
   );
 }
+  // AI生成の修正案を表示し、明示的な承認を要求
+  console.log("\n=== PoiPoi AI 修正提案 ===");
+
+  for (const change of changes) {
+    console.log("\n対象: " + change.filePath);
+    console.log("\n--- 変更前 ---\n" + change.oldCode);
+    console.log("\n+++ 変更後 +++\n" + change.newCode);
+  }
+
+  if (!process.stdin.isTTY || !process.stdout.isTTY) {
+    throw new Error("対話入力がないため変更を中止しました");
+  }
+
+  const readline = await import("node:readline/promises");
+  const rl = readline.createInterface({
+    input: process.stdin,
+    output: process.stdout
+  });
+
+  let approval = "";
+
+  try {
+    approval = await rl.question(
+      "\n変更を適用しますか？ 承認する場合のみ YES と入力: "
+    );
+  } finally {
+    rl.close();
+  }
+
+  if (approval.trim() !== "YES") {
+    throw new Error("ユーザーが承認しなかったため変更を中止しました");
+  }
+
+  console.log("承認を確認しました。変更を適用します");
 const engine = new CodeEvolutionEngine(ROOT);
 
   const result = await engine.apply(
