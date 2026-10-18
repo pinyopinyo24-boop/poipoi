@@ -73,6 +73,14 @@ export class CodeEvolutionEngine {
         }
         seenPaths.add(pathKey);
 
+        // シンボリックリンクや通常ファイル以外を拒否
+        const targetStat = await fs.lstat(filePath);
+        if (!targetStat.isFile() || targetStat.isSymbolicLink()) {
+          throw new Error(
+            "通常ファイル以外は変更できません: " + filePath
+          );
+        }
+
         // シンボリックリンクを解決し、実際の書き込み先も検証する
         const realRoot = await fs.realpath(this.projectRoot);
         const realTarget = await fs.realpath(filePath);
