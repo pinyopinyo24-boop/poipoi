@@ -25,6 +25,8 @@ export class CodeEvolutionEngine {
     testCommand: string[] = []
   ): Promise<CodeEvolutionResult> {
     const backups = new Map<string, Buffer>();
+    const writtenOutputs = new Map<string, Buffer>();
+    const writtenOutputs = new Map<string, Buffer>();
     const modified = new Set<string>();
 
     try {
@@ -244,6 +246,7 @@ export class CodeEvolutionEngine {
 
         // 書き込み途中の失敗にも備えて先に復元対象へ登録
         modified.add(filePath);
+        writtenOutputs.set(filePath, output);
         await fs.writeFile(filePath, output);
       }
 
@@ -266,7 +269,23 @@ export class CodeEvolutionEngine {
         }
 
         try {
-          await fs.writeFile(filePath, original);
+          const current = await fs.readFile(filePath);
+          const written = writtenOutputs.get(filePath);
+
+          if (written === undefined) {
+            throw new Error("AIの書き込み内容が記録されていません。");
+          }
+
+          if (!current.equals(written) && !current.equals(original)) {
+            throw new Error(
+              "AIの修正後に別の変更を検出しました。自動復元を中止します。"
+            );
+          }
+
+          if (!current.equals(original)) {
+            await fs.writeFile(filePath, original);
+          }
+
           const restored = await fs.readFile(filePath);
           if (!restored.equals(original)) {
             throw new Error("復元後の内容が元データと一致しません。");
