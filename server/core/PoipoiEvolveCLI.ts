@@ -769,7 +769,12 @@ if (targetStatusBeforeEvolution.trim()) {
     throw new Error("ユーザーが承認しなかったため変更を中止しました");
   }
 
-  console.log("承認を確認しました。変更を適用します");
+  console.log("修正案の承認を確認しました");
+
+  // Phase 3: 検証フローが完成するまで変更適用を禁止
+  console.log("検証フローが未完成のため、変更適用とGitコミットを中止します");
+  console.log("AI修正案は表示のみです。対象ファイルは変更しません");
+  return;
 const engine = new CodeEvolutionEngine(ROOT);
 
   const result = await engine.apply(
