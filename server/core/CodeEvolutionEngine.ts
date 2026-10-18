@@ -268,9 +268,9 @@ export class CodeEvolutionEngine {
             throw new Error("置換直前に外部変更を検出しました: " + filePath);
           }
 
+          await fs.rename(tempPath, filePath);
           modified.add(filePath);
           writtenOutputs.set(filePath, output);
-          await fs.rename(tempPath, filePath);
         } finally {
           await fs.rm(tempPath, { force: true });
         }
