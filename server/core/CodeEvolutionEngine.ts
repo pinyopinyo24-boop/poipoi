@@ -257,6 +257,10 @@ export class CodeEvolutionEngine {
         try {
           await fs.writeFile(tempPath, output, { flag: "wx" });
 
+          // 元ファイルの権限ビットを一時ファイルへ引き継ぐ
+          const originalStat = await fs.stat(filePath);
+          await fs.chmod(tempPath, originalStat.mode);
+
           const tempContent = await fs.readFile(tempPath);
           if (!tempContent.equals(output)) {
             throw new Error("一時ファイルの内容が一致しません: " + filePath);
@@ -327,6 +331,10 @@ export class CodeEvolutionEngine {
 
             try {
               await fs.writeFile(restoreTempPath, original, { flag: "wx" });
+
+              // 復元時も現在のファイルの権限ビットを引き継ぐ
+              const restoreStat = await fs.stat(filePath);
+              await fs.chmod(restoreTempPath, restoreStat.mode);
 
               const restoreContent = await fs.readFile(restoreTempPath);
               if (!restoreContent.equals(original)) {
