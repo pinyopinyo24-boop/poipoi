@@ -246,6 +246,33 @@ export const presentationRouter = router({
       }
     }),
 
+  importPDFToPowerPoint: publicProcedure
+    .input(z.object({
+      fileName: z.string().min(1),
+      fileData: z.string().min(1),
+    }))
+    .mutation(async ({ input }) => {
+      try {
+        const fileData = await getPowerPointGenerationService()
+          .importPDFToPowerPoint(input.fileName, input.fileData);
+
+        const fileName = `${input.fileName.replace(/\.pdf$/i, '') || 'presentation'}.pptx`;
+
+        return {
+          success: true,
+          data: {
+            fileName,
+            fileData: fileData.toString('base64'),
+            size: fileData.length,
+          },
+        };
+      } catch (error) {
+        return {
+          success: false,
+          error: error instanceof Error ? error.message : String(error),
+        };
+      }
+    }),
   import: publicProcedure
     .input(z.object({ json: z.string() }))
     .mutation(({ input }) => {

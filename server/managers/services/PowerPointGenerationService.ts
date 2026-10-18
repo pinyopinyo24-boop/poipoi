@@ -4,6 +4,7 @@
 
 import PptxGenJS from 'pptxgenjs';
 import * as XLSX from 'xlsx';
+import { PDFParse } from 'pdf-parse';
 
 export interface PresentationExportResult {
   success: boolean;
@@ -37,6 +38,68 @@ type PresentationInput = {
 const DEFAULT_COLORS = { background: 'FFFFFF', text: '1F2937', accent: '2563EB', muted: '64748B' };
 
 export class PowerPointGenerationService {
+  /**
+   * PDFのテキストを抽出し、編集可能なPowerPointを生成する。
+   * 画像・表・元のレイアウトの完全再現は対象外。
+   */
+  async importPDFToPowerPoint(fileName: string, fileData: string): Promise<Buffer> {
+    if (!/\.pdf$/i.test(fileName)) {
+      throw new Error('PDFファイル（.pdf）を指定してください');
+    }
+
+    const encoded = fileData.replace(/^data:application\/pdf;base64,/i, '');
+    if (
+      !encoded ||
+      encoded.length > 8 * 1024 * 1024 ||
+      !/^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/.test(encoded)
+    ) {
+      throw new Error('PDFのBase64データが不正、または上限（約6MB）を超えています');
+    }
+
+    const buffer = Buffer.from(encoded, 'base64');
+    if (buffer.subarray(0, 5).toString('ascii') !== '%PDF-') {
+      throw new Error('有効なPDFファイルではありません');
+    }
+
+    const parser = new PDFParse({ data: new Uint8Array(buffer) });
+
+    let text = '';
+    try {
+      const result = await parser.getText({ first: 30 });
+      text = result.text || '';
+    } finally {
+      await parser.destroy();
+    }
+
+    const lines = text
+      .split(/\r?\n/)
+      .map((line) => line.trim())
+      .filter(Boolean);
+
+    if (lines.length === 0) {
+      throw new Error('PDFから文字を抽出できませんでした。画像のみのPDFにはOCRが必要です');
+    }
+
+    const slides: NonNullable<PresentationInput['slides']> = [];
+
+    for (let index = 0; index < lines.length && slides.length < 30; index += 12) {
+      const group = lines.slice(index, index + 12);
+
+      slides.push({
+        title: group[0].slice(0, 120),
+        content: group.slice(1).join('\n').slice(0, 4000),
+        layout: 'content',
+        elements: [],
+        notes: 'PDFから抽出したテキストを使用して生成しました。',
+      });
+    }
+
+    return this.generatePowerPoint({
+      title: fileName.replace(/\.pdf$/i, '') || 'PDFからの変換',
+      description: 'PDFから生成した編集可能なPowerPoint',
+      slides,
+    });
+  }
   async importExcelToPowerPoint(fileName: string, fileData: string): Promise<Buffer> {
     if (!fileName.toLowerCase().endsWith('.xlsx') && !fileName.toLowerCase().endsWith('.xls')) {
       throw new Error('Excelファイル（.xlsx / .xls）を指定してください');
