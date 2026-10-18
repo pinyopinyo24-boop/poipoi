@@ -26,7 +26,6 @@ export class CodeEvolutionEngine {
   ): Promise<CodeEvolutionResult> {
     const backups = new Map<string, Buffer>();
     const writtenOutputs = new Map<string, Buffer>();
-    const writtenOutputs = new Map<string, Buffer>();
     const modified = new Set<string>();
 
     try {
