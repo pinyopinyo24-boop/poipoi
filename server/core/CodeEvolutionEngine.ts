@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import * as fs from "node:fs/promises";
 import fsSync from "fs";
 import * as path from "node:path";
@@ -25,6 +26,7 @@ export class CodeEvolutionEngine {
     testCommand: string[] = []
   ): Promise<CodeEvolutionResult> {
     const backups = new Map<string, Buffer>();
+    const backupHashes = new Map<string, string>();
     const writtenOutputs = new Map<string, Buffer>();
     const modified = new Set<string>();
 
@@ -85,6 +87,10 @@ export class CodeEvolutionEngine {
 
         const originalBytes = await fs.readFile(filePath);
         backups.set(filePath, originalBytes);
+        backupHashes.set(
+          filePath,
+          createHash("sha256").update(originalBytes).digest("hex")
+        );
 
         const hasBom =
           originalBytes.length >= 3 &&
@@ -289,6 +295,17 @@ export class CodeEvolutionEngine {
         }
 
         try {
+          const expectedHash = backupHashes.get(filePath);
+          const actualHash = createHash("sha256")
+            .update(original)
+            .digest("hex");
+
+          if (!expectedHash || expectedHash !== actualHash) {
+            throw new Error(
+              "バックアップの整合性検証に失敗しました: " + filePath
+            );
+          }
+
           const current = await fs.readFile(filePath);
           const written = writtenOutputs.get(filePath);
 
