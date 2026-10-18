@@ -304,15 +304,60 @@ const trimmed = text.trim();
   throw new Error("AI応答に有効なJSON変更内容がありません。解析詳細: " + (errors.join(" | ") || "JSON候補を解析できません") + "。応答先頭: " + text.slice(0, 800));
 }
 async function invokeAI(messages: unknown[]): Promise<string> {
-  const manager = aiProviderManager as {
-    invoke?: (messages: unknown[]) => Promise<string>;
-  };
+  const configuredUrl = process.env.LOCAL_AI_URL || "http://localhost:11434";
+  const baseUrl = new URL(configuredUrl);
 
-  if (typeof manager.invoke !== "function") {
-    throw new Error("AIProviderManager.invoke() が利用できません");
+  if (
+    baseUrl.protocol !== "http:" ||
+    !["localhost", "127.0.0.1", "[::1]"].includes(baseUrl.hostname) ||
+    baseUrl.username ||
+    baseUrl.password ||
+    baseUrl.search ||
+    baseUrl.hash ||
+    baseUrl.pathname !== "/"
+  ) {
+    throw new Error("自己進化AIはローカルOllamaのみ利用できます");
   }
 
-  return await manager.invoke(messages);
+  const endpoint = new URL("/v1/chat/completions", baseUrl);
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 120000);
+
+  try {
+    const response = await fetch(endpoint, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        model: "qwen2.5-coder:7b",
+        messages,
+        stream: false,
+        temperature: 0.2,
+        max_tokens: 2048
+      }),
+      signal: controller.signal
+    });
+
+    if (!response.ok) {
+      throw new Error("Ollama API error: HTTP " + response.status);
+    }
+
+    const data: unknown = await response.json();
+
+    if (
+      typeof data !== "object" ||
+      data === null ||
+      !("choices" in data) ||
+      !Array.isArray(data.choices) ||
+      !data.choices[0] ||
+      typeof data.choices[0].message?.content !== "string"
+    ) {
+      throw new Error("Ollamaから有効なAI応答を取得できませんでした");
+    }
+
+    return data.choices[0].message.content;
+  } finally {
+    clearTimeout(timeout);
+  }
 }
 function findRelevantTests(targetPath: string): string[] {
   const absoluteTarget = safePath(targetPath);
