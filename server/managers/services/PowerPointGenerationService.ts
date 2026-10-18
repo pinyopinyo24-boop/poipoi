@@ -39,6 +39,29 @@ const DEFAULT_COLORS = { background: 'FFFFFF', text: '1F2937', accent: '2563EB',
 
 export class PowerPointGenerationService {
   /**
+   * インポートするBase64データの共通検証。
+   * 最大6MiB。空データ・不正なBase64を拒否する。
+   */
+  private validateImportData(fileData: string): Buffer {
+    const encoded = fileData.replace(/^data:[^,]*;base64,/i, '');
+
+    if (
+      !encoded ||
+      encoded.length > 8 * 1024 * 1024 ||
+      !/^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/.test(encoded)
+    ) {
+      throw new Error('ファイルデータが不正、または上限（6MiB）を超えています');
+    }
+
+    const buffer = Buffer.from(encoded, 'base64');
+
+    if (buffer.length === 0 || buffer.length > 6 * 1024 * 1024) {
+      throw new Error('ファイルサイズが不正、または6MiBを超えています');
+    }
+
+    return buffer;
+  }
+  /**
    * PDFのテキストを抽出し、編集可能なPowerPointを生成する。
    * 画像・表・元のレイアウトの完全再現は対象外。
    */
@@ -47,16 +70,7 @@ export class PowerPointGenerationService {
       throw new Error('PDFファイル（.pdf）を指定してください');
     }
 
-    const encoded = fileData.replace(/^data:application\/pdf;base64,/i, '');
-    if (
-      !encoded ||
-      encoded.length > 8 * 1024 * 1024 ||
-      !/^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/.test(encoded)
-    ) {
-      throw new Error('PDFのBase64データが不正、または上限（約6MB）を超えています');
-    }
-
-    const buffer = Buffer.from(encoded, 'base64');
+    const buffer = this.validateImportData(fileData);
     if (buffer.subarray(0, 5).toString('ascii') !== '%PDF-') {
       throw new Error('有効なPDFファイルではありません');
     }
@@ -104,11 +118,8 @@ export class PowerPointGenerationService {
     if (!fileName.toLowerCase().endsWith('.xlsx') && !fileName.toLowerCase().endsWith('.xls')) {
       throw new Error('Excelファイル（.xlsx / .xls）を指定してください');
     }
-    const encoded = fileData.replace(/^data:.*?;base64,/, '');
-    if (!encoded || encoded.length > 8 * 1024 * 1024 || !/^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/.test(encoded)) {
-      throw new Error('ExcelファイルのBase64データが不正または上限（6MB）を超えています');
-    }
-    const workbook = XLSX.read(Buffer.from(encoded, 'base64'), {
+    const buffer = this.validateImportData(fileData);
+    const workbook = XLSX.read(buffer, {
       type: 'buffer', cellDates: true, cellFormula: false, sheetRows: 31,
     });
     if (workbook.SheetNames.length === 0) throw new Error('Excelにシートがありません');
