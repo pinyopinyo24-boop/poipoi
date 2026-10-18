@@ -228,6 +228,20 @@ export class CodeEvolutionEngine {
           ? Buffer.concat([Buffer.from([0xef, 0xbb, 0xbf]), content])
           : content;
 
+        // 書き込み直前にバックアップ時の内容と照合
+        const original = backups.get(filePath);
+        if (original === undefined) {
+          throw new Error("バックアップがありません: " + filePath);
+        }
+
+        const latest = await fs.readFile(filePath);
+        if (!latest.equals(original)) {
+          throw new Error(
+            "バックアップ取得後にファイルが変更されました: " +
+              filePath
+          );
+        }
+
         // 書き込み途中の失敗にも備えて先に復元対象へ登録
         modified.add(filePath);
         await fs.writeFile(filePath, output);
