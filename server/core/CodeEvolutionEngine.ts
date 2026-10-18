@@ -322,7 +322,28 @@ export class CodeEvolutionEngine {
           }
 
           if (!current.equals(original)) {
-            await fs.writeFile(filePath, original);
+            const restoreTempPath =
+              filePath + ".poipoi-restore-" + process.pid + "-" + Date.now();
+
+            try {
+              await fs.writeFile(restoreTempPath, original, { flag: "wx" });
+
+              const restoreContent = await fs.readFile(restoreTempPath);
+              if (!restoreContent.equals(original)) {
+                throw new Error("復元用一時ファイルの内容が一致しません。");
+              }
+
+              const beforeRestore = await fs.readFile(filePath);
+              if (!beforeRestore.equals(written)) {
+                throw new Error(
+                  "復元直前に別の変更を検出しました。自動復元を中止します。"
+                );
+              }
+
+              await fs.rename(restoreTempPath, filePath);
+            } finally {
+              await fs.rm(restoreTempPath, { force: true });
+            }
           }
 
           const restored = await fs.readFile(filePath);
