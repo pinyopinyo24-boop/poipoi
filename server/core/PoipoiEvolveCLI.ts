@@ -187,7 +187,7 @@ function validateBeforeCommit(
   });
 
   if (targetDiagnostics.length > 0 || diagnostics.length === 0) {
-    git(["restore", "--", ...changedFiles]);
+    // 検証失敗時の復元は安全なバックアップ処理に委ねる
     throw new Error(
       "型チェックに失敗したためコミットを中止しました。\n" +
       (targetDiagnostics.length > 0
