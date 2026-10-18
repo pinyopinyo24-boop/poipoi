@@ -244,9 +244,30 @@ export class CodeEvolutionEngine {
         }
 
         // 書き込み途中の失敗にも備えて先に復元対象へ登録
-        modified.add(filePath);
-        writtenOutputs.set(filePath, output);
-        await fs.writeFile(filePath, output);
+        // 一時ファイルに完全な内容を書き込んでから置換する
+        const tempPath =
+          filePath + ".poipoi-tmp-" + process.pid + "-" + Date.now();
+
+        try {
+          await fs.writeFile(tempPath, output, { flag: "wx" });
+
+          const tempContent = await fs.readFile(tempPath);
+          if (!tempContent.equals(output)) {
+            throw new Error("一時ファイルの内容が一致しません: " + filePath);
+          }
+
+          // 元ファイルが変わっていないことを再確認
+          const beforeReplace = await fs.readFile(filePath);
+          if (!beforeReplace.equals(original)) {
+            throw new Error("置換直前に外部変更を検出しました: " + filePath);
+          }
+
+          modified.add(filePath);
+          writtenOutputs.set(filePath, output);
+          await fs.rename(tempPath, filePath);
+        } finally {
+          await fs.rm(tempPath, { force: true });
+        }
       }
 
       return {
