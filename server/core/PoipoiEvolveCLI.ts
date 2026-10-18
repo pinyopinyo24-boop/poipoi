@@ -775,7 +775,7 @@ if (targetStatusBeforeEvolution.trim()) {
     throw new Error("ユーザーが承認しなかったため変更を中止しました");
   }
 
-  console.log("修正案の承認を確認しました");
+  console.log("修正案と検証実行の一括承認を確認しました");
 
   // Phase 3: 検証フローが完成するまで変更適用を禁止
   console.log("検証フローが未完成のため、変更適用とGitコミットを中止します");
