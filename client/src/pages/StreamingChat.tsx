@@ -76,6 +76,7 @@ export default function StreamingChat() {
       const response = await streamingChat.mutateAsync({
         message: input,
         conversationId: chatId,
+        history: messages.slice(-20).map(m => ({role:m.role,content:m.content})),
       });
 
       const assistantMessage: Message = {

@@ -25,6 +25,7 @@ export const streamingRouter = router({
       z.object({
         message: z.string(),
         conversationId: z.string().optional(),
+        history: z.array(z.object({role:z.enum(["user","assistant"]),content:z.string()})).max(20).optional(),
       })
     )
     .mutation(async ({ input }) => {
@@ -158,7 +159,7 @@ export const streamingRouter = router({
           },
           {
             role: "user",
-            content: history.map(h => "ユーザー："+h.question+"\nAI："+h.answer).join("\n") + "\n" + await enrichPromptWithLearning(process.cwd(), input.message),
+            content: (input.history?.length ? input.history : history.flatMap(h => [{role:"user" as const,content:h.question},{role:"assistant" as const,content:h.answer}])).map(h => (h.role === "user" ? "ユーザー：" : "AI：") + h.content).join("\n") + "\n" + await enrichPromptWithLearning(process.cwd(), input.message),
           },
         ],
       });
