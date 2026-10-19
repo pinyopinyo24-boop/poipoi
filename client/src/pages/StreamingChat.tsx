@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect } from "react";
+import { loadConversations, saveConversations, createConversation } from "@/lib/poipoiChatHistory";
 import { useLocation } from "wouter";
 import { trpc } from "@/lib/trpc";
 import { Button } from "@/components/ui/button";
@@ -22,7 +23,9 @@ interface Message {
 }
 
 export default function StreamingChat() {
-  const [messages, setMessages] = useState<Message[]>([]);
+  const [messages, setMessages] = useState<Message[]>(() => { const id = localStorage.getItem("poipoi_last_conversation_v1"); const c = loadConversations().find(x => x.id === id); return c ? c.messages.map(m => ({ ...m, timestamp: new Date(m.timestamp) })) : []; });
+  const [conversations, setConversations] = useState(() => loadConversations());
+  const [conversationId, setConversationId] = useState<string | null>(() => { const id = localStorage.getItem("poipoi_last_conversation_v1"); return loadConversations().some(c => c.id === id) ? id : null; });
   const [input, setInput] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [showMultimodal, setShowMultimodal] = useState(false);
@@ -34,10 +37,17 @@ export default function StreamingChat() {
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const [, navigate] = useLocation();
 
+  const openConversation = (id: string) => { const c = conversations.find(x => x.id === id); if (!c || isLoading) return; localStorage.setItem("poipoi_last_conversation_v1", id); setConversationId(id); setMessages(c.messages.map(m => ({ ...m, timestamp: new Date(m.timestamp) }))); setActiveTab("chat"); };
+  const deleteConversation = (id: string) => { if (!window.confirm("この会話を削除しますか？")) return; const next = conversations.filter(c => c.id !== id); setConversations(next); saveConversations(next); if (conversationId === id) { localStorage.removeItem("poipoi_last_conversation_v1"); setConversationId(null); setMessages([]); setInput(""); } };
+  const renameConversation = (id: string) => { const c = conversations.find(x => x.id === id); if (!c) return; const title = window.prompt("新しい会話タイトル", c.title)?.trim(); if (!title) return; const next = conversations.map(x => x.id === id ? { ...x, title } : x); setConversations(next); saveConversations(next); };
+  const startNewConversation = () => { if (isLoading) return; const c = createConversation(); setConversations(prev => { const next = [c, ...prev]; return next; }); localStorage.setItem("poipoi_last_conversation_v1", c.id); setConversationId(c.id); setMessages([]); setInput(""); setActiveTab("chat"); };
+  const persistChatMessage = (id: string, message: Message) => { setConversations(prev => { const next = prev.map(c => c.id !== id ? c : { ...c, title: c.title === "新しいチャット" && message.role === "user" ? message.content.slice(0, 30) : c.title, updatedAt: new Date().toISOString(), messages: [...c.messages, { id: message.id, role: message.role, content: message.content, timestamp: message.timestamp.toISOString(), type: message.type }] }); return next; }); };
+  useEffect(() => { saveConversations(conversations); }, [conversations]);
   const streamingChat = trpc.streaming.chat.useMutation();
   const analyzeFeedback = trpc.evolution.analyzeFeedback.useMutation();
   const generateProgram = trpc.autoProgramGeneration.generateProgram.useMutation();
 
+  useEffect(() => { if (true) return; if (!conversationId || !conversations.some(c => c.id === conversationId)) return; const next = conversations.map(c => c.id === conversationId ? { ...c, title: c.title === "新しいチャット" ? (messages.find(m => m.role === "user")?.content.slice(0, 30) || c.title) : c.title, updatedAt: new Date().toISOString(), messages: messages.map(m => ({ id: m.id, role: m.role, content: m.content, timestamp: m.timestamp.toISOString(), type: m.type })) } : c); saveConversations(next); }, [messages, conversationId]);
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   };
@@ -47,7 +57,7 @@ export default function StreamingChat() {
   }, [messages]);
 
   const handleSendMessage = async () => {
-    if (!input.trim()) return;
+    if (!input.trim() || isLoading) return; const chatId = conversationId || createConversation().id; if (!conversationId) { const c = { ...createConversation(), id: chatId }; setConversations(prev => { const next = [c, ...prev]; return next; }); setConversationId(chatId); }
 
     const userMessage: Message = {
       id: `msg_${Date.now()}`,
@@ -58,12 +68,14 @@ export default function StreamingChat() {
     };
 
     setMessages((prev) => [...prev, userMessage]);
+    persistChatMessage(chatId, userMessage);
     setInput("");
     setIsLoading(true);
 
     try {
       const response = await streamingChat.mutateAsync({
         message: input,
+        conversationId: chatId,
       });
 
       const assistantMessage: Message = {
@@ -75,6 +87,7 @@ export default function StreamingChat() {
       };
 
       setMessages((prev) => [...prev, assistantMessage]);
+      persistChatMessage(chatId, assistantMessage);
     } catch (error) {
       console.error("ストリーミングチャットエラー:", error);
       const errorMessage: Message = {
@@ -173,6 +186,8 @@ export default function StreamingChat() {
         </button>
       </div>
 
+      <div className="flex flex-1 min-h-0 gap-4">
+      <aside className="w-60 shrink-0 rounded-lg bg-white/80 p-3 flex flex-col gap-3"><button type="button" onClick={startNewConversation} className="rounded-lg bg-cyan-600 px-3 py-2 text-white">＋ 新しいチャット</button><div className="text-sm font-semibold">最近の会話</div><div className="flex-1 overflow-y-auto space-y-1">{conversations.map(c => <div key={c.id} className="flex items-center gap-2"><button key={c.id} type="button" onClick={() => openConversation(c.id)} className={`block w-full truncate rounded px-3 py-2 text-left text-sm ${conversationId === c.id ? "bg-cyan-100" : "hover:bg-gray-100"}`}>{c.title}</button><button type="button" onClick={() => renameConversation(c.id)} className="text-xs text-blue-600 hover:underline">編集</button><button type="button" onClick={() => deleteConversation(c.id)} className="text-xs text-red-600 hover:underline">削除</button></div>)}</div></aside>
       <Tabs value={activeTab} onValueChange={setActiveTab} className="flex-1 flex flex-col">
         <TabsList className="grid w-full grid-cols-3">
           <TabsTrigger value="chat">💬 チャット</TabsTrigger>
@@ -345,6 +360,7 @@ export default function StreamingChat() {
           </Card>
         </TabsContent>
       </Tabs>
+      </div>
 
       {/* マルチモーダルダイアログ */}
       <Dialog open={showMultimodal} onOpenChange={setShowMultimodal}>
