@@ -1,4 +1,3 @@
-const conversationMemory = new Map<string, { question: string; answer: string }[]>();
 import { recordLearningFeedback } from "./core/LearningContextIntegration";
 import { enrichPromptWithLearning } from "./core/LearningContextIntegration";
 import { publicProcedure, router } from "./_core/trpc";
@@ -7,6 +6,7 @@ import { invokeLLM } from "./_core/llm";
 import { exec } from "child_process";
 import { promisify } from "util";
 import { PoipoiCodeAgent } from "./core/PoipoiCodeAgent";
+const conversationMemory = new Map<string, { question: string; answer: string }[]>();
 
 const execAsync = promisify(exec);
 const lastChats = new Map<string, {question:string;answer:string}>();
@@ -212,7 +212,7 @@ export const streamingRouter = router({
         };
       }
 
-      const history = conversationMemory.get(input.conversationId || "default") || [];
+
       const response = await invokeLLM({
         messages: [
           {
@@ -261,7 +261,7 @@ export const streamingRouter = router({
         };
       }
 
-      const history = conversationMemory.get(input.conversationId || "default") || [];
+
       const response = await invokeLLM({
         messages: [
           {
@@ -310,7 +310,7 @@ export const streamingRouter = router({
         };
       }
 
-      const history = conversationMemory.get(input.conversationId || "default") || [];
+
       const response = await invokeLLM({
         messages: [
           {
