@@ -1,3 +1,6 @@
+const conversationMemory = new Map<string, { question: string; answer: string }[]>();
+import { recordLearningFeedback } from "./core/LearningContextIntegration";
+import { enrichPromptWithLearning } from "./core/LearningContextIntegration";
 import { publicProcedure, router } from "./_core/trpc";
 import { z } from "zod";
 import { invokeLLM } from "./_core/llm";
@@ -6,6 +9,7 @@ import { promisify } from "util";
 import { PoipoiCodeAgent } from "./core/PoipoiCodeAgent";
 
 const execAsync = promisify(exec);
+const lastChats = new Map<string, {question:string;answer:string}>();
 
 /**
  * ストリーミング機能ルーター
@@ -73,7 +77,7 @@ export const streamingRouter = router({
         /(?:\u5B9F\u88C5|\u8FFD\u52A0|\u4FEE\u6B63|\u5909\u66F4|\u4F5C\u6210|\u958B\u767A|\u76F4\u3057\u3066|\u6539\u4FEE)/.test(input.message) &&
         /(?:\u30D5\u30A1\u30A4\u30EB|\u30B3\u30FC\u30C9|\u6A5F\u80FD|\u5B9A\u6570|\u95A2\u6570|\u5B9F\u88C5)/.test(input.message);
 
-      if (codeRequest) {
+      if (false && codeRequest) {
         const result = await PoipoiCodeAgent.getInstance().execute(
           input.message
         );
@@ -106,19 +110,68 @@ export const streamingRouter = router({
         };
       }
 
+      if (/^(正解|せいかい|合ってる|あってる)[！!。.\s]*$/u.test(input.message.trim())) {
+        const previous = lastChats.get(input.conversationId || "default");
+        if (previous?.question && previous?.answer) {
+          await recordLearningFeedback(previous.question, previous.answer, true);
+        }
+        const text = previous?.answer ? "正解として学習しました。" : "評価する直前の回答が見つかりません。";
+        return {
+          conversationId: input.conversationId || "conv_" + Date.now(),
+          tokens: [text],
+          fullText: text,
+          tokenCount: 1,
+          isImage: false,
+        };
+      }
+
+      if (/^(違う|ちがう|不正解)[！!。.\s]*$/u.test(input.message.trim())) { const previous = lastChats.get(input.conversationId || "default"); if (previous?.question && previous?.answer) { await recordLearningFeedback(previous.question,previous.answer,false); } const text = previous?.answer ? "不正解として記録しました。正しくは、〇〇 と入力してください。" : "直前の回答が見つかりません。"; return {conversationId:input.conversationId || "conv_"+Date.now(),tokens:[text],fullText:text,tokenCount:1,isImage:false}; }
+      const correction = input.message.match(/^正しくは[、,：:\s]*([\s\S]+)/u);
+      if (correction?.[1]?.trim()) {
+        const previous = lastChats.get(input.conversationId || "default");
+        if (previous?.question && previous?.answer) {
+          await recordLearningFeedback(
+            previous.question,
+            previous.answer,
+            false,
+            correction[1].trim()
+          );
+        }
+      }
+      if (/^正しくは[、,：:\s]*/u.test(input.message)) {
+        const text = "訂正内容を覚えました。";
+        return {
+          conversationId: input.conversationId || "conv_" + Date.now(),
+          tokens: [text],
+          fullText: text,
+          tokenCount: 1,
+          isImage: false,
+        };
+      }
+
+      const history = conversationMemory.get(input.conversationId || "default") || [];
       const response = await invokeLLM({
         messages: [
           {
             role: "system",
-            content: "You are a helpful AI assistant. Respond in Japanese.",
+            content: "You are Poi, the PoiPoi AI. Reply in Japanese. PoiPoi has Excel analysis, PowerPoint generation, PDF analysis, production, cost, inventory, code generation and self-evolution implementations. Do not claim unverified features work. Do not modify code just because someone asks about a feature.",
           },
           {
             role: "user",
-            content: input.message,
+            content: history.map(h => "ユーザー："+h.question+"\nAI："+h.answer).join("\n") + "\n" + await enrichPromptWithLearning(process.cwd(), input.message),
           },
         ],
       });
 
+      if (!input.message.match(/^正しくは[、,：:\s]*/u)) {
+        const key = input.conversationId || "default";
+        const previousHistory = conversationMemory.get(key) || [];
+        conversationMemory.set(key, [...previousHistory, { question: input.message, answer: response.choices?.[0]?.message?.content || "" }].slice(-10));
+        lastChats.set(input.conversationId || "default", {
+          question: input.message,
+          answer: response.choices?.[0]?.message?.content || ""
+        });
+      }
       const text = response.choices?.[0]?.message?.content || "";
       const tokens = text.split(/(\\s+)/);
 
@@ -148,6 +201,18 @@ export const streamingRouter = router({
         entities: `以下のテキストから固有表現を抽出してください:\n${input.text}`,
       };
 
+      if (/^正しくは[、,：:\s]*/u.test(input.message)) {
+        const text = "訂正内容を覚えました。";
+        return {
+          conversationId: input.conversationId || "conv_" + Date.now(),
+          tokens: [text],
+          fullText: text,
+          tokenCount: 1,
+          isImage: false,
+        };
+      }
+
+      const history = conversationMemory.get(input.conversationId || "default") || [];
       const response = await invokeLLM({
         messages: [
           {
@@ -185,6 +250,18 @@ export const streamingRouter = router({
     .mutation(async ({ input }) => {
       const language = input.language || "JavaScript";
 
+      if (/^正しくは[、,：:\s]*/u.test(input.message)) {
+        const text = "訂正内容を覚えました。";
+        return {
+          conversationId: input.conversationId || "conv_" + Date.now(),
+          tokens: [text],
+          fullText: text,
+          tokenCount: 1,
+          isImage: false,
+        };
+      }
+
+      const history = conversationMemory.get(input.conversationId || "default") || [];
       const response = await invokeLLM({
         messages: [
           {
@@ -222,6 +299,18 @@ export const streamingRouter = router({
     .mutation(async ({ input }) => {
       const sourceLanguage = input.sourceLanguage || "自動検出";
 
+      if (/^正しくは[、,：:\s]*/u.test(input.message)) {
+        const text = "訂正内容を覚えました。";
+        return {
+          conversationId: input.conversationId || "conv_" + Date.now(),
+          tokens: [text],
+          fullText: text,
+          tokenCount: 1,
+          isImage: false,
+        };
+      }
+
+      const history = conversationMemory.get(input.conversationId || "default") || [];
       const response = await invokeLLM({
         messages: [
           {
