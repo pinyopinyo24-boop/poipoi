@@ -1,4 +1,4 @@
-import { appendPoiPoiMemory, getPoiPoiMemoryHistory, searchPoiPoiMemory, getRecentPoiPoiMemory } from "./core/PoiPoiLongTermMemory";
+import { appendPoiPoiMemory, getPoiPoiMemoryHistory, searchPoiPoiMemory, getRecentPoiPoiMemory, getPoiPoiMemoryCacheStatus } from "./core/PoiPoiLongTermMemory";
 import { recordLearningFeedback } from "./core/LearningContextIntegration";
 import { enrichPromptWithLearning } from "./core/LearningContextIntegration";
 import { publicProcedure, router } from "./_core/trpc";
@@ -17,6 +17,8 @@ const lastChats = new Map<string, {question:string;answer:string}>();
  * Server-Sent Events (SSE) でリアルタイムにトークンを返す
  */
 export const streamingRouter = router({
+  // STEP53_CACHE_STATUS_API
+  memoryCacheStatus: publicProcedure.query(() => getPoiPoiMemoryCacheStatus()),
   /**
    * ストリーミングチャット
    * リアルタイムでトークンごとに応答を返す
