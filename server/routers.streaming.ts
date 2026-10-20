@@ -176,7 +176,12 @@ export const streamingRouter = router({
       const factValues = new Map<string,string>();
       // STEP40_MEMORY_PRIORITY
       // STEP43_RECENT_FACTS
-      const factHistory = getRecentPoiPoiMemory(500);
+      // STEP48_MEMORY_LIMIT
+      const configuredLimit = Number(process.env.POIPOI_MEMORY_LIMIT ?? 500);
+      const memoryLimit = Number.isFinite(configuredLimit)
+        ? Math.max(1,Math.min(Math.trunc(configuredLimit),500))
+        : 500;
+      const factHistory = getRecentPoiPoiMemory(memoryLimit);
       // STEP47_FACT_DEDUP
       const orderedFacts = [...factHistory].sort((a,b)=>Date.parse(a.timestamp)-Date.parse(b.timestamp)).filter((item,index,array)=>array.findIndex(x=>x.conversationId===item.conversationId && x.timestamp===item.timestamp && x.question===item.question)===index);
       for(const item of orderedFacts){
