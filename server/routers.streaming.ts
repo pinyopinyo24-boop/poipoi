@@ -166,7 +166,8 @@ export const streamingRouter = router({
         {key:"趣味",regex:/(?:私の|僕の|俺の)?趣味は\s*([^\s。！？、]+)/}
       ];
       const factValues = new Map<string,string>();
-      const factHistory = searchPoiPoiMemory("好き",50).concat(searchPoiPoiMemory("趣味",50));
+      // STEP40_MEMORY_PRIORITY
+      const factHistory = searchPoiPoiMemory("好き",50).concat(searchPoiPoiMemory("趣味",50)).filter((item,index,array)=>array.findIndex(x=>x.conversationId===item.conversationId && x.timestamp===item.timestamp && x.question===item.question)===index);
       const orderedFacts = [...factHistory].sort((a,b)=>Date.parse(a.timestamp)-Date.parse(b.timestamp));
       for(const item of orderedFacts){
         for(const pattern of factPatterns){
@@ -179,7 +180,7 @@ export const streamingRouter = router({
         if(match)factValues.set(pattern.key,match[1]);
       }
       const genericMemory = [...factValues].map(([key,value])=>key+"："+value).join("\n");
-      const updatedMemory = genericMemory;
+      const updatedMemory = genericMemory ? "以下はユーザーが伝えた最新の情報です。古い回答と矛盾する場合はこちらを優先してください。\n" + genericMemory : "";
       const memoryContext = updatedMemory + "\n" + relatedMemories.map(item => "過去の質問: " + item.question + "\n過去の回答: " + item.answer).join("\n");
 
       const response = await invokeLLM({
