@@ -177,7 +177,8 @@ export const streamingRouter = router({
       // STEP40_MEMORY_PRIORITY
       // STEP43_RECENT_FACTS
       const factHistory = getRecentPoiPoiMemory(500);
-      const orderedFacts = [...factHistory].sort((a,b)=>Date.parse(a.timestamp)-Date.parse(b.timestamp));
+      // STEP47_FACT_DEDUP
+      const orderedFacts = [...factHistory].sort((a,b)=>Date.parse(a.timestamp)-Date.parse(b.timestamp)).filter((item,index,array)=>array.findIndex(x=>x.conversationId===item.conversationId && x.timestamp===item.timestamp && x.question===item.question)===index);
       for(const item of orderedFacts){
         for(const pattern of factPatterns){
           const match=item.question.match(pattern.regex);
