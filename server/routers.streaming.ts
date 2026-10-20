@@ -181,7 +181,9 @@ export const streamingRouter = router({
       const memoryLimit = Number.isFinite(configuredLimit)
         ? Math.max(1,Math.min(Math.trunc(configuredLimit),500))
         : 500;
-      const factHistory = getRecentPoiPoiMemory(memoryLimit);
+      // STEP50_MEMORY_RELEVANCE
+      const needsFacts = /好き|趣味|覚えて|記憶|私の|僕の|俺の/.test(input.message);
+      const factHistory = needsFacts ? getRecentPoiPoiMemory(memoryLimit) : [];
       // STEP49_MEMORY_LOG
       console.info("[PoiPoiMemory] Recent facts loaded:",factHistory.length,"limit:",memoryLimit);
       // STEP47_FACT_DEDUP
