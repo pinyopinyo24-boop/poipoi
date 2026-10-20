@@ -30,16 +30,17 @@ export default function StreamingChat() {
   const [memoryOpen,setMemoryOpen]=useState(false);
   const [memoryResults,setMemoryResults]=useState<any[]>([]);
   const [memoryError,setMemoryError]=useState("");
+  const [memoryLoading,setMemoryLoading]=useState(false);
   const searchMemory=async()=>{
     if(!memoryQuery.trim())return;
-    setMemoryError("");
+    setMemoryError(""); setMemoryLoading(true); setMemoryResults([]);
     try{
       const q=encodeURIComponent(JSON.stringify({json:{query:memoryQuery,limit:20}}));
       const r=await fetch("/api/trpc/streaming.memorySearch?input="+q);
       if(!r.ok)throw new Error("Search failed");
       const d=await r.json();
       setMemoryResults(d.result?.data?.json??d.result?.data??[]);
-    }catch(e){setMemoryError("検索に失敗しました");}
+    }catch(e){setMemoryError("検索に失敗しました");}finally{setMemoryLoading(false);}
   };
   const [conversationId, setConversationId] = useState<string | null>(() => { const id = localStorage.getItem("poipoi_last_conversation_v1"); return loadConversations().some(c => c.id === id) ? id : null; });
   const [input, setInput] = useState("");
@@ -220,6 +221,9 @@ export default function StreamingChat() {
             {memoryOpen && <div className="mt-3 space-y-2">
               <input value={memoryQuery} onChange={e=>setMemoryQuery(e.target.value)} placeholder="過去の会話を検索" className="w-full rounded border p-2"/>
               <button type="button" onClick={searchMemory} className="rounded bg-cyan-600 px-3 py-2 text-white">検索</button>
+              {/* STEP36_SEARCH_FEEDBACK */}
+              {memoryLoading && <p>検索中...</p>}
+              {!memoryLoading && !memoryError && memoryResults.length===0 && <p>検索結果は0件です</p>}
               {memoryError && <p className="text-red-600">{memoryError}</p>}
               {memoryResults.map((item,i)=><div key={i} className="rounded border p-2 text-sm"><p>質問：{item.question}</p><p>回答：{item.answer}</p></div>)}
             </div>}
