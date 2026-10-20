@@ -171,6 +171,8 @@ export const streamingRouter = router({
         !/[?？]/.test(question) &&
         !/(ですか|ますか|教えて|何色|何です|なんです|どれです)/.test(question) &&
         !/^(何|なに|なん|どれ|教えて)/.test(value);
+      // STEP46_FACT_NORMALIZE
+      const normalizeFact = (value:string) => value.trim().replace(/(?:です|だよ|だ)$/,"").trim();
       const factValues = new Map<string,string>();
       // STEP40_MEMORY_PRIORITY
       // STEP43_RECENT_FACTS
@@ -180,12 +182,12 @@ export const streamingRouter = router({
         for(const pattern of factPatterns){
           const match=item.question.match(pattern.regex);
           // STEP44_FACT_VALIDATION
-          if(match && isValidFact(item.question,match[1]))factValues.set(pattern.key,match[1]);
+          if(match && isValidFact(item.question,match[1]))factValues.set(pattern.key,normalizeFact(match[1]));
         }
       }
       for(const pattern of factPatterns){
         const match=input.message.match(pattern.regex);
-        if(match && isValidFact(input.message,match[1]))factValues.set(pattern.key,match[1]);
+        if(match && isValidFact(input.message,match[1]))factValues.set(pattern.key,normalizeFact(match[1]));
       }
       const genericMemory = [...factValues].map(([key,value])=>key+"："+value).join("\n");
       const updatedMemory = genericMemory ? "以下はユーザーが伝えた最新の情報です。古い回答と矛盾する場合はこちらを優先してください。\n" + genericMemory : "";
