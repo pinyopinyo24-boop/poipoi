@@ -158,15 +158,28 @@ export const streamingRouter = router({
       const memoryKeywords = input.message.match(/[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}A-Za-z0-9.]+/gu) || [];
       // STEP37_RECENT_MEMORY
       const relatedMemories = memoryKeywords.flatMap(word => word.length >= 2 ? searchPoiPoiMemory(word, 10) : []).filter(item => item.conversationId !== (input.conversationId || "default")).sort((a,b)=>Date.parse(b.timestamp)-Date.parse(a.timestamp)).filter((item,index,array)=>array.findIndex(x=>x.question===item.question)===index).slice(0,5);
-      // STEP38_MEMORY_UPDATE
-      const latestFacts = new Map<string,string>();
-      for(const item of relatedMemories){
-        const match=item.question.match(/(?:私の|僕の|俺の)?好きな数字は\s*(\d+)/);
-        if(match && !latestFacts.has("favoriteNumber"))latestFacts.set("favoriteNumber",match[1]);
+      // STEP39_GENERIC_MEMORY
+      const factPatterns = [
+        {key:"好きな数字",regex:/(?:私の|僕の|俺の)?好きな数字は\s*([^\s。！？、]+)/},
+        {key:"好きな色",regex:/(?:私の|僕の|俺の)?好きな色は\s*([^\s。！？、]+)/},
+        {key:"好きな食べ物",regex:/(?:私の|僕の|俺の)?好きな食べ物は\s*([^\s。！？、]+)/},
+        {key:"趣味",regex:/(?:私の|僕の|俺の)?趣味は\s*([^\s。！？、]+)/}
+      ];
+      const factValues = new Map<string,string>();
+      const factHistory = searchPoiPoiMemory("好き",50).concat(searchPoiPoiMemory("趣味",50));
+      const orderedFacts = [...factHistory].sort((a,b)=>Date.parse(a.timestamp)-Date.parse(b.timestamp));
+      for(const item of orderedFacts){
+        for(const pattern of factPatterns){
+          const match=item.question.match(pattern.regex);
+          if(match)factValues.set(pattern.key,match[1]);
+        }
       }
-      const currentFact=input.message.match(/(?:私の|僕の|俺の)?好きな数字は\s*(\d+)/);
-      if(currentFact)latestFacts.set("favoriteNumber",currentFact[1]);
-      const updatedMemory=latestFacts.has("favoriteNumber") ? "最新の好きな数字: "+latestFacts.get("favoriteNumber") : "";
+      for(const pattern of factPatterns){
+        const match=input.message.match(pattern.regex);
+        if(match)factValues.set(pattern.key,match[1]);
+      }
+      const genericMemory = [...factValues].map(([key,value])=>key+"："+value).join("\n");
+      const updatedMemory = genericMemory;
       const memoryContext = updatedMemory + "\n" + relatedMemories.map(item => "過去の質問: " + item.question + "\n過去の回答: " + item.answer).join("\n");
 
       const response = await invokeLLM({
