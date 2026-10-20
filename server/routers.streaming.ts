@@ -158,7 +158,16 @@ export const streamingRouter = router({
       const memoryKeywords = input.message.match(/[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}A-Za-z0-9.]+/gu) || [];
       // STEP37_RECENT_MEMORY
       const relatedMemories = memoryKeywords.flatMap(word => word.length >= 2 ? searchPoiPoiMemory(word, 10) : []).filter(item => item.conversationId !== (input.conversationId || "default")).sort((a,b)=>Date.parse(b.timestamp)-Date.parse(a.timestamp)).filter((item,index,array)=>array.findIndex(x=>x.question===item.question)===index).slice(0,5);
-      const memoryContext = relatedMemories.map(item => "過去の質問: " + item.question + "\n過去の回答: " + item.answer).join("\n");
+      // STEP38_MEMORY_UPDATE
+      const latestFacts = new Map<string,string>();
+      for(const item of relatedMemories){
+        const match=item.question.match(/(?:私の|僕の|俺の)?好きな数字は\s*(\d+)/);
+        if(match && !latestFacts.has("favoriteNumber"))latestFacts.set("favoriteNumber",match[1]);
+      }
+      const currentFact=input.message.match(/(?:私の|僕の|俺の)?好きな数字は\s*(\d+)/);
+      if(currentFact)latestFacts.set("favoriteNumber",currentFact[1]);
+      const updatedMemory=latestFacts.has("favoriteNumber") ? "最新の好きな数字: "+latestFacts.get("favoriteNumber") : "";
+      const memoryContext = updatedMemory + "\n" + relatedMemories.map(item => "過去の質問: " + item.question + "\n過去の回答: " + item.answer).join("\n");
 
       const response = await invokeLLM({
         messages: [
