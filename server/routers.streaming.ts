@@ -1,3 +1,4 @@
+import { appendPoiPoiMemory, getPoiPoiMemoryHistory, searchPoiPoiMemory } from "./core/PoiPoiLongTermMemory";
 import { recordLearningFeedback } from "./core/LearningContextIntegration";
 import { enrichPromptWithLearning } from "./core/LearningContextIntegration";
 import { publicProcedure, router } from "./_core/trpc";
@@ -20,6 +21,7 @@ export const streamingRouter = router({
    * ストリーミングチャット
    * リアルタイムでトークンごとに応答を返す
    */
+  memorySearch: publicProcedure.input(z.object({query:z.string().min(1).max(500),conversationId:z.string().optional(),limit:z.number().int().min(1).max(50).optional()})).query(({input})=>searchPoiPoiMemory(input.query,input.limit??20,input.conversationId)),
   chat: publicProcedure
     .input(
       z.object({
@@ -151,6 +153,7 @@ export const streamingRouter = router({
       }
 
       const history = conversationMemory.get(input.conversationId || "default") || [];
+      const savedHistory = getPoiPoiMemoryHistory(input.conversationId || "default");
       const response = await invokeLLM({
         messages: [
           {
@@ -159,7 +162,7 @@ export const streamingRouter = router({
           },
           {
             role: "user",
-            content: (input.history?.length ? input.history : history.flatMap(h => [{role:"user" as const,content:h.question},{role:"assistant" as const,content:h.answer}])).map(h => (h.role === "user" ? "ユーザー：" : "AI：") + h.content).join("\n") + "\n" + await enrichPromptWithLearning(process.cwd(), input.message),
+            content: (input.history?.length ? input.history : savedHistory.length ? savedHistory : history.flatMap(h => [{role:"user" as const,content:h.question},{role:"assistant" as const,content:h.answer}])).map(h => (h.role === "user" ? "ユーザー：" : "AI：") + h.content).join("\n") + "\n" + await enrichPromptWithLearning(process.cwd(), input.message),
           },
         ],
       });
@@ -168,6 +171,7 @@ export const streamingRouter = router({
         const key = input.conversationId || "default";
         const previousHistory = conversationMemory.get(key) || [];
         conversationMemory.set(key, [...previousHistory, { question: input.message, answer: response.choices?.[0]?.message?.content || "" }].slice(-10));
+        appendPoiPoiMemory(input.conversationId || "default", input.message, response.choices?.[0]?.message?.content || "");
         lastChats.set(input.conversationId || "default", {
           question: input.message,
           answer: response.choices?.[0]?.message?.content || ""
