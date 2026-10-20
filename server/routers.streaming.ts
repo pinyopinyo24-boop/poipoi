@@ -154,6 +154,11 @@ export const streamingRouter = router({
 
       const history = conversationMemory.get(input.conversationId || "default") || [];
       const savedHistory = getPoiPoiMemoryHistory(input.conversationId || "default");
+      // STEP35_CROSS_CHAT_MEMORY
+      const memoryKeywords = input.message.match(/[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}A-Za-z0-9.]+/gu) || [];
+      const relatedMemories = memoryKeywords.flatMap(word => word.length >= 2 ? searchPoiPoiMemory(word, 5) : []).filter(item => item.conversationId !== (input.conversationId || "default")).slice(0, 5);
+      const memoryContext = relatedMemories.map(item => "過去の質問: " + item.question + "\n過去の回答: " + item.answer).join("\n");
+
       const response = await invokeLLM({
         messages: [
           {
@@ -162,7 +167,7 @@ export const streamingRouter = router({
           },
           {
             role: "user",
-            content: (input.history?.length ? input.history : savedHistory.length ? savedHistory : history.flatMap(h => [{role:"user" as const,content:h.question},{role:"assistant" as const,content:h.answer}])).map(h => (h.role === "user" ? "ユーザー：" : "AI：") + h.content).join("\n") + "\n" + await enrichPromptWithLearning(process.cwd(), input.message),
+            content: (memoryContext ? "関連する過去の会話（参考情報）:\n" + memoryContext + "\n\n" : "") + (input.history?.length ? input.history : savedHistory.length ? savedHistory : history.flatMap(h => [{role:"user" as const,content:h.question},{role:"assistant" as const,content:h.answer}])).map(h => (h.role === "user" ? "ユーザー：" : "AI：") + h.content).join("\n") + "\n" + await enrichPromptWithLearning(process.cwd(), input.message),
           },
         ],
       });
