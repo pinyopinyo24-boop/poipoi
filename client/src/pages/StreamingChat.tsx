@@ -25,6 +25,22 @@ interface Message {
 export default function StreamingChat() {
   const [messages, setMessages] = useState<Message[]>(() => { const id = localStorage.getItem("poipoi_last_conversation_v1"); const c = loadConversations().find(x => x.id === id); return c ? c.messages.map(m => ({ ...m, timestamp: new Date(m.timestamp) })) : []; });
   const [conversations, setConversations] = useState(() => loadConversations());
+  // STEP36_MEMORY_SEARCH
+  const [memoryQuery,setMemoryQuery]=useState("");
+  const [memoryOpen,setMemoryOpen]=useState(false);
+  const [memoryResults,setMemoryResults]=useState<any[]>([]);
+  const [memoryError,setMemoryError]=useState("");
+  const searchMemory=async()=>{
+    if(!memoryQuery.trim())return;
+    setMemoryError("");
+    try{
+      const q=encodeURIComponent(JSON.stringify({json:{query:memoryQuery,limit:20}}));
+      const r=await fetch("/api/trpc/streaming.memorySearch?input="+q);
+      if(!r.ok)throw new Error("Search failed");
+      const d=await r.json();
+      setMemoryResults(d.result?.data?.json??d.result?.data??[]);
+    }catch(e){setMemoryError("検索に失敗しました");}
+  };
   const [conversationId, setConversationId] = useState<string | null>(() => { const id = localStorage.getItem("poipoi_last_conversation_v1"); return loadConversations().some(c => c.id === id) ? id : null; });
   const [input, setInput] = useState("");
   const [isLoading, setIsLoading] = useState(false);
@@ -198,6 +214,16 @@ export default function StreamingChat() {
 
         {/* チャットタブ */}
         <TabsContent value="chat" className="flex-1 flex flex-col gap-4">
+          {/* STEP36_SEARCH_UI */}
+          <div className="rounded-lg border bg-white p-3">
+            <button type="button" onClick={()=>setMemoryOpen(!memoryOpen)} className="rounded bg-blue-600 px-3 py-2 text-white">長期記憶を検索</button>
+            {memoryOpen && <div className="mt-3 space-y-2">
+              <input value={memoryQuery} onChange={e=>setMemoryQuery(e.target.value)} placeholder="過去の会話を検索" className="w-full rounded border p-2"/>
+              <button type="button" onClick={searchMemory} className="rounded bg-cyan-600 px-3 py-2 text-white">検索</button>
+              {memoryError && <p className="text-red-600">{memoryError}</p>}
+              {memoryResults.map((item,i)=><div key={i} className="rounded border p-2 text-sm"><p>質問：{item.question}</p><p>回答：{item.answer}</p></div>)}
+            </div>}
+          </div>
           <Card className="flex-1 overflow-y-auto p-4 space-y-4 bg-white">
             {messages.length === 0 ? (
               <div className="flex items-center justify-center h-full text-gray-500">
