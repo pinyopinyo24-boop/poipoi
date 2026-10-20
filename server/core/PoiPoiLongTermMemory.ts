@@ -8,6 +8,15 @@ let cachedTurns:Turn[]|null=null;
 let cachedMtime=-1;
 let cachedSize=-1;
 // STEP51_CACHE_INVALIDATION
+// STEP52_CACHE_STATUS
+export function getPoiPoiMemoryCacheStatus(){
+  return {
+    cached:cachedTurns!==null,
+    entries:cachedTurns?.length??0,
+    modifiedAt:cachedMtime,
+    fileSize:cachedSize
+  };
+}
 function invalidatePoiPoiMemoryCache(){
   cachedTurns=null;
   cachedMtime=-1;
