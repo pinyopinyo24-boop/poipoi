@@ -165,6 +165,12 @@ export const streamingRouter = router({
         {key:"好きな食べ物",regex:/(?:私の|僕の|俺の)?好きな食べ物は\s*([^\s。！？、]+)/},
         {key:"趣味",regex:/(?:私の|僕の|俺の)?趣味は\s*([^\s。！？、]+)/}
       ];
+      // STEP45_FACT_FILTER
+      const isValidFact = (question:string,value:string) =>
+        value.trim().length>0 &&
+        !/[?？]/.test(question) &&
+        !/(ですか|ますか|教えて|何色|何です|なんです|どれです)/.test(question) &&
+        !/^(何|なに|なん|どれ|教えて)/.test(value);
       const factValues = new Map<string,string>();
       // STEP40_MEMORY_PRIORITY
       // STEP43_RECENT_FACTS
@@ -174,12 +180,12 @@ export const streamingRouter = router({
         for(const pattern of factPatterns){
           const match=item.question.match(pattern.regex);
           // STEP44_FACT_VALIDATION
-          if(match && !/[?？]/.test(item.question) && !/^(何|なに|なん|どれ|教えて)/.test(match[1]))factValues.set(pattern.key,match[1]);
+          if(match && isValidFact(item.question,match[1]))factValues.set(pattern.key,match[1]);
         }
       }
       for(const pattern of factPatterns){
         const match=input.message.match(pattern.regex);
-        if(match && !/[?？]/.test(input.message) && !/^(何|なに|なん|どれ|教えて)/.test(match[1]))factValues.set(pattern.key,match[1]);
+        if(match && isValidFact(input.message,match[1]))factValues.set(pattern.key,match[1]);
       }
       const genericMemory = [...factValues].map(([key,value])=>key+"："+value).join("\n");
       const updatedMemory = genericMemory ? "以下はユーザーが伝えた最新の情報です。古い回答と矛盾する場合はこちらを優先してください。\n" + genericMemory : "";
