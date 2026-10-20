@@ -156,7 +156,8 @@ export const streamingRouter = router({
       const savedHistory = getPoiPoiMemoryHistory(input.conversationId || "default");
       // STEP35_CROSS_CHAT_MEMORY
       const memoryKeywords = input.message.match(/[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}A-Za-z0-9.]+/gu) || [];
-      const relatedMemories = memoryKeywords.flatMap(word => word.length >= 2 ? searchPoiPoiMemory(word, 5) : []).filter(item => item.conversationId !== (input.conversationId || "default")).slice(0, 5);
+      // STEP37_RECENT_MEMORY
+      const relatedMemories = memoryKeywords.flatMap(word => word.length >= 2 ? searchPoiPoiMemory(word, 10) : []).filter(item => item.conversationId !== (input.conversationId || "default")).sort((a,b)=>Date.parse(b.timestamp)-Date.parse(a.timestamp)).filter((item,index,array)=>array.findIndex(x=>x.question===item.question)===index).slice(0,5);
       const memoryContext = relatedMemories.map(item => "過去の質問: " + item.question + "\n過去の回答: " + item.answer).join("\n");
 
       const response = await invokeLLM({
