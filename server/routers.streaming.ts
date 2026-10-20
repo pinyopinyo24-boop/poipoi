@@ -1,4 +1,4 @@
-import { appendPoiPoiMemory, getPoiPoiMemoryHistory, searchPoiPoiMemory } from "./core/PoiPoiLongTermMemory";
+import { appendPoiPoiMemory, getPoiPoiMemoryHistory, searchPoiPoiMemory, getRecentPoiPoiMemory } from "./core/PoiPoiLongTermMemory";
 import { recordLearningFeedback } from "./core/LearningContextIntegration";
 import { enrichPromptWithLearning } from "./core/LearningContextIntegration";
 import { publicProcedure, router } from "./_core/trpc";
@@ -167,7 +167,8 @@ export const streamingRouter = router({
       ];
       const factValues = new Map<string,string>();
       // STEP40_MEMORY_PRIORITY
-      const factHistory = searchPoiPoiMemory("好き",50).concat(searchPoiPoiMemory("趣味",50)).filter((item,index,array)=>array.findIndex(x=>x.conversationId===item.conversationId && x.timestamp===item.timestamp && x.question===item.question)===index);
+      // STEP43_RECENT_FACTS
+      const factHistory = getRecentPoiPoiMemory(500);
       const orderedFacts = [...factHistory].sort((a,b)=>Date.parse(a.timestamp)-Date.parse(b.timestamp));
       for(const item of orderedFacts){
         for(const pattern of factPatterns){
