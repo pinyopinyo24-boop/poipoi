@@ -1,3 +1,4 @@
+import { runPhase3CLIAdapter } from "./Phase3CLIAdapter";
 import { spawnSync } from "node:child_process";
 import fs from "fs";
 import path from "path";
@@ -66,6 +67,76 @@ function git(args: string[]): string {
   }).trim();
 }
 
+/**
+ * Phase 3: 承認済みファイルのGit安全検証
+ *
+ * - 承認対象は1ファイルだけ
+ * - 対象外ファイルの変更をコミット対象に含めない
+ * - 既存のステージ済み変更がある場合は停止
+ * - Git管理外ファイルのコミットを禁止
+ */
+function validateApprovedGitChanges(
+  approvedFiles: string[],
+  targetPath: string
+): void {
+  const normalize = (value: string): string =>
+    value.replace(/\\/g, "/");
+
+  const files = [...new Set(approvedFiles.map(normalize))];
+  const target = normalize(targetPath);
+
+  if (files.length !== 1 || files[0] !== target) {
+    throw new Error("承認対象以外のファイル変更を拒否しました");
+  }
+
+  if (
+    target.startsWith("/") ||
+    target.split("/").includes("..") ||
+    target.includes("\0")
+  ) {
+    throw new Error("不正な変更対象パスです");
+  }
+
+  const staged = git(["diff", "--cached", "--name-only"]);
+
+  if (staged.trim()) {
+    throw new Error("既存のステージ済み変更があります");
+  }
+
+  const tracked = git(["ls-files", "--", target])
+    .split(/\r?\n/)
+    .filter(Boolean)
+    .map(normalize);
+
+  if (!tracked.includes(target)) {
+    throw new Error("Git管理外のファイルは自己進化できません");
+  }
+
+  const changed = git(["status", "--porcelain", "--", target]);
+
+  if (!changed.trim()) {
+    throw new Error("承認対象ファイルに変更がありません");
+  }
+}
+function validateSingleCommit(files: string[]): void {
+  const unique = [...new Set(files.map(f => f.replace(/\\/g, "/")))];
+
+  if (unique.length !== 1) {
+    throw new Error("Gitコミット対象は1ファイルだけです");
+  }
+
+  const staged = git(["diff", "--cached", "--name-only"]).trim();
+
+  if (staged) {
+    throw new Error("既存のステージ済み変更があるため停止");
+  }
+
+  const status = git(["status", "--porcelain", "--", unique[0]]);
+
+  if (!status.trim()) {
+    throw new Error("コミット対象の差分がありません");
+  }
+}
 function commitChanges(changedFiles: string[]): void {
   const expectedFiles = [...new Set(changedFiles)].sort();
 
@@ -172,31 +243,7 @@ function validateBeforeCommit(
     .filter(Boolean)
     .join("\n");
 
-  const diagnostics = output
-    .split(/\r?\n/)
-    .filter(line => /error TS\d+/.test(line));
-
-  const normalize = (value: string) =>
-    value.replace(/\\/g, "/").toLowerCase();
-
-  const targetDiagnostics = diagnostics.filter(line => {
-    const normalizedLine = normalize(line);
-    return changedFiles.some(file =>
-      normalizedLine.includes(normalize(file))
-    );
-  });
-
-  if (targetDiagnostics.length > 0 || diagnostics.length === 0) {
-    // 検証失敗時の復元は安全なバックアップ処理に委ねる
-    throw new Error(
-      "型チェックに失敗したためコミットを中止しました。\n" +
-      (targetDiagnostics.length > 0
-        ? targetDiagnostics.join("\n")
-        : output)
-    );
-  }
-
-  console.warn("変更対象外の既存TypeScriptエラーを検出しました。");
+  throw new Error("型チェックに失敗したためコミットを中止しました。\n" + output);
 }
 function extractTarget(request: string): string {
   const match = request.match(
@@ -777,15 +824,108 @@ if (targetStatusBeforeEvolution.trim()) {
 
   console.log("修正案と検証実行の一括承認を確認しました");
 
-  // Phase 3: 検証フローが完成するまで変更適用を禁止
-  console.log("検証フローが未完成のため、変更適用とGitコミットを中止します");
-  console.log("AI修正案は表示のみです。対象ファイルは変更しません");
-  return;
-const engine = new CodeEvolutionEngine(ROOT);
+  // Phase 3: 承認対象を変更適用前に固定する
+  const approvedTarget = targetPath.replace(/\\/g, "/");
+  const proposedFiles = [...new Set(changes.map(c => c.filePath.replace(/\\/g, "/")))];
 
-  const result = await engine.apply(
+  if (proposedFiles.length !== 1 || proposedFiles[0] !== approvedTarget) {
+    throw new Error("承認対象以外のファイル変更を拒否しました");
+  }
+
+  if (changes.length !== 1) {
+    throw new Error("一度の承認で適用できる変更案は1件です");
+  }
+  // Phase 3: ロック解除処理の共通化
+  const releaseEvolutionLock = async (
+    handle: Awaited<ReturnType<typeof fs.promises.open>>,
+    lockPath: string
+  ): Promise<void> => {
+    const owned = await handle.stat().catch(() => null);
+    const current = await fs.promises.stat(lockPath).catch(() => null);
+
+    await handle.close();
+
+    if (
+      owned &&
+      current &&
+      owned.dev === current.dev &&
+      owned.ino === current.ino
+    ) {
+      await fs.promises.unlink(lockPath).catch(() => {});
+    }
+  };
+  // Phase 3: 二重実行防止・自動解除
+  const executionLock = path.join(ROOT, ".poipoi-evolution.lock");
+
+  let lockHandle: Awaited<ReturnType<typeof fs.promises.open>>;
+
+  try {
+    lockHandle = await fs.promises.open(executionLock, "wx");
+  } catch {
+    throw new Error("自己進化処理が既に実行中、またはロックが残っています");
+  }
+
+  try {
+    await lockHandle.writeFile(
+      JSON.stringify({
+        pid: process.pid,
+        target: targetPath,
+        startedAt: new Date().toISOString()
+      })
+    );
+  } catch (error) {
+    await releaseEvolutionLock(lockHandle, executionLock);
+    throw error;
+  }
+  // Phase 3: ロック解放保証
+  try {
+  const engine = new CodeEvolutionEngine(ROOT);
+
+  const result = await runPhase3CLIAdapter({
+    root: ROOT,
+    approved: true,
+    targetPath,
     changes,
-  );
+    validateBeforeApply: files => {
+      if (git(["diff", "--cached", "--name-only"]).trim()) {
+        throw new Error("ステージ済み変更が存在します");
+      }
+      if (git(["status", "--porcelain", "--", ...files]).trim()) {
+        throw new Error("対象ファイルに既存の変更があります");
+      }
+    },
+    validateBeforeCommit: files => {
+      validateApprovedGitChanges(files, targetPath);
+    },
+    commit: () => {},
+    verify: () => {
+            // Phase 3: 承認済み変更だけを検証する
+      const approvedFiles = [...new Set(changes.map(c => c.filePath))];
+
+      if (approvedFiles.length !== 1) {
+        throw new Error("一度に変更できるファイルは1件だけです");
+      }
+
+      if (
+        approvedFiles[0].replace(/\\/g, "/") !==
+        targetPath.replace(/\\/g, "/")
+      ) {
+        throw new Error("承認対象以外の変更は禁止されています");
+      }
+
+      validateBeforeCommit(approvedFiles, true);
+      validateApprovedGitChanges(approvedFiles, targetPath);
+      const files = [...new Set(changes.map(c => c.filePath))];
+      if (files.length === 0) throw new Error("変更ファイルがありません");
+      const unexpected = files.filter(file =>
+        file.replace(/\\/g, "/") !== targetPath.replace(/\\/g, "/")
+      );
+      if (unexpected.length) throw new Error("対象外ファイル: " + unexpected.join(", "));
+      const status = git(["status", "--porcelain", "--", ...files]);
+      if (!status) throw new Error("Git差分がありません");
+      // 検証成功。コミットはapply完了後に実施する
+    }
+  });
 
   if (!result.success) {
     console.error("❌ 自己進化失敗");
@@ -797,42 +937,50 @@ const engine = new CodeEvolutionEngine(ROOT);
     process.exit(1);
   }
 
-  if (result.changedFiles.length === 0) {
-    throw new Error("自己進化成功と判定されましたが変更ファイルがありません");
-  }
-
-  const expectedTarget = targetPath.replace(/\\/g, "/");
-  const unexpectedResultFiles = result.changedFiles.filter(
-    filePath => filePath.replace(/\\/g, "/") !== expectedTarget
-  );
-
-  if (unexpectedResultFiles.length > 0) {
-    throw new Error(
-      "自己進化エンジンが対象外ファイルを返しました。コミットを中止します。\n" +
-      unexpectedResultFiles.join("\n")
-    );
-  }
-  const afterStatus = git([
-    "status",
-    "--porcelain",
-    "--",
-    ...result.changedFiles,
-  ]);
-
-  if (!afterStatus) {
-    throw new Error(
-      "自己進化成功と判定されましたが変更対象ファイルにGit差分がありません"
-    );
-  }
-
-  // Gitへの確定が成功してから、自己進化成功を表示する
-  validateBeforeCommit(result.changedFiles);
-  commitChanges(result.changedFiles);
+  // Git検証とコミットはapply内のコールバックで実施済み
 
   console.log("================================");
+  try {
+    const files = [...new Set(result.changedFiles)];
+    if (files.length === 0) {
+      throw new Error("コミット対象がありません");
+    }
+
+    const status = git(["status", "--porcelain", "--", ...files]);
+    if (!status.trim()) {
+      throw new Error("コミット直前にGit差分がありません");
+    }
+
+    validateApprovedGitChanges(files, targetPath);
+    validateSingleCommit(files);
+    commitChanges(files);
+  } catch (error) {
+    // Phase 3: コミット失敗時のステージ保護
+    try {
+      const stagedAfterFailure = git(["diff", "--cached", "--name-only"])
+        .split(/\r?\n/)
+        .filter(Boolean);
+
+      if (stagedAfterFailure.length > 0) {
+        console.error(
+          "Gitステージ領域に変更が残っています。手動確認が必要です:",
+          stagedAfterFailure.join(", ")
+        );
+      }
+    } catch (statusError) {
+      console.error("Gitステージ状態を確認できません:", statusError);
+    }
+
+    console.error("Gitコミット失敗。変更ファイルを保持して停止します。");
+    console.error("自動復元は行いません。手動確認が必要です。");
+    throw error;
+  }
   console.log("✅ 自己進化成功（Gitコミット完了）");
   console.log(`変更ファイル: ${result.changedFiles.join(", ")}`);
   console.log("================================");
+  } finally {
+    await releaseEvolutionLock(lockHandle, executionLock);
+  }
 }
 
 main().catch((error: unknown) => {

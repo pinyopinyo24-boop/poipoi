@@ -23,7 +23,8 @@ export class CodeEvolutionEngine {
 
   async apply(
     changes: CodeChange[],
-    testCommand: string[] = []
+    testCommand: string[] = [],
+    verify?: () => Promise<void> | void
   ): Promise<CodeEvolutionResult> {
     const backups = new Map<string, Buffer>();
     const backupHashes = new Map<string, string>();
@@ -287,6 +288,26 @@ export class CodeEvolutionEngine {
           await fs.rename(tempPath, filePath);
         } finally {
           await fs.rm(tempPath, { force: true });
+        }
+      }
+
+      if (verify) {
+        for (const filePath of modified) {
+          const expected = writtenOutputs.get(filePath);
+          const actual = await fs.readFile(filePath);
+          if (!expected || !actual.equals(expected)) {
+            throw new Error("検証前にファイルが変更されました: " + filePath);
+          }
+        }
+
+        await verify();
+
+        for (const filePath of modified) {
+          const expected = writtenOutputs.get(filePath);
+          const actual = await fs.readFile(filePath);
+          if (!expected || !actual.equals(expected)) {
+            throw new Error("検証中にファイルが変更されました: " + filePath);
+          }
         }
       }
 
