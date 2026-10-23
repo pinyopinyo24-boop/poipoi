@@ -16,7 +16,7 @@ import { ChatService } from '../services/ChatService';
 import { MessageProcessingService } from '../services/MessageProcessingService';
 import { ContextAwarenessService } from '../services/ContextAwarenessService';
 import { ChatRepository } from '../repositories/ChatRepository';
-import { aiProviderManager } from '../ai/AIProviderManager';
+import { getAICore, initializeAICore } from '../_core/ai/AICore';
 
 export interface ChatMessage {
   id: string;
@@ -220,7 +220,8 @@ export class ChatCoreManager {
         process.cwd(),
         userMessage
       );
-      const aiMessage = await aiProviderManager.invoke([
+      const aiCore = getAICore() ?? await initializeAICore();
+      const aiMessage = await aiCore.invoke([
         {
           role: "user",
           content: learnedMessage
