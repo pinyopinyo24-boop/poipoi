@@ -419,10 +419,10 @@ export class MobileAPIConnector {
   }
   setAuthToken(token: string): void {
     if (this.sessionToken !== token) {
-        this.sessionId = null;
-        void AsyncStorage.removeItem('chatSessionId');
-      }
-      this.sessionToken = token;
+      this.sessionId = null;
+      void AsyncStorage.removeItem('chatSessionId');
+    }
+    this.sessionToken = token;
     this.apiClient.defaults.headers.common['Authorization'] = `Bearer ${token}`;
     void AsyncStorage.setItem('sessionToken', token);
   }
