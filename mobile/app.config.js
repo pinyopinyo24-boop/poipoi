@@ -3,7 +3,7 @@ const app = require("./app.json");
 module.exports = {
   ...app.expo,
   newArchEnabled: true,
-  plugins: [...(app.expo.plugins || []), ["expo-build-properties", { android: { newArchEnabled: true } }]],
+  plugins: [...(app.expo.plugins || []), ["expo-build-properties", { android: { usesCleartextTraffic: true, newArchEnabled: true } }]],
   extra: {
     ...app.expo.extra,
     eas: {
