@@ -39,6 +39,38 @@ export default function ChatScreen() {
   const [apiConnector, setApiConnector] = useState<MobileAPIConnector | null>(null);
   const [isConnected, setIsConnected] = useState(false);
   const [sessionId, setSessionId] = useState<string | undefined>();
+  const [loginUsername, setLoginUsername] = useState('');
+  const [loginPassword, setLoginPassword] = useState('');
+  const [loginBusy, setLoginBusy] = useState(false);
+  const [showLogin, setShowLogin] = useState(false);
+
+  const handleLogin = async () => {
+    if (!apiConnector || !loginUsername.trim() || !loginPassword || loginBusy) return;
+    setLoginBusy(true);
+    try {
+      const baseURL = Constants.expoConfig?.extra?.apiBaseUrl;
+      if (typeof baseURL !== 'string' || !baseURL.trim()) throw new Error('API URLが未設定です');
+      const response = await fetch(`${baseURL.replace(/\/$/, '')}/api/trpc/auth.login`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ json: { username: loginUsername.trim(), password: loginPassword } }),
+      });
+      const result = await response.json();
+      const token = result?.result?.data?.json?.token ?? result?.result?.data?.token;
+      if (!response.ok || typeof token !== 'string' || !token) {
+        throw new Error(result?.error?.message || 'ログインに失敗しました');
+      }
+      apiConnector.setAuthToken(token);
+      setIsConnected(await apiConnector.checkConnectivity());
+      setLoginPassword('');
+      setShowLogin(false);
+      Alert.alert('ログイン完了', 'PoiPoiに接続しました');
+    } catch (error) {
+      Alert.alert('ログインエラー', error instanceof Error ? error.message : '認証失敗');
+    } finally {
+      setLoginBusy(false);
+    }
+  };
   const [cameraPermission, requestCameraPermission] = useCameraPermissions();
   const [cameraOpen, setCameraOpen] = useState(false);
   const cameraRef = useRef<CameraView>(null);
@@ -233,6 +265,11 @@ export default function ChatScreen() {
       <View>{modelDownloadProgress !== null && <Text>{modelDownloadProgress === 100 ? 'AIモデルのダウンロード完了' : `AIモデル取得中：${modelDownloadProgress}%`}</Text>}</View>
       <View style={styles.header}>
         <Text style={styles.headerTitle}>🦝 PoiPoi Chat</Text>
+          {!isConnected && (
+            <Text onPress={() => setShowLogin(!showLogin)}>
+              {showLogin ? '閉じる' : 'ログイン'}
+            </Text>
+          )}
         <View style={styles.statusIndicator}>
           <View style={[styles.statusDot, { backgroundColor: isConnected ? "#4CAF50" : "#FF9800" }]} />
           <Text style={styles.statusText}>{isConnected ? "接続済み" : "オフライン"}</Text>
