@@ -1,3 +1,6 @@
+import { MobileSelfEvolution } from '../services/MobileSelfEvolution';
+import { AndroidAIModelManager } from '../services/AndroidAIModelManager';
+import { AndroidLocalAI } from '../services/AndroidLocalAI';
 import React, { useState, useEffect } from "react";
 import {
   View,
@@ -31,6 +34,8 @@ export default function ChatScreen() {
   ]);
   const [input, setInput] = useState("");
   const [isLoading, setIsLoading] = useState(false);
+  const [modelDownloadProgress,setModelDownloadProgress]=useState<number|null>(null);
+  useEffect(()=>{AndroidAIModelManager.setProgressListener(setModelDownloadProgress);return ()=>AndroidAIModelManager.setProgressListener(null);},[]);
   const [apiConnector, setApiConnector] = useState<MobileAPIConnector | null>(null);
   const [isConnected, setIsConnected] = useState(false);
   const [sessionId, setSessionId] = useState<string | undefined>();
@@ -140,16 +145,34 @@ export default function ChatScreen() {
     setIsLoading(true);
 
     try {
-      if (!apiConnector) {
-        throw new Error("API コネクタが初期化されていません");
-      }
 
       // API にメッセージを送信
-      const response = await apiConnector.sendChatMessage({
-        message: input,
-        sessionId: sessionId,
-        context: {}
-      });
+      let response: any;
+
+      if (false && isConnected && apiConnector) {
+        try {
+          response = await apiConnector.sendChatMessage({
+            message: input,
+            sessionId: sessionId,
+            context: {},
+          });
+
+          if (!response.success) {
+            throw new Error(response.error || 'API エラー');
+          }
+        } catch (error) {
+          console.warn('サーバー通信失敗:', error);
+        }
+      }
+
+      if (!response?.success) {
+        response = {
+          success: true,
+          data: {
+            message: await (input.startsWith('/進化設計確認 ') ? MobileSelfEvolution.getFeatureDesign(Number(input.slice('/進化設計確認 '.length).trim()) - 1) : input.startsWith('/進化設計 ') ? MobileSelfEvolution.generateFeatureDesign(Number(input.slice('/進化設計 '.length).trim()) - 1) : input.startsWith('/進化承認 ') ? MobileSelfEvolution.approveAndSave(Number(input.slice(6).trim()) - 1).then(f => '承認しました: ' + f.request) : input.trim() === '/進化一覧' ? MobileSelfEvolution.getProposals().then(list => list.length ? list.map((f,i) => (i+1) + '. [' + f.status + '] ' + f.request).join('\n') : '提案はありません') : input.startsWith('/進化 ') ? MobileSelfEvolution.propose(input.slice(4)).then(r => r.proposal) : AndroidLocalAI.sendMessage(input)),
+          },
+        };
+      }
 
       if (response.success && response.data) {
         // Extract message content from ChatMessage object
@@ -191,6 +214,7 @@ export default function ChatScreen() {
   return (
     <SafeAreaView style={styles.container}>
       {/* Header */}
+      <View>{modelDownloadProgress !== null && <Text>{modelDownloadProgress === 100 ? 'AIモデルのダウンロード完了' : `AIモデル取得中：${modelDownloadProgress}%`}</Text>}</View>
       <View style={styles.header}>
         <Text style={styles.headerTitle}>🦝 PoiPoi Chat</Text>
         <View style={styles.statusIndicator}>
