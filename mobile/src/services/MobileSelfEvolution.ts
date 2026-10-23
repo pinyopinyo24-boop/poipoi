@@ -130,6 +130,33 @@ export class MobileSelfEvolution {
       '実行: 未実装'
     ].join('\n');
   }
+  static async executeFeature(index: number, input: string): Promise<string> {
+    const history = await this.getProposals();
+    if (!Number.isInteger(index) || index < 0 || index >= history.length) {
+      throw new Error('提案が見つかりません');
+    }
+    if (history[index].status !== 'approved') {
+      throw new Error('未承認の機能です');
+    }
+
+    const saved = await AsyncStorage.getItem('poipoi:evolution:active');
+    const active: number[] = saved ? JSON.parse(saved) : [];
+    if (!active.includes(index)) {
+      throw new Error('登録されていない機能です');
+    }
+
+    const design = await AsyncStorage.getItem('poipoi:evolution:design:' + index);
+    if (!design) {
+      throw new Error('設計がありません');
+    }
+
+    return AndroidLocalAI.sendMessage(
+      '次の機能設計に従って依頼に回答してください。外部操作やコード実行は行わないでください。\n'
+      + '機能: ' + history[index].request
+      + '\n設計: ' + design
+      + '\n依頼: ' + input
+    );
+  }
   static approve(feature: FeatureProposal): FeatureProposal {
     return { ...feature, status: 'approved' };
   }
