@@ -91,6 +91,7 @@ export default function ChatScreen() {
       if (!response.ok || typeof token !== 'string' || !token) {
         throw new Error(result?.error?.message || 'ログインに失敗しました');
       }
+      const previousSessionId = apiConnector.getSessionId();
       apiConnector.setAuthToken(token);
       const authResponse = await fetch(`${baseURL.replace(/\/$/, '')}/api/trpc/auth.me`, {
         headers: { Authorization: `Bearer ${token}` },
@@ -98,10 +99,14 @@ export default function ChatScreen() {
       const authResult = await authResponse.json();
       const authUser = authResult?.result?.data?.json ?? authResult?.result?.data;
       if (!authResponse.ok || !authUser?.id) throw new Error('認証確認に失敗しました');
-      setSessionId(undefined);
-      setMessages([]);
-      setChatSessions([]);
-      setShowHistory(false);
+      if (!apiConnector.getSessionId()) {
+        setSessionId(undefined);
+        setMessages([]);
+        setChatSessions([]);
+        setShowHistory(false);
+      } else {
+        setSessionId(previousSessionId || undefined);
+      }
       setIsConnected(true);
       setLoginPassword('');
       setShowLogin(false);
