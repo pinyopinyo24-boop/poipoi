@@ -61,7 +61,13 @@ export default function ChatScreen() {
         throw new Error(result?.error?.message || 'ログインに失敗しました');
       }
       apiConnector.setAuthToken(token);
-      setIsConnected(await apiConnector.checkConnectivity());
+      const authResponse = await fetch(`${baseURL.replace(/\/$/, '')}/api/trpc/auth.me`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      const authResult = await authResponse.json();
+      const authUser = authResult?.result?.data?.json ?? authResult?.result?.data;
+      if (!authResponse.ok || !authUser?.id) throw new Error('認証確認に失敗しました');
+      setIsConnected(true);
       setLoginPassword('');
       setShowLogin(false);
       Alert.alert('ログイン完了', 'PoiPoiに接続しました');
@@ -146,7 +152,16 @@ export default function ChatScreen() {
 
         // 接続確認
         const connected = await connector.checkConnectivity();
-        setIsConnected(connected && hasSavedSession);
+        let authenticated = false;
+        if (connected && hasSavedSession) {
+          try {
+            const authResponse = await connector.checkAuthentication();
+            authenticated = authResponse;
+          } catch {
+            authenticated = false;
+          }
+        }
+        setIsConnected(authenticated);
         if (__DEV__) console.log("[ChatScreen] Backend connectivity:", connected);
 
         if (!connected) {

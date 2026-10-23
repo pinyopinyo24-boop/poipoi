@@ -407,6 +407,16 @@ export class MobileAPIConnector {
     return (data && typeof data === 'object' && 'json' in data ? data.json : data) as T | undefined;
   }
 
+  async checkAuthentication(): Promise<boolean> {
+    if (!this.sessionToken) return false;
+    try {
+      const response = await this.apiClient.get('/api/trpc/auth.me');
+      const user = response.data?.result?.data?.json ?? response.data?.result?.data;
+      return !!user?.id;
+    } catch {
+      return false;
+    }
+  }
   setAuthToken(token: string): void {
     this.sessionToken = token;
     this.apiClient.defaults.headers.common['Authorization'] = `Bearer ${token}`;
