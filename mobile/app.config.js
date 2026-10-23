@@ -10,6 +10,6 @@ module.exports = {
       ...app.expo.extra?.eas,
       projectId: "3d840495-8cd2-4f5f-8965-1f7c28a34401",
     },
-    apiBaseUrl: process.env.EXPO_PUBLIC_API_URL || app.expo.extra.apiBaseUrl,
+    apiBaseUrl: app.expo.extra.apiBaseUrl,
   },
 };

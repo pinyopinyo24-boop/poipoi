@@ -82,7 +82,7 @@ export class MobileAPIConnector {
   private maxRetries: number = 3;
   private retryDelay: number = 1000;
 
-  constructor(baseURL: string = 'http://192.168.1.8:3000') {
+  constructor(baseURL: string = 'http://192.168.1.7:3000') {
     this.baseURL = baseURL;
     this.apiClient = axios.create({
       baseURL,
