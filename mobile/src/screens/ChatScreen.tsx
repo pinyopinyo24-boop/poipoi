@@ -149,7 +149,7 @@ export default function ChatScreen() {
       // API にメッセージを送信
       let response: any;
 
-      if (false && isConnected && apiConnector) {
+      if (isConnected && apiConnector) {
         try {
           response = await apiConnector.sendChatMessage({
             message: input,
