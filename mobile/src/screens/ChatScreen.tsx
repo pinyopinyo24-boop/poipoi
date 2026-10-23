@@ -205,8 +205,8 @@ export default function ChatScreen() {
         setMessages(prev => [...prev, assistantMessage]);
         
         // Update session ID if provided
-        if (response.data.session?.id) {
-          setSessionId(response.data.session.id);
+        if (response.data.session?.id || apiConnector?.getSessionId()) {
+          setSessionId(response.data.session?.id || apiConnector?.getSessionId() || undefined);
         }
       } else {
         throw new Error(response.error || "API エラー");
