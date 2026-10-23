@@ -15,7 +15,7 @@ describe('MobileAPIConnector', () => {
   let connector: MobileAPIConnector;
 
   beforeEach(() => {
-    connector = new MobileAPIConnector('http://localhost:3000');
+    connector = new MobileAPIConnector('http://192.168.1.7:3000');
   });
 
   afterEach(() => {
