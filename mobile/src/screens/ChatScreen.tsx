@@ -114,7 +114,7 @@ export default function ChatScreen() {
 
         // 接続確認
         const connected = await connector.checkConnectivity();
-        setIsConnected(connected);
+        setIsConnected(connected && hasSavedSession);
         if (__DEV__) console.log("[ChatScreen] Backend connectivity:", connected);
 
         if (!connected) {
