@@ -322,6 +322,8 @@ export async function initializeAICore(config?: Partial<AICoreConfig>): Promise<
     primaryProvider: 'local',
     enableLogging: process.env.NODE_ENV !== 'production',
     ...config,
+    primaryProvider: 'local',
+    enableGemini: false,
   };
 
   globalAICore = new AICore(defaultConfig);
