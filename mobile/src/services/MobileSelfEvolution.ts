@@ -112,6 +112,24 @@ export class MobileSelfEvolution {
 
     return '登録を解除しました: ' + history[index].request;
   }
+  static async getFeatureStatus(index: number): Promise<string> {
+    const history = await this.getProposals();
+    if (!Number.isInteger(index) || index < 0 || index >= history.length) {
+      throw new Error('提案が見つかりません');
+    }
+
+    const saved = await AsyncStorage.getItem('poipoi:evolution:active');
+    const active: number[] = saved ? JSON.parse(saved) : [];
+    const design = await AsyncStorage.getItem('poipoi:evolution:design:' + index);
+
+    return [
+      '機能: ' + history[index].request,
+      '承認: ' + (history[index].status === 'approved' ? '済み' : '未承認'),
+      '設計: ' + (design ? '保存済み' : '未作成'),
+      '登録: ' + (active.includes(index) ? '有効' : '無効'),
+      '実行: 未実装'
+    ].join('\n');
+  }
   static approve(feature: FeatureProposal): FeatureProposal {
     return { ...feature, status: 'approved' };
   }
