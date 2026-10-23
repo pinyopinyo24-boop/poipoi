@@ -35,6 +35,37 @@ export default function ChatScreen() {
   const [input, setInput] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [modelDownloadProgress,setModelDownloadProgress]=useState<number|null>(null);
+  const [chatSessions, setChatSessions] = useState<Array<{ id: string; title?: string }>>([]);
+  const [showHistory, setShowHistory] = useState(false);
+
+  const openChatHistory = async () => {
+    if (!apiConnector || !isConnected) return;
+    const result = await apiConnector.getChatSessions();
+    if (!result.success || !result.data) {
+      Alert.alert('履歴エラー', '履歴を取得できませんでした');
+      return;
+    }
+    setChatSessions(result.data);
+    setShowHistory(true);
+  };
+
+  const openChatSession = async (id: string) => {
+    if (!apiConnector) return;
+    const result = await apiConnector.getChatHistory(id);
+    if (!result.success || !result.data) {
+      Alert.alert('履歴エラー', '会話を取得できませんでした');
+      return;
+    }
+    await apiConnector.selectChatSession(id);
+    setSessionId(id);
+    setMessages(result.data.map(message => ({
+      id: message.id,
+      text: message.content,
+      isUser: message.role === 'user',
+      timestamp: message.timestamp,
+    })));
+    setShowHistory(false);
+  };
   useEffect(()=>{AndroidAIModelManager.setProgressListener(setModelDownloadProgress);return ()=>AndroidAIModelManager.setProgressListener(null);},[]);
   const [apiConnector, setApiConnector] = useState<MobileAPIConnector | null>(null);
   const [isConnected, setIsConnected] = useState(false);
@@ -280,6 +311,7 @@ export default function ChatScreen() {
       <View>{modelDownloadProgress !== null && <Text>{modelDownloadProgress === 100 ? 'AIモデルのダウンロード完了' : `AIモデル取得中：${modelDownloadProgress}%`}</Text>}</View>
       <View style={styles.header}>
         <Text style={styles.headerTitle}>🦝 PoiPoi Chat</Text>
+        {isConnected && <Text onPress={() => { void openChatHistory(); }}>履歴</Text>}
           {!isConnected && (
             <Text onPress={() => setShowLogin(!showLogin)}>
               {showLogin ? '閉じる' : 'ログイン'}
@@ -291,6 +323,16 @@ export default function ChatScreen() {
         </View>
       </View>
 
+      {showHistory && isConnected && (
+        <View style={{ padding: 12 }}>
+          <Text onPress={() => setShowHistory(false)}>閉じる</Text>
+          {chatSessions.map(s => (
+            <Text key={s.id} onPress={() => { void openChatSession(s.id); }} style={{ padding: 10 }}>
+              {s.title || s.id}
+            </Text>
+          ))}
+        </View>
+      )}
       {/* Messages */}
       <FlatList
         data={messages}
