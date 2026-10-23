@@ -428,7 +428,9 @@ export class MobileAPIConnector {
       if (tokenChanged) {
         await AsyncStorage.removeItem('chatSessionId');
       }
-      await AsyncStorage.setItem('sessionToken', token);
+      if (this.sessionToken === token) {
+        await AsyncStorage.setItem('sessionToken', token);
+      }
     })();
   }
 
