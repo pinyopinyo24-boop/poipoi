@@ -1,4 +1,4 @@
-﻿/**
+/**
  * AICore - Main AI integration hub
  * Provides unified interface for AI operations across PoiPoi OS
  */
@@ -138,6 +138,13 @@ export class AICore {
   /**
    * Get primary provider
    */
+  async invoke(messages: Parameters<IAIProvider["invoke"]>[0]): Promise<string> {
+    if (!this.initialized || !this.runtimeProvider) {
+      throw new Error("AICore is not initialized");
+    }
+    const response = await this.runtimeProvider.invoke(messages);
+    return response.content;
+  }
   getPrimaryProvider(): IAIProvider | undefined {
     return this.runtimeProvider || this.providers.get(this.config.primaryProvider);
   }
