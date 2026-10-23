@@ -57,6 +57,61 @@ export class MobileSelfEvolution {
     return await AsyncStorage.getItem('poipoi:evolution:design:' + index)
       || '設計はまだ生成されていません';
   }
+  static async activateFeature(index: number): Promise<string> {
+    const history = await this.getProposals();
+    const feature = history[index];
+    if (!feature || feature.status !== 'approved') {
+      throw new Error('承認済みの提案がありません');
+    }
+
+    const design = await AsyncStorage.getItem('poipoi:evolution:design:' + index);
+    if (!design) {
+      throw new Error('先に設計を生成してください');
+    }
+
+    const key = 'poipoi:evolution:active';
+    const saved = await AsyncStorage.getItem(key);
+    const active: number[] = saved ? JSON.parse(saved) : [];
+
+    if (!active.includes(index)) {
+      active.push(index);
+      await AsyncStorage.setItem(key, JSON.stringify(active));
+    }
+
+    return '拡張機能を登録しました: ' + feature.request;
+  }
+  static async getActiveFeatures(): Promise<string> {
+    const saved = await AsyncStorage.getItem('poipoi:evolution:active');
+    const active: number[] = saved ? JSON.parse(saved) : [];
+    const history = await this.getProposals();
+
+    if (!active.length) return '登録済み機能はありません';
+
+    return active.map(i =>
+      (i + 1) + '. ' + (history[i]?.request || '不明な機能')
+    ).join('\n');
+  }
+  static async deactivateFeature(index: number): Promise<string> {
+    const history = await this.getProposals();
+    if (!Number.isInteger(index) || index < 0 || index >= history.length) {
+      throw new Error('提案が見つかりません');
+    }
+
+    const key = 'poipoi:evolution:active';
+    const saved = await AsyncStorage.getItem(key);
+    const active: number[] = saved ? JSON.parse(saved) : [];
+
+    if (!active.includes(index)) {
+      return 'この機能は登録されていません';
+    }
+
+    await AsyncStorage.setItem(
+      key,
+      JSON.stringify(active.filter(i => i !== index))
+    );
+
+    return '登録を解除しました: ' + history[index].request;
+  }
   static approve(feature: FeatureProposal): FeatureProposal {
     return { ...feature, status: 'approved' };
   }
