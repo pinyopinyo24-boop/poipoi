@@ -201,7 +201,7 @@ export default function ChatScreen() {
             authenticated = false;
           }
         }
-        setIsConnected(authenticated);
+        setIsConnected(connected);
         if (__DEV__) console.log("[ChatScreen] Backend connectivity:", connected);
 
         if (!connected) {
