@@ -424,12 +424,12 @@ export class MobileAPIConnector {
     }
     this.sessionToken = token;
     this.apiClient.defaults.headers.common['Authorization'] = `Bearer ${token}`;
-    if (tokenChanged) {
-      void AsyncStorage.removeItem('chatSessionId')
-        .then(() => AsyncStorage.setItem('sessionToken', token));
-    } else {
-      void AsyncStorage.setItem('sessionToken', token);
-    }
+    void (async () => {
+      if (tokenChanged) {
+        await AsyncStorage.removeItem('chatSessionId');
+      }
+      await AsyncStorage.setItem('sessionToken', token);
+    })();
   }
 
   /**
