@@ -1,4 +1,4 @@
-﻿import { router, publicProcedure, protectedProcedure } from './_core/trpc';
+import { router, publicProcedure, protectedProcedure } from './_core/trpc';
 import { z } from 'zod';
 import { TRPCError } from '@trpc/server';
 import { ChatCoreManager } from './core/ChatCoreManager';
@@ -142,6 +142,10 @@ export const chatRouter = router({
       return { ...session, messages: session.messages.filter((message: { userId: string }) => message.userId === userId) };
     }),
 
+  getSessions: protectedProcedure
+    .query(async ({ ctx }) =>
+      getChatCoreManager().getUserSessions(String(ctx.user.id))
+    ),
   getMessages: protectedProcedure
     .input(
       z.object({
