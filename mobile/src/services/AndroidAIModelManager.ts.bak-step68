@@ -1,0 +1,83 @@
+import * as FileSystem from 'expo-file-system';
+import { getDeviceAIProfile, AIModelTier } from './DeviceAIProfile';
+
+export type ModelDefinition = {
+  tier: AIModelTier;
+  fileName: string;
+  downloadUrl: string;
+};
+
+const MODEL_FILES: Record<AIModelTier, string> = {
+  small: 'poipoi-0.5b-q4.gguf',
+  medium: 'poipoi-1.5b-q4.gguf',
+  large: 'poipoi-3b-q4.gguf',
+};
+
+export class AndroidAIModelManager {
+  private static modelDirectory =
+    `${FileSystem.documentDirectory}ai-models/`;
+
+  static getRecommendedTier(): AIModelTier {
+    return getDeviceAIProfile().tier;
+  }
+
+  static getModelPath(tier: AIModelTier): string {
+    return `${this.modelDirectory}${MODEL_FILES[tier]}`;
+  }
+
+  static async getInstalledModel(): Promise<string | null> {
+    const preferred = this.getRecommendedTier();
+    const order: AIModelTier[] =
+      preferred === 'large'
+        ? ['large', 'medium', 'small']
+        : preferred === 'medium'
+          ? ['medium', 'small']
+          : ['small'];
+
+    for (const tier of order) {
+      const path = this.getModelPath(tier);
+      const info = await FileSystem.getInfoAsync(path);
+      if (info.exists && info.size > 0) return path;
+    }
+    return null;
+  }
+
+  static async downloadModel(model: ModelDefinition): Promise<string> {
+    if (!model.downloadUrl.startsWith('https://')) {
+      throw new Error('HTTPSのモデルURLが必要です');
+    }
+
+    await FileSystem.makeDirectoryAsync(this.modelDirectory, {
+      intermediates: true,
+    });
+
+    const destination = this.getModelPath(model.tier);
+    const temporary = `${destination}.download`;
+
+    try {
+      const result = await FileSystem.downloadAsync(
+        model.downloadUrl,
+        temporary,
+      );
+
+      if (result.status !== 200) {
+        throw new Error(`モデル取得失敗: HTTP ${result.status}`);
+      }
+
+      const info = await FileSystem.getInfoAsync(temporary);
+      if (!info.exists || info.size === 0) {
+        throw new Error('ダウンロードしたモデルが空です');
+      }
+
+      await FileSystem.moveAsync({
+        from: temporary,
+        to: destination,
+      });
+
+      return destination;
+    } catch (error) {
+      await FileSystem.deleteAsync(temporary, { idempotent: true });
+      throw error;
+    }
+  }
+}

@@ -1,0 +1,112 @@
+import { Platform } from 'react-native';
+import { AndroidAIModelManager, QWEN_MODEL_URLS } from './AndroidAIModelManager';
+
+type ChatTurn = {
+  role: 'system' | 'user' | 'assistant';
+  content: string;
+};
+
+export class AndroidLocalAI {
+  private static context: any = null;
+  private static initializationPromise: Promise<boolean> | null = null;
+  private static modelPath: string | null = null;
+  private static history: ChatTurn[] = [];
+
+  static async initialize(): Promise<boolean> {
+    if (this.initializationPromise) return this.initializationPromise;
+
+    this.initializationPromise = this.initializeInternal();
+    try {
+      return await this.initializationPromise;
+    } finally {
+      this.initializationPromise = null;
+    }
+  }
+
+  private static async initializeInternal(): Promise<boolean> {
+    if (Platform.OS !== 'android') {
+      throw new Error('Android専用のローカルAIです');
+    }
+
+    let path: string;
+   try {
+     path = await AndroidAIModelManager.ensureModel(QWEN_MODEL_URLS);
+   } catch (error) {
+     const reason = error instanceof Error ? error.message : String(error);
+     throw new Error(`AIモデルの準備に失敗しました: ${reason}`);
+   }
+
+    if (!path) {
+      throw new Error('AIモデルが未ダウンロードです');
+    }
+
+    if (this.context && this.modelPath === path) {
+      return true;
+    }
+
+    await this.release();
+
+    const { initLlama } = require('llama.rn');
+
+    this.context = await initLlama({
+      model: path.replace(/^file:\/\//, ''),
+      n_ctx: 2048,
+      n_batch: 128,
+      n_threads: 4,
+      use_mlock: false,
+    });
+
+    this.modelPath = path;
+    return true;
+  }
+
+  static async sendMessage(message: string): Promise<string> {
+    if (!message.trim()) {
+      throw new Error('メッセージが空です');
+    }
+
+    await this.initialize();
+
+    const messages: ChatTurn[] = [
+      {
+        role: 'system',
+        content: 'あなたはPoiPoi AIです。日本語で正確かつ簡潔に回答してください。',
+      },
+      ...this.history.slice(-10),
+      { role: 'user', content: message },
+    ];
+
+    const result = await this.context.completion({
+      messages,
+      n_predict: 512,
+      temperature: 0.7,
+      stop: ['<|im_end|>', '<|endoftext|>'],
+    });
+
+    const answer = String(result?.text ?? '').trim();
+
+    if (!answer) {
+      throw new Error('ローカルAIから応答がありません');
+    }
+
+    this.history.push(
+      { role: 'user', content: message },
+      { role: 'assistant', content: answer },
+    );
+
+    return answer;
+  }
+
+  static clearHistory(): void {
+    this.history = [];
+  }
+
+  static async release(): Promise<void> {
+    if (this.context) {
+      const current = this.context;
+      this.context = null;
+      await current.release();
+    }
+    this.modelPath = null;
+  }
+}

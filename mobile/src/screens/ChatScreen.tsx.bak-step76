@@ -1,0 +1,398 @@
+import { AndroidLocalAI } from '../services/AndroidLocalAI';
+import React, { useState, useEffect } from "react";
+import {
+  View,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  FlatList,
+  StyleSheet,
+  SafeAreaView,
+  ActivityIndicator,
+  Alert,
+  Modal,
+} from "react-native";
+import { CameraView, useCameraPermissions } from 'expo-camera';
+import { useRef } from 'react';
+import * as FileSystem from 'expo-file-system';
+import { VoiceInputUI } from '../components/VoiceInputUI';
+import { MobileAPIConnector, ChatRequest, ChatResponse } from "../services/MobileAPIConnector";
+import Constants from "expo-constants";
+
+interface Message {
+  id: string;
+  text: string;
+  isUser: boolean;
+  timestamp: number;
+}
+
+export default function ChatScreen() {
+  const [messages, setMessages] = useState<Message[]>([
+    { id: "0", text: "ようこそPoiPoiへ。何かお手伝いできることはありますか？", isUser: false, timestamp: Date.now() }
+  ]);
+  const [input, setInput] = useState("");
+  const [isLoading, setIsLoading] = useState(false);
+  const [apiConnector, setApiConnector] = useState<MobileAPIConnector | null>(null);
+  const [isConnected, setIsConnected] = useState(false);
+  const [sessionId, setSessionId] = useState<string | undefined>();
+  const [cameraPermission, requestCameraPermission] = useCameraPermissions();
+  const [cameraOpen, setCameraOpen] = useState(false);
+  const cameraRef = useRef<CameraView>(null);
+  const [isAnalyzingImage, setIsAnalyzingImage] = useState(false);
+
+  const handleVoiceData = async (uri: string) => {
+    if (!apiConnector || !uri) return Alert.alert('音声入力', 'API接続後に録音してください');
+    try {
+      const base64 = await FileSystem.readAsStringAsync(uri, { encoding: FileSystem.EncodingType.Base64 });
+      const response = await apiConnector.sendVoiceMessage({ audioUrl: `data:audio/mp4;base64,${base64}`, language: 'ja' });
+      if (!response.success || !response.data) throw new Error(response.error || '文字起こしに失敗しました');
+      const transcript = typeof response.data.message === 'string' ? response.data.message : response.data.message.content;
+      setInput(transcript);
+      Alert.alert('文字起こし完了', '内容を確認して送信してください。');
+    } catch (error) {
+      Alert.alert('音声入力エラー', error instanceof Error ? error.message : '音声を処理できませんでした');
+    }
+  };
+
+  const handleOpenCamera = async () => {
+    if (!cameraPermission?.granted) {
+      const permission = await requestCameraPermission();
+      if (!permission.granted) return Alert.alert('カメラ権限', '画像読み取りにはカメラ権限が必要です。');
+    }
+    setCameraOpen(true);
+  };
+
+  const handleCaptureAndAnalyze = async () => {
+    try {
+      const photo = await cameraRef.current?.takePictureAsync({ base64: true, quality: 0.65 });
+      if (!photo?.base64 || !apiConnector) throw new Error('画像を取得できませんでした');
+      setCameraOpen(false);
+      setIsAnalyzingImage(true);
+      const response = await apiConnector.analyzeImage(`data:image/jpeg;base64,${photo.base64}`);
+      if (!response.success || !response.data) throw new Error(response.error || '画像分析に失敗しました');
+      setMessages(prev => [...prev, { id: `ocr-${Date.now()}`, text: response.data!.analysis, isUser: false, timestamp: Date.now() }]);
+    } catch (error) {
+      Alert.alert('画像読み取りエラー', error instanceof Error ? error.message : '画像を処理できませんでした');
+    } finally {
+      setIsAnalyzingImage(false);
+    }
+  };
+
+  // API コネクタの初期化
+  useEffect(() => {
+    const initializeAPI = async () => {
+      try {
+        // app.config.js から apiBaseUrl を取得
+        const apiBaseUrl = Constants.expoConfig?.extra?.apiBaseUrl;
+        if (typeof apiBaseUrl !== "string" || !apiBaseUrl.trim()) {
+          throw new Error("API URL is not configured; set EXPO_PUBLIC_API_URL");
+        }
+        if (__DEV__) console.log("[ChatScreen] API Base URL:", apiBaseUrl);
+
+      const connector = new MobileAPIConnector(apiBaseUrl);
+      setApiConnector(connector);
+      const hasSavedSession = await connector.initialize();
+      
+      // Initialize session
+      const savedSessionId = hasSavedSession ? connector.getSessionId() : null;
+      setSessionId(savedSessionId || undefined);
+      if (savedSessionId) {
+        const history = await connector.getChatHistory(savedSessionId);
+        if (history.success && history.data?.length) {
+          setMessages(history.data.map((message) => ({
+            id: message.id,
+            text: message.content,
+            isUser: message.role === 'user',
+            timestamp: message.timestamp,
+          })));
+        }
+      }
+
+        // 接続確認
+        const connected = await connector.checkConnectivity();
+        setIsConnected(connected);
+        if (__DEV__) console.log("[ChatScreen] Backend connectivity:", connected);
+
+        if (!connected) {
+          Alert.alert("接続警告", "バックエンドサーバーに接続できません。オフラインモードで動作します。");
+        }
+      } catch (error) {
+        console.error("[ChatScreen] API initialization error:", error);
+        Alert.alert("エラー", "API初期化に失敗しました");
+      }
+    };
+
+    initializeAPI();
+  }, []);
+
+  const handleSend = async () => {
+    if (!input.trim()) return;
+
+    // ユーザーメッセージを追加
+    const userMessage: Message = {
+      id: Date.now().toString(),
+      text: input,
+      isUser: true,
+      timestamp: Date.now()
+    };
+
+    setMessages(prev => [...prev, userMessage]);
+    setInput("");
+    setIsLoading(true);
+
+    try {
+      if (!apiConnector) {
+        throw new Error("API コネクタが初期化されていません");
+      }
+
+      // API にメッセージを送信
+      let response: any;
+
+      if (isConnected && apiConnector) {
+        try {
+          response = await apiConnector.sendChatMessage({
+            message: input,
+            sessionId: sessionId,
+            context: {},
+          });
+
+          if (!response.success) {
+            throw new Error(response.error || 'API エラー');
+          }
+        } catch (error) {
+          console.warn('サーバー通信失敗:', error);
+        }
+      }
+
+      if (!response?.success) {
+        response = {
+          success: true,
+          data: {
+            message: await AndroidLocalAI.sendMessage(input),
+          },
+        };
+      }
+
+      if (response.success && response.data) {
+        // Extract message content from ChatMessage object
+        // response.data structure: { message: ChatMessage, session: ChatSession, ... }
+        const messageContent = typeof response.data.message === 'string'
+          ? response.data.message
+          : response.data.message?.content || "応答がありません";
+        const assistantMessage: Message = {
+          id: (Date.now() + 1).toString(),
+          text: typeof messageContent === 'string' ? messageContent : JSON.stringify(messageContent),
+          isUser: false,
+          timestamp: Date.now()
+        };
+        setMessages(prev => [...prev, assistantMessage]);
+        
+        // Update session ID if provided
+        if (response.data.session?.id) {
+          setSessionId(response.data.session.id);
+        }
+      } else {
+        throw new Error(response.error || "API エラー");
+      }
+    } catch (error) {
+      console.error("[ChatScreen] Send message error:", error);
+      const errorText = error instanceof Error ? error.message : "不明なエラー";
+      console.error("[ChatScreen] Full error:", error);
+      const errorMessage: Message = {
+        id: (Date.now() + 2).toString(),
+        text: `エラーが発生しました: ${errorText}`,
+        isUser: false,
+        timestamp: Date.now()
+      };
+      setMessages(prev => [...prev, errorMessage]);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  return (
+    <SafeAreaView style={styles.container}>
+      {/* Header */}
+      <View style={styles.header}>
+        <Text style={styles.headerTitle}>🦝 PoiPoi Chat</Text>
+        <View style={styles.statusIndicator}>
+          <View style={[styles.statusDot, { backgroundColor: isConnected ? "#4CAF50" : "#FF9800" }]} />
+          <Text style={styles.statusText}>{isConnected ? "接続済み" : "オフライン"}</Text>
+        </View>
+      </View>
+
+      {/* Messages */}
+      <FlatList
+        data={messages}
+        keyExtractor={item => item.id}
+        renderItem={({ item }) => (
+          <View style={[styles.messageContainer, item.isUser && styles.userMessage]}>
+            <Text style={[styles.messageText, item.isUser && styles.userMessageText]}>
+              {item.text}
+            </Text>
+            <Text style={styles.timestamp}>
+              {new Date(item.timestamp).toLocaleTimeString()}
+            </Text>
+          </View>
+        )}
+        contentContainerStyle={styles.messagesList}
+      />
+
+      {/* Loading Indicator */}
+      {isLoading && (
+        <View style={styles.loadingContainer}>
+          <ActivityIndicator size="large" color="#06b6d4" />
+          <Text style={styles.loadingText}>応答中...</Text>
+        </View>
+      )}
+
+      {/* Input Area */}
+      <View style={styles.mediaActions}>
+        <VoiceInputUI onVoiceData={handleVoiceData} isEnabled={!isLoading && !!apiConnector} />
+        <TouchableOpacity style={styles.mediaButton} onPress={handleOpenCamera} disabled={!apiConnector || isAnalyzingImage}>
+          <Text style={styles.mediaButtonText}>{isAnalyzingImage ? '画像を読取中…' : '写真を読み取る'}</Text>
+        </TouchableOpacity>
+      </View>
+      <View style={styles.inputArea}>
+        <TextInput
+          style={styles.input}
+          value={input}
+          onChangeText={setInput}
+          placeholder="メッセージを入力"
+          placeholderTextColor="#999"
+          editable={!isLoading}
+          multiline
+        />
+        <TouchableOpacity
+          style={[styles.sendButton, isLoading && styles.sendButtonDisabled]}
+          onPress={handleSend}
+          disabled={isLoading || !input.trim()}
+        >
+          <Text style={styles.sendButtonText}>送信</Text>
+        </TouchableOpacity>
+      </View>
+      <Modal visible={cameraOpen} animationType="slide" onRequestClose={() => setCameraOpen(false)}>
+        <View style={styles.cameraContainer}>
+          <CameraView ref={cameraRef} style={styles.camera} facing="back" />
+          <View style={styles.cameraActions}>
+            <TouchableOpacity style={styles.mediaButton} onPress={() => setCameraOpen(false)}><Text style={styles.mediaButtonText}>閉じる</Text></TouchableOpacity>
+            <TouchableOpacity style={styles.sendButton} onPress={handleCaptureAndAnalyze}><Text style={styles.sendButtonText}>撮影して文字を読む</Text></TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+    </SafeAreaView>
+  );
+}
+
+const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+    backgroundColor: "#fff"
+  },
+  header: {
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: "#e0e0e0",
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center"
+  },
+  headerTitle: {
+    fontSize: 24,
+    fontWeight: "bold",
+    color: "#000"
+  },
+  statusIndicator: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6
+  },
+  statusDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4
+  },
+  statusText: {
+    fontSize: 12,
+    color: "#666"
+  },
+  messagesList: {
+    flexGrow: 1,
+    paddingHorizontal: 16,
+    paddingVertical: 12
+  },
+  messageContainer: {
+    marginVertical: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    backgroundColor: "#f0f0f0",
+    borderRadius: 8,
+    maxWidth: "80%"
+  },
+  userMessage: {
+    alignSelf: "flex-end",
+    backgroundColor: "#06b6d4"
+  },
+  messageText: {
+    fontSize: 16,
+    color: "#000"
+  },
+  userMessageText: {
+    color: "#fff"
+  },
+  timestamp: {
+    fontSize: 12,
+    color: "#999",
+    marginTop: 4
+  },
+  loadingContainer: {
+    padding: 16,
+    alignItems: "center",
+    justifyContent: "center"
+  },
+  loadingText: {
+    marginTop: 8,
+    fontSize: 14,
+    color: "#666"
+  },
+  inputArea: {
+    flexDirection: "row",
+    paddingHorizontal: 12,
+    paddingVertical: 12,
+    borderTopWidth: 1,
+    borderTopColor: "#e0e0e0",
+    gap: 8
+  },
+  mediaActions: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-around', paddingHorizontal: 12, paddingTop: 8 },
+  mediaButton: { paddingHorizontal: 14, paddingVertical: 10, borderRadius: 8, backgroundColor: '#eef2ff' },
+  mediaButtonText: { color: '#1e3a8a', fontWeight: '600' },
+  cameraContainer: { flex: 1, backgroundColor: '#000', justifyContent: 'center' },
+  camera: { flex: 1 },
+  cameraActions: { padding: 16, flexDirection: 'row', justifyContent: 'space-around' },
+  input: {
+    flex: 1,
+    borderWidth: 1,
+    borderColor: "#ddd",
+    borderRadius: 20,
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    fontSize: 16,
+    maxHeight: 100
+  },
+  sendButton: {
+    backgroundColor: "#06b6d4",
+    borderRadius: 20,
+    paddingHorizontal: 20,
+    paddingVertical: 10,
+    justifyContent: "center"
+  },
+  sendButtonDisabled: {
+    opacity: 0.5
+  },
+  sendButtonText: {
+    color: "#fff",
+    fontWeight: "bold",
+    fontSize: 14
+  }
+});
