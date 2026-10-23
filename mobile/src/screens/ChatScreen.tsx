@@ -98,6 +98,10 @@ export default function ChatScreen() {
       const authResult = await authResponse.json();
       const authUser = authResult?.result?.data?.json ?? authResult?.result?.data;
       if (!authResponse.ok || !authUser?.id) throw new Error('認証確認に失敗しました');
+      setSessionId(undefined);
+      setMessages([]);
+      setChatSessions([]);
+      setShowHistory(false);
       setIsConnected(true);
       setLoginPassword('');
       setShowLogin(false);
