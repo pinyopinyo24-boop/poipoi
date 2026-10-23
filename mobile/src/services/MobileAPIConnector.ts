@@ -418,13 +418,18 @@ export class MobileAPIConnector {
     }
   }
   setAuthToken(token: string): void {
-    if (this.sessionToken !== token) {
-      this.sessionId = null;
+    const tokenChanged = this.sessionToken !== token;
+    if (tokenChanged) {
       this.sessionId = null;
     }
     this.sessionToken = token;
     this.apiClient.defaults.headers.common['Authorization'] = `Bearer ${token}`;
-    void AsyncStorage.multiRemove(['chatSessionId']).then(() => AsyncStorage.setItem('sessionToken', token));
+    if (tokenChanged) {
+      void AsyncStorage.removeItem('chatSessionId')
+        .then(() => AsyncStorage.setItem('sessionToken', token));
+    } else {
+      void AsyncStorage.setItem('sessionToken', token);
+    }
   }
 
   /**
