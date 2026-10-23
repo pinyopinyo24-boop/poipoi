@@ -1,3 +1,6 @@
+import { recordLearningFeedback } from "./LearningContextIntegration";
+import { LearningContextIntegration } from "./LearningContextIntegration";
+import { enrichPromptWithLearning } from "./LearningContextIntegration";
 import { PoipoiCodeAgent } from "./PoipoiCodeAgent";
 /**
 
@@ -108,6 +111,31 @@ export class ChatCoreManager {
     );
 
     // 3. 郢晢ｽ｡郢昴・縺晉ｹ晢ｽｼ郢ｧ・ｸ陷・ｽｦ騾・・・ｼ蝓溯ｳ髫ｲ謔ｶ繝ｻ郢ｧ・ｨ郢晢ｽｼ郢ｧ・ｸ郢ｧ・ｧ郢晢ｽｳ郢晏沺・ｴ・ｻ騾包ｽｨ繝ｻ繝ｻ
+    /* STEP8_FEEDBACK */
+    const correction = userMessage.match(/正しくは[、,：:\s]*([\s\S]+)/u);
+    if (correction?.[1]?.trim()) {
+      const previousAssistant = [...(context?.messages ?? [])]
+        .reverse()
+        .find((m: any) => m.role === "assistant");
+
+      const previousUser = [...(context?.messages ?? [])]
+        .reverse()
+        .find((m: any) => m.role === "user");
+
+      if (previousAssistant && previousUser) {
+        try {
+          await recordLearningFeedback(
+            previousUser.content,
+            previousAssistant.content,
+            false,
+            correction[1].trim()
+          );
+        } catch (error) {
+          console.warn("[PoiPoi Learning] Feedback skipped:", error);
+        }
+      }
+    }
+
     const processedResult = await this.messageProcessingService.processMessage(
       userMessage,
       context
@@ -121,6 +149,7 @@ export class ChatCoreManager {
     );
 
     // 5. 陟｢諛・ｽｭ譁石鍋ｹ昴・縺晉ｹ晢ｽｼ郢ｧ・ｸ郢ｧ蜑・ｽｽ諛医・
+    /* STEP6: explicit feedback only */
     const assistantMsg: ChatMessage = {
       id: `msg_${Date.now()}_${Math.random().toString(36).substr(2, 9)}_assistant`,
       userId,
@@ -187,10 +216,14 @@ export class ChatCoreManager {
         return this.formatManufacturingResponse(userMessage, manufacturingAnalysis);
       }
 
+      const learnedMessage = await enrichPromptWithLearning(
+        process.cwd(),
+        userMessage
+      );
       const aiMessage = await aiProviderManager.invoke([
         {
           role: "user",
-          content: userMessage
+          content: learnedMessage
         }
       ]);
 
