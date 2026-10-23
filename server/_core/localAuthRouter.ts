@@ -101,6 +101,7 @@ export const localAuthRouter = {
 
         return {
           success: true,
+          token: sessionToken,
           user: {
             id: user.id,
             username: input.username,
