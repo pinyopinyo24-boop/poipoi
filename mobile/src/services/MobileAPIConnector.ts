@@ -466,6 +466,22 @@ export class MobileAPIConnector {
   /**
    * 現在のセッションID取得
    */
+  async getChatSessions(): Promise<APIResponse<any[]>> {
+    try {
+      const response = await this.apiClient.get('/api/trpc/chat.getSessions');
+      const sessions = this.getTrpcData<any[]>(response.data);
+      if (!Array.isArray(sessions)) throw new Error('履歴一覧を取得できませんでした');
+      return { success: true, data: sessions };
+    } catch (error) {
+      return this.handleError(error, '履歴一覧の取得に失敗しました');
+    }
+  }
+
+  async selectChatSession(sessionId: string): Promise<void> {
+    if (!sessionId) throw new Error('セッションIDがありません');
+    this.sessionId = sessionId;
+    await AsyncStorage.setItem('chatSessionId', sessionId);
+  }
   getSessionId(): string | null {
     return this.sessionId;
   }
