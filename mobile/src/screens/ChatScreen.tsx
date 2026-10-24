@@ -120,13 +120,11 @@ export default function ChatScreen() {
     }
   };
   const [registerName, setRegisterName] = useState('');
-  const [registerUsername, setRegisterUsername] = useState('');
-  const [registerPassword, setRegisterPassword] = useState('');
   const [registerBusy, setRegisterBusy] = useState(false);
 
   const handleRegister = async () => {
     if (registerBusy) return;
-    if (registerUsername.trim().length < 3 || registerPassword.length < 6 || !registerName.trim()) {
+    if (loginUsername.trim().length < 3 || loginPassword.length < 6 || !registerName.trim()) {
       Alert.alert('入力確認', 'ユーザー名3文字以上、パスワード6文字以上、表示名を入力してください');
       return;
     }
@@ -139,8 +137,8 @@ export default function ChatScreen() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           json: {
-            username: registerUsername.trim(),
-            password: registerPassword,
+            username: loginUsername.trim(),
+            password: loginPassword,
             name: registerName.trim(),
           },
         }),
@@ -417,22 +415,7 @@ export default function ChatScreen() {
       )}
       {showLogin && !isAuthenticated && (
         <View style={{ paddingHorizontal: 12, paddingBottom: 8, gap: 8 }}>
-          <Text style={{ color: "#222", fontSize: 16, fontWeight: "bold", marginBottom: 4 }}>ユーザー名（新規登録ID）</Text>
-          <TextInput
-            placeholder="3文字以上のユーザー名"
-            autoCapitalize="none"
-            value={registerUsername}
-            onChangeText={setRegisterUsername}
-            style={styles.input}
-          />
-          <Text style={{ color: "#222", fontSize: 16, fontWeight: "bold", marginBottom: 4 }}>パスワード（新規登録用）</Text>
-          <TextInput
-            placeholder="6文字以上のパスワード"
-            secureTextEntry
-            value={registerPassword}
-            onChangeText={setRegisterPassword}
-            style={styles.input}
-          />          <Text style={{ color: "#222", fontSize: 16, fontWeight: "bold", marginBottom: 4 }}>表示名（初回登録用）</Text>
+          <Text style={{ color: "#222", fontSize: 16, fontWeight: "bold", marginBottom: 4 }}>表示名（初回登録用）</Text>
           <TextInput
             placeholder="初回登録用の表示名"
             value={registerName}
