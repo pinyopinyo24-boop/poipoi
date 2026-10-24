@@ -203,15 +203,15 @@ export default function ChatScreen() {
           const sessions = await connector.getChatSessions();
           if (sessions.success && sessions.data?.some(s => s.id === savedSessionId)) {
 
-        const history = await connector.getChatHistory(savedSessionId);
-        if (history.success && history.data?.length) {
-          setMessages(history.data.map((message) => ({
-            id: message.id,
-            text: message.content,
-            isUser: message.role === 'user',
-            timestamp: message.timestamp,
-          })));
-        }
+            const history = await connector.getChatHistory(savedSessionId);
+            if (history.success && history.data?.length) {
+              setMessages(history.data.map((message) => ({
+                id: message.id,
+                text: message.content,
+                isUser: message.role === 'user',
+                timestamp: message.timestamp,
+              })));
+            }
       
           } else {
             setSessionId(undefined);
