@@ -412,6 +412,8 @@ export default function ChatScreen() {
             </Text>
           </TouchableOpacity>
         </View>
+      )}
+      {showLogin && !isAuthenticated && (
         <View style={{ paddingHorizontal: 12, paddingBottom: 8, gap: 8 }}>
           <Text style={{ color: "#222", fontSize: 16, fontWeight: "bold", marginBottom: 4 }}>表示名（初回登録用）</Text>
           <TextInput
