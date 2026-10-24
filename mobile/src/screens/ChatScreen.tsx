@@ -341,7 +341,36 @@ export default function ChatScreen() {
             );
           }
 
-          const connector = new MobileAPIConnector(savedURL);
+          const reconnectURL = savedURL.trim();
+
+          if (
+            reconnectURL.length > 2048 ||
+            /[?#@\s]/.test(reconnectURL) ||
+            !/^https?:\/\/[a-zA-Z0-9.-]+(?::\d{1,5})?(?:\/[^\s]*)?$/.test(reconnectURL)
+          ) {
+            throw new Error('保存されたPC接続先が不正です。');
+          }
+
+          if (
+            /^http:\/\//i.test(reconnectURL) &&
+            !/^http:\/\/(?:localhost|127\.0\.0\.1|10\.\d{1,3}\.\d{1,3}\.\d{1,3}|192\.168\.\d{1,3}\.\d{1,3}|172\.(?:1[6-9]|2\d|3[01])\.\d{1,3}\.\d{1,3})(?::\d{1,5})?(?:\/|$)/i.test(reconnectURL)
+          ) {
+            throw new Error('インターネット経由のPC接続にはHTTPSが必要です。');
+          }
+
+          const reconnectPort = reconnectURL.match(
+            /^https?:\/\/[^/]+:(\d+)(?:\/|$)/i
+          );
+
+          if (
+            reconnectPort &&
+            (Number(reconnectPort[1]) < 1 ||
+              Number(reconnectPort[1]) > 65535)
+          ) {
+            throw new Error('保存されたPC接続先のポート番号が不正です。');
+          }
+
+          const connector = new MobileAPIConnector(reconnectURL);
           await connector.initialize();
 
           const connected = await connector.checkConnectivity();
