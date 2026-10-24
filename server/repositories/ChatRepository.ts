@@ -23,6 +23,27 @@ export interface ChatSession {
 export class ChatRepository {
   private messages = new Map<string, ChatMessage[]>();
   private sessions = new Map<string, ChatSession>();
+  private readonly storagePath = require("path").join(process.cwd(), "data", "chat-history.json");
+
+  constructor() {
+    const fs = require("fs");
+    if (fs.existsSync(this.storagePath)) {
+      const data = JSON.parse(fs.readFileSync(this.storagePath, "utf8"));
+      this.sessions = new Map(data.sessions || []);
+      this.messages = new Map(data.messages || []);
+    }
+  }
+
+  private persist(): void {
+    const fs = require("fs");
+    fs.mkdirSync(require("path").dirname(this.storagePath), { recursive: true });
+    const tmp = this.storagePath + ".tmp";
+    fs.writeFileSync(tmp, JSON.stringify({
+      sessions: [...this.sessions],
+      messages: [...this.messages]
+    }));
+    fs.renameSync(tmp, this.storagePath);
+  }
 
   /**
    * メッセージを保存
@@ -32,6 +53,7 @@ export class ChatRepository {
     const sessionMessages = this.messages.get(key) || [];
     sessionMessages.push(message);
     this.messages.set(key, sessionMessages);
+    this.persist();
   }
 
   /**
@@ -53,6 +75,7 @@ export class ChatRepository {
    */
   async saveSession(session: ChatSession): Promise<void> {
     this.sessions.set(session.id, session);
+    this.persist();
   }
 
   /**
@@ -81,6 +104,7 @@ export class ChatRepository {
    */
   async deleteSession(sessionId: string): Promise<void> {
     this.sessions.delete(sessionId);
+    this.persist();
   }
 
   /**
