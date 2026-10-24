@@ -393,6 +393,15 @@ export default function ChatScreen() {
         const url = rawURL.replace(/\/+$/, '');
 
         if (
+          /^http:\/\//i.test(url) &&
+          !/^http:\/\/(?:localhost|127\.0\.0\.1|10\.\d{1,3}\.\d{1,3}\.\d{1,3}|192\.168\.\d{1,3}\.\d{1,3}|172\.(?:1[6-9]|2\d|3[01])\.\d{1,3}\.\d{1,3})(?::\d{1,5})?(?:\/|$)/i.test(url)
+        ) {
+          throw new Error(
+            'インターネット経由の接続にはHTTPSを使用してください。'
+          );
+        }
+
+        if (
           !/^https?:\/\/[a-zA-Z0-9.-]+(?::\d{1,5})?(?:\/[^\s]*)?$/.test(url) ||
           url.length > 2048
         ) {
@@ -416,6 +425,7 @@ export default function ChatScreen() {
 
         setApiConnector(connector);
         setIsConnected(true);
+        setIsAuthenticated(false);
         setSessionId(connector.getSessionId() || undefined);
         setInput('');
 
