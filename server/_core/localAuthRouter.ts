@@ -13,7 +13,7 @@ const loginSchema = z.object({
 const registerSchema = z.object({
   username: z.string().min(3),
   password: z.string().min(6),
-  name: z.string(),
+  name: z.string().optional(),
   email: z.string().email().optional().nullable(),
 });
 
@@ -34,7 +34,7 @@ export const localAuthRouter = {
         const result = await db.createUser({
           username: input.username,
           passwordHash,
-          name: input.name,
+          name: input.name || input.username,
           email: input.email || "",
           loginMethod: "local",
           role: "user",
@@ -43,11 +43,11 @@ export const localAuthRouter = {
         // Password hash is now stored in database via createUser
 
         const cookieOptions = getSessionCookieOptions(ctx.req);
-        console.log("[LocalAuth] Creating session token with:", { openId: result.openId, name: input.name, appId: ENV.appId });
+        console.log("[LocalAuth] Creating session token with:", { openId: result.openId, name: input.name || input.username, appId: ENV.appId });
         const sessionToken = await createSessionToken(
           {
             openId: result.openId,
-            name: input.name,
+            name: input.name || input.username,
             appId: ENV.appId,
           },
           ENV.cookieSecret
