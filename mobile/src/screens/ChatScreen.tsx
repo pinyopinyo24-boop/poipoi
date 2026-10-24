@@ -393,6 +393,24 @@ export default function ChatScreen() {
         const url = rawURL.replace(/\/+$/, '');
 
         if (
+          /[?#@]/.test(url) ||
+          /[\u0000-\u001f\u007f]/.test(url)
+        ) {
+          throw new Error(
+            'PC接続先には認証情報・クエリ・制御文字を含めないでください。'
+          );
+        }
+
+        const portMatch = url.match(/^https?:\/\/[^/]+:(\d+)(?:\/|$)/i);
+
+        if (
+          portMatch &&
+          (Number(portMatch[1]) < 1 || Number(portMatch[1]) > 65535)
+        ) {
+          throw new Error('ポート番号は1～65535で指定してください。');
+        }
+
+        if (
           /^http:\/\//i.test(url) &&
           !/^http:\/\/(?:localhost|127\.0\.0\.1|10\.\d{1,3}\.\d{1,3}\.\d{1,3}|192\.168\.\d{1,3}\.\d{1,3}|172\.(?:1[6-9]|2\d|3[01])\.\d{1,3}\.\d{1,3})(?::\d{1,5})?(?:\/|$)/i.test(url)
         ) {
