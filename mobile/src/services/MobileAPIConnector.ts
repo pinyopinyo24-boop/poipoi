@@ -179,11 +179,6 @@ export class MobileAPIConnector {
       const id = sessionId || this.sessionId;
       if (!id) return { success: true, data: [] };
       const cacheKey = `history:${id}`;
-      const cached = this.getFromCache(cacheKey);
-      
-      if (cached) {
-        return { success: true, data: cached };
-      }
 
       const input = encodeURIComponent(JSON.stringify({ json: { userId: 'mobile', sessionId: id } }));
       const response = await this.retryRequest(() => this.apiClient.get(`/api/trpc/chat.getMessages?input=${input}`));
