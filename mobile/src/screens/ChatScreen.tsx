@@ -310,6 +310,8 @@ export default function ChatScreen() {
     if (
       command === '/PC状態' ||
       command === '/PC切断' ||
+      command === '/PC再接続' ||
+      command === '/PCヘルプ' ||
       command.startsWith('/PC接続 ')
     ) {
       if (isLoading) return;
@@ -317,6 +319,48 @@ export default function ChatScreen() {
       setIsLoading(true);
 
       try {
+        if (command === '/PCヘルプ') {
+          Alert.alert(
+            'PoiPoi PC接続',
+            '/PC接続 http://192.168.1.7:3000\n' +
+            '/PC再接続\n' +
+            '/PC状態\n' +
+            '/PC切断\n\n' +
+            '同一Wi-Fiまたはインターネット経由で接続できます。'
+          );
+          setInput('');
+          return;
+        }
+
+        if (command === '/PC再接続') {
+          const savedURL = await AsyncStorage.getItem('POIPOI_PC_URL');
+
+          if (!savedURL) {
+            throw new Error(
+              'PC接続先が未設定です。/PC接続 URL で設定してください。'
+            );
+          }
+
+          const connector = new MobileAPIConnector(savedURL);
+          await connector.initialize();
+
+          const connected = await connector.checkConnectivity();
+
+          if (!connected) {
+            setIsConnected(false);
+            throw new Error(
+              'PCに再接続できません。スマホ単独動作は継続できます。'
+            );
+          }
+
+          setApiConnector(connector);
+          setIsConnected(true);
+          setSessionId(connector.getSessionId() || undefined);
+          setInput('');
+
+          Alert.alert('PoiPoi', 'PCへの再接続が完了しました。');
+          return;
+        }
         if (command === '/PC切断') {
           await AsyncStorage.removeItem('POIPOI_PC_URL');
           setApiConnector(null);
