@@ -74,6 +74,7 @@ export default function ChatScreen() {
   const [loginPassword, setLoginPassword] = useState('');
   const [loginBusy, setLoginBusy] = useState(false);
   const [showLogin, setShowLogin] = useState(false);
+  const [isAuthenticated, setIsAuthenticated] = useState(false);
 
   const handleLogin = async () => {
     if (!apiConnector || !loginUsername.trim() || !loginPassword || loginBusy) return;
@@ -108,6 +109,7 @@ export default function ChatScreen() {
         setSessionId(previousSessionId || undefined);
       }
       setIsConnected(true);
+      setIsAuthenticated(true);
       setLoginPassword('');
       setShowLogin(false);
       Alert.alert('ログイン完了', 'PoiPoiに接続しました');
@@ -201,6 +203,7 @@ export default function ChatScreen() {
             authenticated = false;
           }
         }
+        setIsAuthenticated(authenticated);
         setIsConnected(connected);
         if (__DEV__) console.log("[ChatScreen] Backend connectivity:", connected);
 
@@ -320,8 +323,8 @@ export default function ChatScreen() {
       <View>{modelDownloadProgress !== null && <Text>{modelDownloadProgress === 100 ? 'AIモデルのダウンロード完了' : `AIモデル取得中：${modelDownloadProgress}%`}</Text>}</View>
       <View style={styles.header}>
         <Text style={styles.headerTitle}>🦝 PoiPoi Chat</Text>
-        {isConnected && <Text onPress={() => { void openChatHistory(); }}>履歴</Text>}
-          {!isConnected && (
+        {isConnected && isAuthenticated && <Text onPress={() => { void openChatHistory(); }}>履歴</Text>}
+          {!isAuthenticated && (
             <Text onPress={() => setShowLogin(!showLogin)}>
               {showLogin ? '閉じる' : 'ログイン'}
             </Text>
