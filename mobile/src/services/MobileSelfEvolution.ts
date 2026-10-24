@@ -127,10 +127,13 @@ export class MobileSelfEvolution {
       '承認: ' + (history[index].status === 'approved' ? '済み' : '未承認'),
       '設計: ' + (design ? '保存済み' : '未作成'),
       '登録: ' + (active.includes(index) ? '有効' : '無効'),
-      '実行: 未実装'
+      '実行: ' + (active.includes(index) && design ? 'ローカルAI実行可能' : '利用不可')
     ].join('\n');
   }
   static async executeFeature(index: number, input: string): Promise<string> {
+    if (typeof input !== 'string' || !input.trim()) {
+      throw new Error('実行する依頼を入力してください');
+    }
     const history = await this.getProposals();
     if (!Number.isInteger(index) || index < 0 || index >= history.length) {
       throw new Error('提案が見つかりません');
@@ -156,6 +159,114 @@ export class MobileSelfEvolution {
       + '\n設計: ' + design
       + '\n依頼: ' + input
     );
+  }
+  static async exportEvolutionData(): Promise<string> {
+    const proposals = await this.getProposals();
+    const saved = await AsyncStorage.getItem('poipoi:evolution:active');
+    const active = saved ? JSON.parse(saved) : [];
+    const designs = await Promise.all(
+      proposals.map((_, index) =>
+        AsyncStorage.getItem('poipoi:evolution:design:' + index)
+      )
+    );
+
+    return JSON.stringify({
+      version: 1,
+      exportedAt: new Date().toISOString(),
+      proposals,
+      active,
+      designs
+    });
+  }
+
+  static async importEvolutionData(json: string): Promise<void> {
+    const data: unknown = JSON.parse(json);
+
+    if (!data || typeof data !== 'object') {
+      throw new Error('自己進化データが不正です');
+    }
+
+    const value = data as Record<string, unknown>;
+
+    if (
+      value.version !== 1 ||
+      !Array.isArray(value.proposals) ||
+      !Array.isArray(value.active) ||
+      !Array.isArray(value.designs) ||
+      value.designs.length !== value.proposals.length
+    ) {
+      throw new Error('対応していない自己進化データです');
+    }
+
+    const proposals = value.proposals;
+
+    if (!proposals.every(item =>
+      item &&
+      typeof item.request === 'string' &&
+      typeof item.proposal === 'string' &&
+      (item.status === 'pending' || item.status === 'approved')
+    )) {
+      throw new Error('提案データが不正です');
+    }
+
+    if (!value.designs.every(item =>
+      item === null || typeof item === 'string'
+    )) {
+      throw new Error('設計データが不正です');
+    }
+
+    if (!value.active.every(item =>
+      Number.isInteger(item) &&
+      item >= 0 &&
+      item < proposals.length &&
+      proposals[item].status === 'approved' &&
+      typeof value.designs[item] === 'string' &&
+      value.designs[item].length > 0
+    )) {
+      throw new Error('有効化データが不正です');
+    }
+
+    const keys = [
+      'poipoi:evolution:proposals',
+      'poipoi:evolution:active',
+      ...proposals.map((_, index) => 'poipoi:evolution:design:' + index)
+    ];
+
+    const existing = await AsyncStorage.multiGet(keys);
+    const existingMap = new Map(existing);
+    const updates: [string, string][] = [
+      ['poipoi:evolution:proposals', JSON.stringify(proposals)],
+      ['poipoi:evolution:active', JSON.stringify(value.active)]
+    ];
+
+    value.designs.forEach((design, index) => {
+      if (typeof design === 'string') {
+        updates.push(['poipoi:evolution:design:' + index, design]);
+      }
+    });
+
+    try {
+      await AsyncStorage.multiSet(updates);
+      const missingDesignKeys = value.designs
+        .map((design, index) =>
+          design === null ? 'poipoi:evolution:design:' + index : null
+        )
+        .filter((key): key is string => key !== null);
+
+      if (missingDesignKeys.length) {
+        await AsyncStorage.multiRemove(missingDesignKeys);
+      }
+    } catch (error) {
+      await AsyncStorage.multiSet(
+        existing.filter((entry): entry is [string, string] =>
+          entry[1] !== null
+        )
+      );
+      await AsyncStorage.multiRemove(
+        existing.filter(entry => entry[1] === null).map(entry => entry[0])
+      );
+      throw error;
+    }
   }
   static approve(feature: FeatureProposal): FeatureProposal {
     return { ...feature, status: 'approved' };
