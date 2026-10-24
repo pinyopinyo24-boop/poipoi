@@ -187,18 +187,6 @@ export default function ChatScreen() {
       // Initialize session
       const savedSessionId = hasSavedSession ? connector.getSessionId() : null;
       setSessionId(savedSessionId || undefined);
-      if (savedSessionId) {
-        const history = await connector.getChatHistory(savedSessionId);
-        if (history.success && history.data?.length) {
-          setMessages(history.data.map((message) => ({
-            id: message.id,
-            text: message.content,
-            isUser: message.role === 'user',
-            timestamp: message.timestamp,
-          })));
-        }
-      }
-
         // 接続確認
         const connected = await connector.checkConnectivity();
         let authenticated = false;
@@ -211,6 +199,25 @@ export default function ChatScreen() {
           }
         }
         setIsAuthenticated(authenticated);
+        if (authenticated && savedSessionId) {
+          const sessions = await connector.getChatSessions();
+          if (sessions.success && sessions.data?.some(s => s.id === savedSessionId)) {
+
+        const history = await connector.getChatHistory(savedSessionId);
+        if (history.success && history.data?.length) {
+          setMessages(history.data.map((message) => ({
+            id: message.id,
+            text: message.content,
+            isUser: message.role === 'user',
+            timestamp: message.timestamp,
+          })));
+        }
+      
+          } else {
+            setSessionId(undefined);
+            setMessages([]);
+          }
+        }
         setIsConnected(connected);
         if (__DEV__) console.log("[ChatScreen] Backend connectivity:", connected);
 
