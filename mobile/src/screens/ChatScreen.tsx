@@ -125,7 +125,7 @@ export default function ChatScreen() {
       if (!authResponse.ok || !authUser?.id) throw new Error('認証確認に失敗しました');
       if (!apiConnector.getSessionId()) {
         setSessionId(undefined);
-        setMessages([]);
+        
         setChatSessions([]);
         setShowHistory(false);
       } else {
