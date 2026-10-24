@@ -485,6 +485,11 @@ export default function ChatScreen() {
           'PCに接続しました。\n' + url
         );
       } catch (error) {
+        setApiConnector(null);
+        setIsConnected(false);
+        setIsAuthenticated(false);
+        setSessionId(undefined);
+
         Alert.alert(
           'PC接続エラー',
           error instanceof Error ? error.message : String(error)
