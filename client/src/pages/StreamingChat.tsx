@@ -61,7 +61,9 @@ export default function StreamingChat() {
   const persistChatMessage = (id: string, message: Message) => { setConversations(prev => { const next = prev.map(c => c.id !== id ? c : { ...c, title: c.title === "新しいチャット" && message.role === "user" ? message.content.slice(0, 30) : c.title, updatedAt: new Date().toISOString(), messages: [...c.messages, { id: message.id, role: message.role, content: message.content, timestamp: message.timestamp.toISOString(), type: message.type }] }); return next; }); };
   useEffect(() => { saveConversations(conversations); }, [conversations]);
   const streamingChat = trpc.streaming.chat.useMutation();
-  const syncHistory = trpc.chat.syncHistory.useMutation();
+  const serverSessions = trpc.chat.getSessions.useQuery(undefined, {
+    refetchOnWindowFocus: false,
+  });  const syncHistory = trpc.chat.syncHistory.useMutation();
   const syncHistoryRef = useRef(syncHistory);
   syncHistoryRef.current = syncHistory;
   useEffect(() => {
