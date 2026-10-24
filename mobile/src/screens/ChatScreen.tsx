@@ -14,7 +14,8 @@ import { Keyboard,
   KeyboardAvoidingView, ActivityIndicator,
   Alert,
   Modal,
-} from "react-native";
+  Share,
+} from 'react-native';
 import { CameraView, useCameraPermissions } from 'expo-camera';
 import { useRef } from 'react';
 import * as FileSystem from 'expo-file-system';
@@ -378,7 +379,15 @@ export default function ChatScreen() {
           success: true,
           data: {
             message: await (input.trim() === '/進化バックアップ'
-  ? MobileSelfEvolution.exportEvolutionData()
+  ? MobileSelfEvolution.exportEvolutionData().then(async json => {
+        const result = await Share.share({
+          title: 'PoiPoi 自己進化バックアップ',
+          message: json,
+        });
+        return result.action === Share.dismissedAction
+          ? 'バックアップの共有をキャンセルしました'
+          : 'バックアップの共有先を選択しました';
+      })
   : input.startsWith('/進化復元 ')
     ? MobileSelfEvolution.importEvolutionDataExclusive(
         input.slice('/進化復元 '.length).trim()
