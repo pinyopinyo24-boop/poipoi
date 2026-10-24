@@ -171,7 +171,7 @@ export const chatRouter = router({
           title: conversation.title,
           createdAt: existing?.createdAt ?? Date.now(),
           updatedAt: Date.parse(conversation.updatedAt) || Date.now(),
-          messageCount: previous.length,
+          messageCount: new Set([...previous.map(m => m.id), ...conversation.messages.map(m => m.id)]).size,
         });
         for (const message of conversation.messages) {
           if (known.has(message.id)) continue;
