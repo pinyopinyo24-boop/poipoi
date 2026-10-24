@@ -388,12 +388,18 @@ export default function ChatScreen() {
 
       {showLogin && !isAuthenticated && (
         <View style={{ padding: 12, gap: 8 }}>
-          
-          <TouchableOpacity
-            style={styles.sendButton}
-            onPress={() => { void handleRegister(); }}
-            disabled={registerBusy || loginBusy}
-          >
+          <Text>ログイン：ユーザー名</Text>
+          <TextInput value={loginUsername} onChangeText={setLoginUsername} autoCapitalize="none" style={styles.input} />
+          <Text>ログイン：パスワード</Text>
+          <TextInput value={loginPassword} onChangeText={setLoginPassword} secureTextEntry style={styles.input} />
+          <TouchableOpacity style={styles.sendButton} onPress={handleLogin} disabled={loginBusy}>
+            <Text style={styles.sendButtonText}>ログイン実行</Text>
+          </TouchableOpacity>
+          <Text>初回登録：ユーザー名</Text>
+          <TextInput value={registerUsername} onChangeText={setRegisterUsername} autoCapitalize="none" style={styles.input} />
+          <Text>初回登録：パスワード</Text>
+          <TextInput value={registerPassword} onChangeText={setRegisterPassword} secureTextEntry style={styles.input} />
+          <TouchableOpacity style={styles.sendButton} onPress={() => { void handleRegister(); }} disabled={registerBusy || loginBusy}>
             <Text style={styles.sendButtonText}>{registerBusy ? '登録中…' : '初回登録'}</Text>
           </TouchableOpacity>
         </View>
