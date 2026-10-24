@@ -18,7 +18,7 @@ const redirectToLoginIfUnauthorized = (error: unknown) => {
 
   if (!isUnauthorized) return;
 
-  window.location.href = getLoginUrl();
+  console.warn("[PoiPoi] Authentication required:", error);
 };
 
 queryClient.getQueryCache().subscribe(event => {
