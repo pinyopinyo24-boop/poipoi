@@ -243,7 +243,9 @@ export default function ChatScreen() {
         // app.config.js から apiBaseUrl を取得
         const apiBaseUrl = Constants.expoConfig?.extra?.apiBaseUrl;
         if (typeof apiBaseUrl !== "string" || !apiBaseUrl.trim()) {
-          throw new Error("API URL is not configured; set EXPO_PUBLIC_API_URL");
+          setIsConnected(false);
+          setApiConnector(null);
+          return;
         }
         if (__DEV__) console.log("[ChatScreen] API Base URL:", apiBaseUrl);
 
@@ -289,11 +291,12 @@ export default function ChatScreen() {
         if (__DEV__) console.log("[ChatScreen] Backend connectivity:", connected);
 
         if (!connected) {
-          Alert.alert("接続警告", "バックエンドサーバーに接続できません。オフラインモードで動作します。");
+          console.info("[PoiPoi] オフラインAIモード");
         }
       } catch (error) {
         console.error("[ChatScreen] API initialization error:", error);
-        Alert.alert("エラー", "API初期化に失敗しました");
+        setIsConnected(false);
+        console.info("[PoiPoi] ローカルAIに切り替えました");
       }
     };
 
