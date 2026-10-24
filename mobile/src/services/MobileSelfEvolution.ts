@@ -63,14 +63,21 @@ export class MobileSelfEvolution {
     });
   }
   static async propose(request: string): Promise<FeatureProposal> {
+    if (
+      typeof request !== 'string' ||
+      !request.trim() ||
+      request.length > 10000
+    ) {
+      throw new Error('機能追加の依頼内容が不正です');
+    }
+    request = request.trim();
     const proposal = await AndroidLocalAI.sendMessage(
       `次の機能追加要求について、実装方針・必要な処理・安全上の注意を日本語で提案してください。まだ実行しないでください。\n${request}`
     );
 
     const feature: FeatureProposal = { request, proposal, status: 'pending' };
     const key = 'poipoi:evolution:proposals';
-    const saved = await AsyncStorage.getItem(key);
-    const history: FeatureProposal[] = saved ? JSON.parse(saved) : [];
+    const history = await this.getProposals();
     history.push(feature);
     await AsyncStorage.setItem(key, JSON.stringify(history));
     return feature;
@@ -147,7 +154,29 @@ export class MobileSelfEvolution {
   }
   static async getActiveFeatures(): Promise<string> {
     const saved = await AsyncStorage.getItem('poipoi:evolution:active');
-    const active: number[] = saved ? JSON.parse(saved) : [];
+    let active: number[] = [];
+
+    if (saved) {
+      let parsed: unknown;
+
+      try {
+        parsed = JSON.parse(saved);
+      } catch {
+        throw new Error('登録済み機能データが破損しています');
+      }
+
+      if (
+        !Array.isArray(parsed) ||
+        !parsed.every(value =>
+          Number.isSafeInteger(value) && value >= 0
+        )
+      ) {
+        throw new Error('登録済み機能データの形式が不正です');
+      }
+
+      active = parsed as number[];
+    }
+
     const history = await this.getProposals();
 
     if (!active.length) return '登録済み機能はありません';
