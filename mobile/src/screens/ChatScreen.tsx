@@ -377,6 +377,7 @@ export default function ChatScreen() {
 
           if (!connected) {
             setIsConnected(false);
+            setIsAuthenticated(false);
             throw new Error(
               'PCに再接続できません。スマホ単独動作は継続できます。'
             );
@@ -384,6 +385,7 @@ export default function ChatScreen() {
 
           setApiConnector(connector);
           setIsConnected(true);
+          setIsAuthenticated(false);
           setSessionId(connector.getSessionId() || undefined);
           setInput('');
 
