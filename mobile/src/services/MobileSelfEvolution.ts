@@ -53,6 +53,15 @@ export class MobileSelfEvolution {
 
     return parsed as FeatureProposal[];
   }
+    static async proposeExclusive(request: string): Promise<FeatureProposal> {
+    if (typeof request !== 'string' || !request.trim()) {
+      throw new Error('追加したい機能を入力してください');
+    }
+
+    return this.exclusive(async () => {
+      return this.propose(request.trim());
+    });
+  }
   static async propose(request: string): Promise<FeatureProposal> {
     const proposal = await AndroidLocalAI.sendMessage(
       `次の機能追加要求について、実装方針・必要な処理・安全上の注意を日本語で提案してください。まだ実行しないでください。\n${request}`
@@ -67,6 +76,11 @@ export class MobileSelfEvolution {
     return feature;
   }
 
+    static async approveAndSaveExclusive(index: number): Promise<FeatureProposal> {
+    return this.exclusive(async () => {
+      return this.approveAndSave(index);
+    });
+  }
   static async approveAndSave(index: number): Promise<FeatureProposal> {
     const history = await this.getProposals();
     if (!Number.isInteger(index) || index < 0 || index >= history.length) {
@@ -78,6 +92,11 @@ export class MobileSelfEvolution {
     return approved;
   }
 
+    static async generateFeatureDesignExclusive(index: number): Promise<string> {
+    return this.exclusive(async () => {
+      return this.generateFeatureDesign(index);
+    });
+  }
   static async generateFeatureDesign(index: number): Promise<string> {
     const history = await this.getProposals();
     const feature = history[index];
@@ -97,6 +116,11 @@ export class MobileSelfEvolution {
     }
     return await AsyncStorage.getItem('poipoi:evolution:design:' + index)
       || '設計はまだ生成されていません';
+  }
+    static async activateFeatureExclusive(index: number): Promise<string> {
+    return this.exclusive(async () => {
+      return this.activateFeature(index);
+    });
   }
   static async activateFeature(index: number): Promise<string> {
     const history = await this.getProposals();
@@ -131,6 +155,11 @@ export class MobileSelfEvolution {
     return active.map(i =>
       (i + 1) + '. ' + (history[i]?.request || '不明な機能')
     ).join('\n');
+  }
+    static async deactivateFeatureExclusive(index: number): Promise<string> {
+    return this.exclusive(async () => {
+      return this.deactivateFeature(index);
+    });
   }
   static async deactivateFeature(index: number): Promise<string> {
     const history = await this.getProposals();
