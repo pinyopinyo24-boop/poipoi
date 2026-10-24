@@ -158,7 +158,6 @@ export const chatRouter = router({
     }))
     .mutation(async ({ ctx, input }) => {
       const userId = String(ctx.user.id);
-      const manager = getChatCoreManager();
       const repository = (await import("./repositories/ChatRepository")).getSharedChatRepository();
       for (const conversation of input.conversations) {
         const existing = await repository.getSession(conversation.id);
