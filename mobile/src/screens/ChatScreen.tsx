@@ -162,6 +162,13 @@ export default function ChatScreen() {
     }
   };
 
+  useEffect(() => {
+    if (!showHistory || !isConnected || !isAuthenticated || !apiConnector) return;
+    const historyRefreshTimer = setInterval(() => {
+      void apiConnector.getChatSessions().then(setChatSessions).catch(console.error);
+    }, 10000);
+    return () => clearInterval(historyRefreshTimer);
+  }, [showHistory, isConnected, isAuthenticated, apiConnector]);
   // API コネクタの初期化
   useEffect(() => {
     const initializeAPI = async () => {
