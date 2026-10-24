@@ -120,11 +120,13 @@ export default function ChatScreen() {
     }
   };
   const [registerName, setRegisterName] = useState('');
+  const [registerUsername, setRegisterUsername] = useState('');
+  const [registerPassword, setRegisterPassword] = useState('');
   const [registerBusy, setRegisterBusy] = useState(false);
 
   const handleRegister = async () => {
     if (registerBusy) return;
-    if (loginUsername.trim().length < 3 || loginPassword.length < 6 || !registerName.trim()) {
+    if (registerUsername.trim().length < 3 || registerPassword.length < 6 || !registerName.trim()) {
       Alert.alert('入力確認', 'ユーザー名3文字以上、パスワード6文字以上、表示名を入力してください');
       return;
     }
@@ -137,8 +139,8 @@ export default function ChatScreen() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           json: {
-            username: loginUsername.trim(),
-            password: loginPassword,
+            username: registerUsername.trim(),
+            password: registerPassword,
             name: registerName.trim(),
           },
         }),
@@ -386,7 +388,7 @@ export default function ChatScreen() {
 
       {showLogin && !isAuthenticated && (
         <View style={{ padding: 12, gap: 8 }}>
-          <Text style={{ color: "#222", fontSize: 16, fontWeight: "bold", marginBottom: 4 }}>ユーザー名（ログインID）</Text>
+          <Text style={{ color: "#222", fontSize: 16, fontWeight: "bold" }}>ユーザー名（ログインID）</Text>
           <TextInput
             placeholder="ユーザー名"
             autoCapitalize="none"
@@ -394,7 +396,7 @@ export default function ChatScreen() {
             onChangeText={setLoginUsername}
             style={styles.input}
           />
-          <Text style={{ color: "#222", fontSize: 16, fontWeight: "bold", marginBottom: 4 }}>パスワード</Text>
+          <Text style={{ color: "#222", fontSize: 16, fontWeight: "bold" }}>パスワード</Text>
           <TextInput
             placeholder="パスワード"
             secureTextEntry
@@ -402,22 +404,28 @@ export default function ChatScreen() {
             onChangeText={setLoginPassword}
             style={styles.input}
           />
-          <TouchableOpacity
-            style={styles.sendButton}
-            onPress={handleLogin}
-            disabled={loginBusy}
-          >
-            <Text style={styles.sendButtonText}>
-              {loginBusy ? 'ログイン中…' : 'ログイン実行'}
-            </Text>
+          <TouchableOpacity style={styles.sendButton} onPress={handleLogin} disabled={loginBusy}>
+            <Text style={styles.sendButtonText}>{loginBusy ? 'ログイン中…' : 'ログイン実行'}</Text>
           </TouchableOpacity>
-        </View>
-      )}
-      {showLogin && !isAuthenticated && (
-        <View style={{ paddingHorizontal: 12, paddingBottom: 8, gap: 8 }}>
-          <Text style={{ color: "#222", fontSize: 16, fontWeight: "bold", marginBottom: 4 }}>表示名（初回登録用）</Text>
+          <Text style={{ color: "#222", fontSize: 16, fontWeight: "bold" }}>初回登録：ユーザー名</Text>
           <TextInput
-            placeholder="初回登録用の表示名"
+            placeholder="3文字以上のユーザー名"
+            autoCapitalize="none"
+            value={registerUsername}
+            onChangeText={setRegisterUsername}
+            style={styles.input}
+          />
+          <Text style={{ color: "#222", fontSize: 16, fontWeight: "bold" }}>初回登録：パスワード</Text>
+          <TextInput
+            placeholder="6文字以上のパスワード"
+            secureTextEntry
+            value={registerPassword}
+            onChangeText={setRegisterPassword}
+            style={styles.input}
+          />
+          <Text style={{ color: "#222", fontSize: 16, fontWeight: "bold" }}>表示名</Text>
+          <TextInput
+            placeholder="表示名"
             value={registerName}
             onChangeText={setRegisterName}
             style={styles.input}
@@ -427,9 +435,7 @@ export default function ChatScreen() {
             onPress={() => { void handleRegister(); }}
             disabled={registerBusy || loginBusy}
           >
-            <Text style={styles.sendButtonText}>
-              {registerBusy ? '登録中…' : '初回登録'}
-            </Text>
+            <Text style={styles.sendButtonText}>{registerBusy ? '登録中…' : '初回登録'}</Text>
           </TouchableOpacity>
         </View>
       )}
