@@ -40,12 +40,21 @@ export default function ChatScreen() {
           if (Array.isArray(saved)) setMessages(saved);
         }
       })
-      .catch(console.warn);
+      .catch(console.warn).finally(() => setLocalHistoryReady(true));
   }, []);
 
   const [messages, setMessages] = useState<Message[]>([
     { id: "0", text: "ようこそPoiPoiへ。何かお手伝いできることはありますか？", isUser: false, timestamp: Date.now() }
   ]);
+  const [localHistoryReady, setLocalHistoryReady] = useState(false);
+
+  useEffect(() => {
+    if (!localHistoryReady) return;
+    AsyncStorage.setItem(
+      POIPOI_LOCAL_CHAT_V1,
+      JSON.stringify(messages)
+    ).catch(console.warn);
+  }, [messages, localHistoryReady]);
   const [input, setInput] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [modelDownloadProgress,setModelDownloadProgress]=useState<number|null>(null);
