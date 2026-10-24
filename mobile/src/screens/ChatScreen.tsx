@@ -2,7 +2,7 @@ import { MobileSelfEvolution } from '../services/MobileSelfEvolution';
 import { AndroidAIModelManager } from '../services/AndroidAIModelManager';
 import { AndroidLocalAI } from '../services/AndroidLocalAI';
 import React, { useState, useEffect } from "react";
-import {
+import { Keyboard, 
   View,
   Text,
   TextInput,
