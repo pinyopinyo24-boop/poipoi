@@ -490,6 +490,10 @@ export default function ChatScreen() {
         setIsAuthenticated(false);
         setSessionId(undefined);
 
+        if (command === '/PC再接続') {
+          setInput(command);
+        }
+
         Alert.alert(
           'PC接続エラー',
           error instanceof Error ? error.message : String(error)
