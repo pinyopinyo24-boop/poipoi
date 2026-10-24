@@ -323,7 +323,7 @@ export default function ChatScreen() {
       // API にメッセージを送信
       let response: any;
 
-      if (isConnected && apiConnector) {
+      if (isConnected && apiConnector && !input.trim().startsWith('/進化')) {
         try {
           response = await apiConnector.sendChatMessage({
             message: input,
@@ -343,7 +343,13 @@ export default function ChatScreen() {
         response = {
           success: true,
           data: {
-            message: await (input.trim() === '/進化ヘルプ' ? Promise.resolve([
+            message: await (input.trim() === '/進化バックアップ'
+  ? MobileSelfEvolution.exportEvolutionData()
+  : input.startsWith('/進化復元 ')
+    ? MobileSelfEvolution.importEvolutionData(
+        input.slice('/進化復元 '.length).trim()
+      ).then(() => '自己進化データを復元しました')
+    : input.trim() === '/進化ヘルプ' ? Promise.resolve([
   '/進化 機能名：提案作成',
   '/進化一覧：提案一覧',
   '/進化承認 1：承認',
@@ -353,7 +359,9 @@ export default function ChatScreen() {
   '/進化登録一覧：登録一覧',
   '/進化状態 1：状態確認',
   '/進化実行 1 内容：ローカルAI応答',
-  '/進化無効 1：登録解除'
+  '/進化無効 1：登録解除',
+  '/進化バックアップ：自己進化データを書き出す',
+  '/進化復元 JSON：バックアップから復元'
 ].join('\n')) : input.startsWith('/進化実行 ') ? (() => {
   const args = input.slice('/進化実行 '.length).trim();
   const match = args.match(/^(\d+)\s+([\s\S]+)$/);
