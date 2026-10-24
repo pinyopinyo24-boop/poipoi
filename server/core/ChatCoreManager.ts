@@ -15,7 +15,7 @@ import { ManufacturingIntelligenceAIManager } from './ManufacturingIntelligenceA
 import { ChatService } from '../services/ChatService';
 import { MessageProcessingService } from '../services/MessageProcessingService';
 import { ContextAwarenessService } from '../services/ContextAwarenessService';
-import { ChatRepository } from '../repositories/ChatRepository';
+import { ChatRepository , getSharedChatRepository } from '../repositories/ChatRepository';
 import { getAICore, initializeAICore } from '../_core/ai/AICore';
 
 export interface ChatMessage {
@@ -82,7 +82,7 @@ export class ChatCoreManager {
     this.contextAwarenessService = new ContextAwarenessService(
       this.memoryManager
     );
-    this.chatRepository = new ChatRepository();
+    this.chatRepository = getSharedChatRepository();
   }
 
   /**
