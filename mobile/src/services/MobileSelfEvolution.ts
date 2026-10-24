@@ -8,9 +8,50 @@ export type FeatureProposal = {
 };
 
 export class MobileSelfEvolution {
+  private static operationQueue: Promise<void> = Promise.resolve();
+
+  private static async exclusive<T>(
+    operation: () => Promise<T>
+  ): Promise<T> {
+    const previous = this.operationQueue;
+    let release!: () => void;
+
+    this.operationQueue = new Promise<void>(resolve => {
+      release = resolve;
+    });
+
+    await previous;
+
+    try {
+      return await operation();
+    } finally {
+      release();
+    }
+  }
   static async getProposals(): Promise<FeatureProposal[]> {
     const saved = await AsyncStorage.getItem('poipoi:evolution:proposals');
-    return saved ? JSON.parse(saved) as FeatureProposal[] : [];
+    if (!saved) return [];
+
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(saved);
+    } catch {
+      throw new Error('自己進化の保存データが破損しています');
+    }
+
+    if (
+      !Array.isArray(parsed) ||
+      !parsed.every(item =>
+        item &&
+        typeof item.request === 'string' &&
+        typeof item.proposal === 'string' &&
+        (item.status === 'pending' || item.status === 'approved')
+      )
+    ) {
+      throw new Error('自己進化の保存形式が不正です');
+    }
+
+    return parsed as FeatureProposal[];
   }
   static async propose(request: string): Promise<FeatureProposal> {
     const proposal = await AndroidLocalAI.sendMessage(
@@ -179,7 +220,19 @@ export class MobileSelfEvolution {
     });
   }
 
+    static async importEvolutionDataExclusive(json: string): Promise<void> {
+    return this.exclusive(async () => {
+      await this.importEvolutionData(json);
+    });
+  }
   static async importEvolutionData(json: string): Promise<void> {
+    if (
+      typeof json !== 'string' ||
+      json.length === 0 ||
+      json.length > 5_000_000
+    ) {
+      throw new Error('バックアップデータのサイズが不正です');
+    }
     const data: unknown = JSON.parse(json);
 
     if (!data || typeof data !== 'object') {
