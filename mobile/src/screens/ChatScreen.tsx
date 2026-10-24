@@ -242,7 +242,7 @@ export default function ChatScreen() {
       }
       try {
         // app.config.js から apiBaseUrl を取得
-        const apiBaseUrl = Constants.expoConfig?.extra?.apiBaseUrl;
+        const apiBaseUrl = (await AsyncStorage.getItem('POIPOI_PC_URL')) || Constants.expoConfig?.extra?.apiBaseUrl;
         if (typeof apiBaseUrl !== "string" || !apiBaseUrl.trim()) {
           setIsConnected(false);
           setApiConnector(null);
@@ -305,6 +305,91 @@ export default function ChatScreen() {
   }, []);
 
   const handleSend = async () => {
+    const command = input.trim();
+
+    if (
+      command === '/PC状態' ||
+      command === '/PC切断' ||
+      command.startsWith('/PC接続 ')
+    ) {
+      if (isLoading) return;
+
+      setIsLoading(true);
+
+      try {
+        if (command === '/PC切断') {
+          await AsyncStorage.removeItem('POIPOI_PC_URL');
+          setApiConnector(null);
+          setIsConnected(false);
+          setIsAuthenticated(false);
+          setSessionId(undefined);
+          setInput('');
+
+          Alert.alert(
+            'PoiPoi',
+            'PCとの接続を解除しました。スマホ単独で利用できます。'
+          );
+          return;
+        }
+
+        if (command === '/PC状態') {
+          const savedURL = await AsyncStorage.getItem('POIPOI_PC_URL');
+
+          Alert.alert(
+            'PC接続状態',
+            '状態: ' + (isConnected ? '接続中' : '未接続') +
+            '\n接続先: ' + (savedURL || '未設定')
+          );
+
+          setInput('');
+          return;
+        }
+
+        const rawURL = command.slice('/PC接続 '.length).trim();
+        const url = rawURL.replace(/\/+$/, '');
+
+        if (
+          !/^https?:\/\/[a-zA-Z0-9.-]+(?::\d{1,5})?(?:\/[^\s]*)?$/.test(url) ||
+          url.length > 2048
+        ) {
+          throw new Error(
+            '接続先を指定してください。例: /PC接続 http://192.168.1.7:3000'
+          );
+        }
+
+        const connector = new MobileAPIConnector(url);
+        await connector.initialize();
+
+        const connected = await connector.checkConnectivity();
+
+        if (!connected) {
+          throw new Error(
+            'PCに接続できません。PC版の起動とネットワークを確認してください。'
+          );
+        }
+
+        await AsyncStorage.setItem('POIPOI_PC_URL', url);
+
+        setApiConnector(connector);
+        setIsConnected(true);
+        setSessionId(connector.getSessionId() || undefined);
+        setInput('');
+
+        Alert.alert(
+          'PoiPoi',
+          'PCに接続しました。\n' + url
+        );
+      } catch (error) {
+        Alert.alert(
+          'PC接続エラー',
+          error instanceof Error ? error.message : String(error)
+        );
+      } finally {
+        setIsLoading(false);
+      }
+
+      return;
+    }
       const numberedEvolutionCommands = [
         '/進化登録 ',
         '/進化無効 ',
