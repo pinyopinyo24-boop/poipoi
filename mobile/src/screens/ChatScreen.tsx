@@ -304,7 +304,7 @@ export default function ChatScreen() {
   }, []);
 
   const handleSend = async () => {
-    if (!input.trim()) return;
+    if (!input.trim() || isLoading) return;
 
     // ユーザーメッセージを追加
     const userMessage: Message = {
@@ -323,7 +323,12 @@ export default function ChatScreen() {
       // API にメッセージを送信
       let response: any;
 
-      if (isConnected && apiConnector && !input.trim().startsWith('/進化')) {
+      if (
+        apiConnector &&
+        !input.trim().startsWith('/進化') &&
+        (isConnected || await apiConnector.checkConnectivity())
+      ) {
+        if (!isConnected) setIsConnected(true);
         try {
           response = await apiConnector.sendChatMessage({
             message: input,
@@ -336,6 +341,8 @@ export default function ChatScreen() {
           }
         } catch (error) {
           console.warn('サーバー通信失敗:', error);
+          setIsConnected(false);
+          response = undefined;
         }
       }
 
