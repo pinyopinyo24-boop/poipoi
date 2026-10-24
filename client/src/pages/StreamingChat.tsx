@@ -62,7 +62,8 @@ export default function StreamingChat() {
   useEffect(() => { saveConversations(conversations); }, [conversations]);
   const streamingChat = trpc.streaming.chat.useMutation();
   const serverSessions = trpc.chat.getSessions.useQuery(undefined, {
-    refetchOnWindowFocus: false,
+    refetchOnWindowFocus: true,
+    refetchInterval: 10000,
   });  const syncHistory = trpc.chat.syncHistory.useMutation();
   const serverHistoryUtils = trpc.useUtils();
   useEffect(() => {
