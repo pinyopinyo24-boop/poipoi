@@ -200,12 +200,12 @@ export default function ChatScreen() {
   };
 
   useEffect(() => {
-    if (!showHistory || !isConnected || !isAuthenticated || !apiConnector) return;
+    if (!showHistory || !isConnected || !apiConnector) return;
     const historyRefreshTimer = setInterval(() => {
       void apiConnector.getChatSessions().then(result => { if (result.success && result.data) setChatSessions(result.data); }).catch(console.error);
     }, 10000);
     return () => clearInterval(historyRefreshTimer);
-  }, [showHistory, isConnected, isAuthenticated, apiConnector]);
+  }, [showHistory, isConnected, apiConnector]);
   // API コネクタの初期化
   useEffect(() => {
     const initializeAPI = async () => {
@@ -374,12 +374,7 @@ export default function ChatScreen() {
       <View>{modelDownloadProgress !== null && <Text>{modelDownloadProgress === 100 ? 'AIモデルのダウンロード完了' : `AIモデル取得中：${modelDownloadProgress}%`}</Text>}</View>
       <View style={styles.header}>
         <Text style={styles.headerTitle}>🦝 PoiPoi Chat</Text>
-        {isConnected && isAuthenticated && <Text onPress={() => { void openChatHistory(); }}>履歴</Text>}
-          {!isAuthenticated && (
-            <Text onPress={() => setShowLogin(!showLogin)}>
-              {showLogin ? '閉じる' : 'ログイン'}
-            </Text>
-          )}
+        {isConnected && <Text onPress={() => { void openChatHistory(); }}>履歴</Text>}
         <View style={styles.statusIndicator}>
           <View style={[styles.statusDot, { backgroundColor: isConnected ? "#4CAF50" : "#FF9800" }]} />
           <Text style={styles.statusText}>{isConnected ? "接続済み" : "オフライン"}</Text>

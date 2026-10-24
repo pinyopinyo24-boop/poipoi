@@ -1,11 +1,9 @@
-import { useAuth } from "@/_core/hooks/useAuth";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Loader2, Zap } from "lucide-react";
 import { useLocation } from "wouter";
 
 export default function Home() {
-  const { user, loading, isAuthenticated, logout } = useAuth();
   const [, navigate] = useLocation();
 
   // ローカル認証状態（Manus依存なし）
@@ -28,48 +26,6 @@ export default function Home() {
     },
   ];
 
-  if (loading) {
-    return (
-      <div className="min-h-screen flex flex-col items-center justify-center bg-gradient-to-br from-cyan-100 to-blue-200">
-        <div className="text-center space-y-4">
-          <Loader2 className="w-12 h-12 animate-spin mx-auto" />
-          <p className="text-muted-foreground">読み込み中...</p>
-        </div>
-      </div>
-    );
-  }
-
-  if (!isAuthenticated) {
-    return (
-      <div className="min-h-screen flex flex-col items-center justify-center bg-gradient-to-br from-cyan-100 to-blue-200 p-4">
-        <div className="text-center space-y-6 max-w-md">
-          <div className="space-y-2">
-            <h1 className="text-4xl font-bold text-gray-900">ポイポイ</h1>
-            <p className="text-xl text-gray-600">
-              次世代生産管理 & AIクリエイティブプラットフォーム
-            </p>
-          </div>
-          <p className="text-gray-700">
-            高速・高機能な AI 駆動プラットフォームで、生産管理とクリエイティブな機能を統合
-          </p>
-          <Button
-            onClick={handleLocalLogin}
-            size="lg"
-            className="w-full bg-blue-600 hover:bg-blue-700"
-          >
-            ポイポイを始める
-          </Button>
-          <p className="text-xs text-gray-500">登録不要で即座に利用開始できます</p>
-          <div className="pt-4 space-y-2 text-sm text-gray-600">
-            <p>🚀 高速処理</p>
-            <p>🎨 クリエイティブ機能</p>
-            <p>🤖 AI アシスタント</p>
-          </div>
-        </div>
-      </div>
-    );
-  }
-
   return (
     <div className="min-h-screen bg-gradient-to-br from-cyan-100 to-blue-200">
       <header className="border-b border-border bg-white shadow">
@@ -79,14 +35,6 @@ export default function Home() {
             <p className="text-sm text-muted-foreground">
               次世代生産管理 & AIクリエイティブプラットフォーム
             </p>
-          </div>
-          <div className="flex items-center gap-4">
-            <span className="text-sm text-muted-foreground">
-              ようこそ、{user?.name || user?.email || "ユーザー"}さん
-            </span>
-            <Button variant="outline" onClick={() => logout()}>
-              ログアウト
-            </Button>
           </div>
         </div>
       </header>
