@@ -2,7 +2,7 @@ import { MobileSelfEvolution } from '../services/MobileSelfEvolution';
 import { AndroidAIModelManager } from '../services/AndroidAIModelManager';
 import { AndroidLocalAI } from '../services/AndroidLocalAI';
 import React, { useState, useEffect } from "react";
-import { ScrollView,  Keyboard, 
+import { Keyboard, 
   View,
   Text,
   TextInput,
@@ -385,12 +385,6 @@ export default function ChatScreen() {
       </View>
 
       {showLogin && !isAuthenticated && (
-        <ScrollView
-          style={{ flex: 1 }}
-          contentContainerStyle={{ paddingBottom: 40 }}
-          keyboardShouldPersistTaps="always"
-        >
-      {showLogin && !isAuthenticated && (
         <View style={{ padding: 12, gap: 8 }}>
           <TextInput
             placeholder="ユーザー名"
@@ -441,9 +435,6 @@ export default function ChatScreen() {
           キーボードを閉じる
         </Text>
       )}
-        </ScrollView>
-      )}
-      {!showLogin && (
       {showHistory && isConnected && (
         <View style={{ padding: 12 }}>
           <Text onPress={() => setShowHistory(false)}>閉じる</Text>
@@ -513,7 +504,6 @@ export default function ChatScreen() {
           </View>
         </View>
       </Modal>
-      )}
     </SafeAreaView>
   );
 }
