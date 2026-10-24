@@ -424,7 +424,7 @@ export default function ChatScreen() {
           />
           <TouchableOpacity
             style={styles.sendButton}
-            onPress={() => { Keyboard.dismiss(); void handleRegister(); }}
+            onPress={() => { Alert.alert("登録確認", "登録処理を開始します"); void handleRegister(); }}
             disabled={registerBusy || loginBusy}
           >
             <Text style={styles.sendButtonText}>
