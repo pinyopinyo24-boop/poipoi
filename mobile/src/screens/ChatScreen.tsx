@@ -304,6 +304,33 @@ export default function ChatScreen() {
   }, []);
 
   const handleSend = async () => {
+      const numberedEvolutionCommands = [
+        '/進化登録 ',
+        '/進化解除 ',
+        '/進化設計確認 ',
+        '/進化設計 ',
+        '/進化承認 ',
+        '/進化実行 ',
+        '/進化状態 ',
+      ];
+
+      const matchedEvolutionCommand = numberedEvolutionCommands.find(
+        command => input.startsWith(command)
+      );
+
+      if (matchedEvolutionCommand) {
+        const argument = input.slice(matchedEvolutionCommand.length).trim();
+        const numberPart = argument.split(/\s+/)[0];
+
+        if (
+          !/^[1-9]\d*$/.test(numberPart) ||
+          !Number.isSafeInteger(Number(numberPart))
+        ) {
+          Alert.alert('入力エラー', '有効な機能番号を指定してください');
+          return;
+        }
+      }
+
     if (!input.trim() || isLoading) return;
 
     // ユーザーメッセージを追加
