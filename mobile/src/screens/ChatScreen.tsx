@@ -33,7 +33,7 @@ export default function ChatScreen() {
   const POIPOI_LOCAL_CHAT_V1 = 'POIPOI_LOCAL_CHAT_V1';
 
   useEffect(() => {
-    AsyncStorage.getItem(POIPOI_LOCAL_CHAT_V1)
+    localHistoryLoad.current = AsyncStorage.getItem(POIPOI_LOCAL_CHAT_V1)
       .then(value => {
         if (value) {
           const saved = JSON.parse(value);
@@ -47,6 +47,7 @@ export default function ChatScreen() {
     { id: "0", text: "ようこそPoiPoiへ。何かお手伝いできることはありますか？", isUser: false, timestamp: Date.now() }
   ]);
   const [localHistoryReady, setLocalHistoryReady] = useState(false);
+  const localHistoryLoad = useRef<Promise<void> | null>(null);
 
   useEffect(() => {
     if (!localHistoryReady) return;
@@ -62,7 +63,10 @@ export default function ChatScreen() {
   const [showHistory, setShowHistory] = useState(false);
 
   const openChatHistory = async () => {
-    if (!apiConnector || !isConnected) return;
+    if (!apiConnector || !isConnected) {
+      setShowHistory(true);
+      return;
+    }
     const result = await apiConnector.getChatSessions();
     if (!result.success || !result.data) {
       Alert.alert('履歴エラー', '履歴を取得できませんでした');
@@ -232,6 +236,9 @@ export default function ChatScreen() {
   // API コネクタの初期化
   useEffect(() => {
     const initializeAPI = async () => {
+      if (localHistoryLoad.current) {
+        await localHistoryLoad.current;
+      }
       try {
         // app.config.js から apiBaseUrl を取得
         const apiBaseUrl = Constants.expoConfig?.extra?.apiBaseUrl;
@@ -397,7 +404,7 @@ export default function ChatScreen() {
       <View>{modelDownloadProgress !== null && <Text>{modelDownloadProgress === 100 ? 'AIモデルのダウンロード完了' : `AIモデル取得中：${modelDownloadProgress}%`}</Text>}</View>
       <View style={styles.header}>
         <Text style={styles.headerTitle}>🦝 PoiPoi</Text>
-        {isConnected && <Text onPress={() => { void openChatHistory(); }}>履歴</Text>}
+        <Text onPress={() => { void openChatHistory(); }}>履歴</Text>
         <View style={styles.statusIndicator}>
           <View style={[styles.statusDot, { backgroundColor: isConnected ? "#4CAF50" : "#FF9800" }]} />
           <Text style={styles.statusText}>{isConnected ? "接続済み" : "オフライン"}</Text>
@@ -405,9 +412,12 @@ export default function ChatScreen() {
       </View>
 
 
-      {showHistory && isConnected && (
+      {showHistory && (
         <View style={{ padding: 12 }}>
           <Text onPress={() => setShowHistory(false)}>閉じる</Text>
+          {!isConnected && (
+            <Text>端末に保存された現在の会話を表示中です</Text>
+          )}
           {chatSessions.map(s => (
             <Text key={s.id} onPress={() => { void openChatSession(s.id); }} style={{ padding: 10 }}>
               {s.title || s.id}
