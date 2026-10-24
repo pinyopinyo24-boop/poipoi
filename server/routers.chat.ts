@@ -188,22 +188,18 @@ export const chatRouter = router({
       return { success: true };
     }),
   getSessions: protectedProcedure
-    .query(async ({ ctx }) =>
-      getChatCoreManager().getUserSessions(String(ctx.user.id))
-    ),
-  getMessages: protectedProcedure
-    .input(
-      z.object({
-        userId: z.string(),
-        sessionId: z.string(),
-      })
-    )
-    .query(async ({ ctx, input }) => {
-      const userId = String(ctx.user.id);
-      const messages = await getChatCoreManager().getMessages(userId, input.sessionId);
-      return messages.filter((message) => message.userId === userId);
+    .query(async ({ ctx }) => {
+      const repository = new (await import("./repositories/ChatRepository")).ChatRepository();
+      return repository.getUserSessions(String(ctx.user.id));
     }),
-
+  getMessages: protectedProcedure
+    .input(z.object({ userId: z.string(), sessionId: z.string() }))
+    .query(async ({ ctx, input }) => {
+      const repository = new (await import("./repositories/ChatRepository")).ChatRepository();
+      const session = await repository.getSession(input.sessionId);
+      if (!session || session.userId !== String(ctx.user.id)) return [];
+      return repository.getMessages(input.sessionId);
+    }),
   createSession: protectedProcedure
     .input(
       z.object({
