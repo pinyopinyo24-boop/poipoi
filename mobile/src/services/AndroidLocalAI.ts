@@ -21,9 +21,19 @@ export class AndroidLocalAI {
     if (this.historyLoaded) return;
     if (!this.historyLoading) {
       this.historyLoading = (async () => {
-        const saved = await AsyncStorage.getItem(this.historyKey);
+        const saved = await AsyncStorage.getItem(this.historyKey)
+          .catch(error => {
+            console.warn('[PoiPoi] 履歴読み込み失敗:', error);
+            return null;
+          });
         if (saved) {
-          const parsed: unknown = JSON.parse(saved);
+          let parsed: unknown;
+          try {
+            parsed = JSON.parse(saved);
+          } catch {
+            console.warn('[PoiPoi] 保存履歴を読み取れません。現在の会話を維持します。');
+            parsed = null;
+          }
           if (Array.isArray(parsed)) {
             this.history = parsed.filter(
               (turn): turn is ChatTurn =>
@@ -147,7 +157,11 @@ export class AndroidLocalAI {
       { role: 'assistant', content: answer },
     );
     this.history = this.history.slice(-40);
-    await this.saveHistory();
+    try {
+      await this.saveHistory();
+    } catch (error) {
+      console.warn('[PoiPoi] 会話保存失敗:', error);
+    }
 
     return answer;
   }
