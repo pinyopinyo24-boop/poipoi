@@ -12,6 +12,7 @@ import { Keyboard,
   SafeAreaView,
   KeyboardAvoidingView, ActivityIndicator,
   Alert,
+  Linking,
   Modal,
 } from "react-native";
 import { CameraView, useCameraPermissions } from 'expo-camera';
@@ -270,6 +271,19 @@ export default function ChatScreen() {
     initializeAPI();
   }, []);
 
+  const openPCFeature = async (route: string) => {
+    const baseURL = Constants.expoConfig?.extra?.apiBaseUrl;
+    if (!isConnected || typeof baseURL !== 'string' || !baseURL.trim()) {
+      Alert.alert('接続待ち', 'PC版に接続すると利用できます');
+      return;
+    }
+    try {
+      const url = baseURL.replace(/\/api\/?$/, '').replace(/\/$/, '') + route;
+      await Linking.openURL(url);
+    } catch {
+      Alert.alert('画面を開けません', 'PC版との接続を確認してください');
+    }
+  };
   const handleSend = async () => {
     if (!input.trim()) return;
 
@@ -392,6 +406,22 @@ export default function ChatScreen() {
           ))}
         </View>
       )}
+      <View style={{ paddingHorizontal: 12, paddingVertical: 8 }}>
+        <Text style={{ fontWeight: 'bold', marginBottom: 8 }}>PC版の機能</Text>
+        <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
+          <TouchableOpacity key="/streaming" style={styles.mediaButton} onPress={() => { void openPCFeature('/streaming'); }}><Text style={styles.mediaButtonText}>AIエージェント</Text></TouchableOpacity>
+          <TouchableOpacity key="/dashboard" style={styles.mediaButton} onPress={() => { void openPCFeature('/dashboard'); }}><Text style={styles.mediaButtonText}>ダッシュボード</Text></TouchableOpacity>
+          <TouchableOpacity key="/manufacturing" style={styles.mediaButton} onPress={() => { void openPCFeature('/manufacturing'); }}><Text style={styles.mediaButtonText}>生産管理</Text></TouchableOpacity>
+          <TouchableOpacity key="/ai-providers" style={styles.mediaButton} onPress={() => { void openPCFeature('/ai-providers'); }}><Text style={styles.mediaButtonText}>AIプロバイダー</Text></TouchableOpacity>
+          <TouchableOpacity key="/file-processing" style={styles.mediaButton} onPress={() => { void openPCFeature('/file-processing'); }}><Text style={styles.mediaButtonText}>ファイル処理</Text></TouchableOpacity>
+          <TouchableOpacity key="/documents" style={styles.mediaButton} onPress={() => { void openPCFeature('/documents'); }}><Text style={styles.mediaButtonText}>資料作成</Text></TouchableOpacity>
+          <TouchableOpacity key="/code-generator" style={styles.mediaButton} onPress={() => { void openPCFeature('/code-generator'); }}><Text style={styles.mediaButtonText}>コード生成</Text></TouchableOpacity>
+          <TouchableOpacity key="/history-memory" style={styles.mediaButton} onPress={() => { void openPCFeature('/history-memory'); }}><Text style={styles.mediaButtonText}>履歴・メモリ</Text></TouchableOpacity>
+          <TouchableOpacity key="/schedule-memory" style={styles.mediaButton} onPress={() => { void openPCFeature('/schedule-memory'); }}><Text style={styles.mediaButtonText}>スケジュール</Text></TouchableOpacity>
+          <TouchableOpacity key="/facefusion-hybrid" style={styles.mediaButton} onPress={() => { void openPCFeature('/facefusion-hybrid'); }}><Text style={styles.mediaButtonText}>顔入れ替え</Text></TouchableOpacity>
+          <TouchableOpacity key="/settings" style={styles.mediaButton} onPress={() => { void openPCFeature('/settings'); }}><Text style={styles.mediaButtonText}>設定</Text></TouchableOpacity>
+        </View>
+      </View>
       {/* Messages */}
       <FlatList
         data={messages}
