@@ -142,6 +142,51 @@ export const chatRouter = router({
       return { ...session, messages: session.messages.filter((message: { userId: string }) => message.userId === userId) };
     }),
 
+  syncHistory: protectedProcedure
+    .input(z.object({
+      conversations: z.array(z.object({
+        id: z.string(),
+        title: z.string(),
+        updatedAt: z.string(),
+        messages: z.array(z.object({
+          id: z.string(),
+          role: z.enum(["user", "assistant"]),
+          content: z.string(),
+          timestamp: z.string(),
+        })),
+      })),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      const userId = String(ctx.user.id);
+      const manager = getChatCoreManager();
+      const repository = new (await import("./repositories/ChatRepository")).ChatRepository();
+      for (const conversation of input.conversations) {
+        const existing = await repository.getSession(conversation.id);
+        if (existing && existing.userId !== userId) continue;
+        const previous = await repository.getMessages(conversation.id, 100000);
+        const known = new Set(previous.map(m => m.id));
+        await repository.saveSession({
+          id: conversation.id,
+          userId,
+          title: conversation.title,
+          createdAt: existing?.createdAt ?? Date.now(),
+          updatedAt: Date.parse(conversation.updatedAt) || Date.now(),
+          messageCount: previous.length,
+        });
+        for (const message of conversation.messages) {
+          if (known.has(message.id)) continue;
+          await repository.saveMessage({
+            id: message.id,
+            userId,
+            role: message.role,
+            content: message.content,
+            timestamp: Date.parse(message.timestamp) || Date.now(),
+          }, conversation.id);
+          known.add(message.id);
+        }
+      }
+      return { success: true };
+    }),
   getSessions: protectedProcedure
     .query(async ({ ctx }) =>
       getChatCoreManager().getUserSessions(String(ctx.user.id))
