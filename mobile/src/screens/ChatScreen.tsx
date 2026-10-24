@@ -349,6 +349,33 @@ export default function ChatScreen() {
         </View>
       </View>
 
+      {showLogin && !isAuthenticated && (
+        <View style={{ padding: 12, gap: 8 }}>
+          <TextInput
+            placeholder="ユーザー名"
+            autoCapitalize="none"
+            value={loginUsername}
+            onChangeText={setLoginUsername}
+            style={styles.input}
+          />
+          <TextInput
+            placeholder="パスワード"
+            secureTextEntry
+            value={loginPassword}
+            onChangeText={setLoginPassword}
+            style={styles.input}
+          />
+          <TouchableOpacity
+            style={styles.sendButton}
+            onPress={handleLogin}
+            disabled={loginBusy}
+          >
+            <Text style={styles.sendButtonText}>
+              {loginBusy ? 'ログイン中…' : 'ログイン実行'}
+            </Text>
+          </TouchableOpacity>
+        </View>
+      )}
       {showHistory && isConnected && (
         <View style={{ padding: 12 }}>
           <Text onPress={() => setShowHistory(false)}>閉じる</Text>
