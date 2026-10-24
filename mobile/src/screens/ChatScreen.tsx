@@ -1,3 +1,4 @@
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { MobileSelfEvolution } from '../services/MobileSelfEvolution';
 import { AndroidAIModelManager } from '../services/AndroidAIModelManager';
 import { AndroidLocalAI } from '../services/AndroidLocalAI';
@@ -29,6 +30,19 @@ interface Message {
 }
 
 export default function ChatScreen() {
+  const POIPOI_LOCAL_CHAT_V1 = 'POIPOI_LOCAL_CHAT_V1';
+
+  useEffect(() => {
+    AsyncStorage.getItem(POIPOI_LOCAL_CHAT_V1)
+      .then(value => {
+        if (value) {
+          const saved = JSON.parse(value);
+          if (Array.isArray(saved)) setMessages(saved);
+        }
+      })
+      .catch(console.warn);
+  }, []);
+
   const [messages, setMessages] = useState<Message[]>([
     { id: "0", text: "ようこそPoiPoiへ。何かお手伝いできることはありますか？", isUser: false, timestamp: Date.now() }
   ]);
