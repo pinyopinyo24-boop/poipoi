@@ -64,6 +64,49 @@ export default function StreamingChat() {
   const serverSessions = trpc.chat.getSessions.useQuery(undefined, {
     refetchOnWindowFocus: false,
   });  const syncHistory = trpc.chat.syncHistory.useMutation();
+  const serverHistoryUtils = trpc.useUtils();
+  useEffect(() => {
+    if (!serverSessions.data?.length) return;
+    let cancelled = false;
+    Promise.all(serverSessions.data.map(async session => ({
+      session,
+      messages: await serverHistoryUtils.chat.getMessages.fetch({
+        userId: String(session.userId),
+        sessionId: session.id,
+      }),
+    }))).then(results => {
+      if (cancelled) return;
+      setConversations(prev => {
+        const merged = new Map(prev.map(c => [c.id, c]));
+        for (const { session, messages } of results) {
+          const existing = merged.get(session.id);
+          const items = new Map((existing?.messages ?? []).map(m => [m.id, m]));
+          for (const m of messages) {
+            if (!items.has(m.id)) items.set(m.id, {
+              id: m.id,
+              role: m.role,
+              content: m.content,
+              timestamp: new Date(m.timestamp).toISOString(),
+              type: "text",
+            });
+          }
+          merged.set(session.id, {
+            id: session.id,
+            title: existing?.title ?? session.title,
+            updatedAt: new Date(Math.max(
+              new Date(existing?.updatedAt ?? 0).getTime(),
+              Number(session.updatedAt)
+            )).toISOString(),
+            messages: [...items.values()],
+          });
+        }
+        return [...merged.values()].sort((a, b) =>
+          b.updatedAt.localeCompare(a.updatedAt)
+        );
+      });
+    }).catch(console.error);
+    return () => { cancelled = true; };
+  }, [serverSessions.data, serverHistoryUtils]);
   const syncHistoryRef = useRef(syncHistory);
   syncHistoryRef.current = syncHistory;
   useEffect(() => {
