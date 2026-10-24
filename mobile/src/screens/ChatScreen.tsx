@@ -373,7 +373,7 @@ export default function ChatScreen() {
       {/* Header */}
       <View>{modelDownloadProgress !== null && <Text>{modelDownloadProgress === 100 ? 'AIモデルのダウンロード完了' : `AIモデル取得中：${modelDownloadProgress}%`}</Text>}</View>
       <View style={styles.header}>
-        <Text style={styles.headerTitle}>🦝 PoiPoi Chat</Text>
+        <Text style={styles.headerTitle}>🦝 PoiPoi</Text>
         {isConnected && <Text onPress={() => { void openChatHistory(); }}>履歴</Text>}
         <View style={styles.statusIndicator}>
           <View style={[styles.statusDot, { backgroundColor: isConnected ? "#4CAF50" : "#FF9800" }]} />
