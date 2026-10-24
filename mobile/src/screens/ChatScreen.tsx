@@ -134,7 +134,7 @@ export default function ChatScreen() {
     try {
       const baseURL = Constants.expoConfig?.extra?.apiBaseUrl;
       if (typeof baseURL !== 'string' || !baseURL.trim()) throw new Error('API URLが未設定です');
-      const response = await fetch(`${baseURL.replace(/\/$/, '')}/api/trpc/auth.register`, {
+      const response = await fetch(`${baseURL.replace(/\/$/, '')}/api/trpc/localAuth.register`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
