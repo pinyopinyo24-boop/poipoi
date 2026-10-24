@@ -430,6 +430,11 @@ export default function ChatScreen() {
           </TouchableOpacity>
         </View>
       )}
+      {showLogin && !isAuthenticated && (
+        <Text onPress={() => Keyboard.dismiss()} style={{ textAlign: 'center', padding: 8 }}>
+          キーボードを閉じる
+        </Text>
+      )}
       {showHistory && isConnected && (
         <View style={{ padding: 12 }}>
           <Text onPress={() => setShowHistory(false)}>閉じる</Text>
