@@ -280,8 +280,61 @@ export class MobileSelfEvolution {
 
     static async importEvolutionDataExclusive(json: string): Promise<void> {
     return this.exclusive(async () => {
-      await this.importEvolutionData(json);
+      const previous = await this.exportEvolutionData();
+      const backupKey = 'poipoi:evolution:before-import';
+
+      await AsyncStorage.setItem(backupKey, previous);
+
+      try {
+        await this.importEvolutionData(json);
+      } catch (error) {
+        try {
+          await this.importEvolutionData(previous);
+        } catch (rollbackError) {
+          throw new Error(
+            '復元失敗。自動退避データを保持しました: ' +
+            String(rollbackError)
+          );
+        }
+        throw error;
+      }
     });
+  }
+
+  static async restorePreviousEvolutionData(): Promise<string> {
+    const backupKey = 'poipoi:evolution:before-import';
+    const saved = await AsyncStorage.getItem(backupKey);
+
+    if (!saved) {
+      throw new Error('復元前のバックアップがありません');
+    }
+
+    await this.exclusive(async () => {
+      const current = await this.exportEvolutionData();
+
+      try {
+        await this.importEvolutionData(saved);
+      } catch (error) {
+        await this.importEvolutionData(current);
+        throw error;
+      }
+
+      await AsyncStorage.setItem(backupKey, current);
+    });
+
+    return '復元前の自己進化データに戻しました';
+  }
+
+  static async getPreviousEvolutionBackup(): Promise<string> {
+    const saved = await AsyncStorage.getItem(
+      'poipoi:evolution:before-import'
+    );
+
+    if (!saved) {
+      throw new Error('復元前のバックアップがありません');
+    }
+
+    return saved;
   }
   static async importEvolutionData(json: string): Promise<void> {
     if (

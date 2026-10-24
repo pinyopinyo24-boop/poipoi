@@ -389,7 +389,17 @@ export default function ChatScreen() {
         response = {
           success: true,
           data: {
-            message: await (input.trim() === '/進化バックアップ'
+            message: await (input.trim() === '/進化復旧'
+  ? MobileSelfEvolution.restorePreviousEvolutionData()
+  : input.trim() === '/進化復旧バックアップ'
+    ? MobileSelfEvolution.getPreviousEvolutionBackup().then(async json => {
+        await Share.share({
+          title: 'PoiPoi 復元前バックアップ',
+          message: json,
+        });
+        return '復元前バックアップの共有画面を開きました';
+      })
+    : input.trim() === '/進化バックアップ'
   ? MobileSelfEvolution.exportEvolutionData().then(async json => {
         const result = await Share.share({
           title: 'PoiPoi 自己進化バックアップ',
