@@ -1,4 +1,5 @@
 import { Platform } from 'react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { AndroidAIModelManager, QWEN_MODEL_URLS } from './AndroidAIModelManager';
 
 type ChatTurn = {
@@ -11,6 +12,42 @@ export class AndroidLocalAI {
   private static initializationPromise: Promise<boolean> | null = null;
   private static modelPath: string | null = null;
   private static history: ChatTurn[] = [];
+  private static historyLoaded = false;
+  private static historyLoading: Promise<void> | null = null;
+  private static completionQueue: Promise<void> = Promise.resolve();
+  private static readonly historyKey = 'POIPOI_ANDROID_AI_HISTORY_V1';
+
+  private static async restoreHistory(): Promise<void> {
+    if (this.historyLoaded) return;
+    if (!this.historyLoading) {
+      this.historyLoading = (async () => {
+        const saved = await AsyncStorage.getItem(this.historyKey);
+        if (saved) {
+          const parsed: unknown = JSON.parse(saved);
+          if (Array.isArray(parsed)) {
+            this.history = parsed.filter(
+              (turn): turn is ChatTurn =>
+                !!turn &&
+                typeof turn === 'object' &&
+                (turn.role === 'user' || turn.role === 'assistant') &&
+                typeof turn.content === 'string'
+            ).slice(-40);
+          }
+        }
+        this.historyLoaded = true;
+      })().finally(() => {
+        this.historyLoading = null;
+      });
+    }
+    await this.historyLoading;
+  }
+
+  private static async saveHistory(): Promise<void> {
+    await AsyncStorage.setItem(
+      this.historyKey,
+      JSON.stringify(this.history.slice(-40))
+    );
+  }
 
   static async initialize(): Promise<boolean> {
     if (this.initializationPromise) return this.initializationPromise;
@@ -61,10 +98,26 @@ export class AndroidLocalAI {
   }
 
   static async sendMessage(message: string): Promise<string> {
+    const previous = this.completionQueue;
+    let unlock!: () => void;
+    this.completionQueue = new Promise<void>(resolve => {
+      unlock = resolve;
+    });
+
+    await previous;
+    try {
+      return await this.sendMessageInternal(message);
+    } finally {
+      unlock();
+    }
+  }
+
+  private static async sendMessageInternal(message: string): Promise<string> {
     if (!message.trim()) {
       throw new Error('メッセージが空です');
     }
 
+    await this.restoreHistory();
     await this.initialize();
 
     const messages: ChatTurn[] = [
@@ -93,12 +146,16 @@ export class AndroidLocalAI {
       { role: 'user', content: message },
       { role: 'assistant', content: answer },
     );
+    this.history = this.history.slice(-40);
+    await this.saveHistory();
 
     return answer;
   }
 
   static clearHistory(): void {
     this.history = [];
+    this.historyLoaded = true;
+    void AsyncStorage.removeItem(this.historyKey).catch(console.warn);
   }
 
   static async release(): Promise<void> {
