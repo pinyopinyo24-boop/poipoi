@@ -53,6 +53,12 @@ export class ChatRepository {
     const sessionMessages = this.messages.get(key) || [];
     sessionMessages.push(message);
     this.messages.set(key, sessionMessages);
+    const session = this.sessions.get(key);
+    if (session) {
+      session.updatedAt = message.timestamp;
+      session.messageCount = sessionMessages.length;
+      this.sessions.set(key, session);
+    }
     this.persist();
   }
 
