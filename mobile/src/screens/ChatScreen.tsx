@@ -307,7 +307,7 @@ export default function ChatScreen() {
   const handleSend = async () => {
       const numberedEvolutionCommands = [
         '/進化登録 ',
-        '/進化解除 ',
+        '/進化無効 ',
         '/進化設計確認 ',
         '/進化設計 ',
         '/進化承認 ',
@@ -328,6 +328,17 @@ export default function ChatScreen() {
           !Number.isSafeInteger(Number(numberPart))
         ) {
           Alert.alert('入力エラー', '有効な機能番号を指定してください');
+          return;
+        }
+
+        if (
+          matchedEvolutionCommand === '/進化実行 ' &&
+          !/^[1-9]\d*\s+\S[\s\S]*$/.test(argument)
+        ) {
+          Alert.alert(
+            '入力エラー',
+            '使い方: /進化実行 1 依頼内容'
+          );
           return;
         }
       }
