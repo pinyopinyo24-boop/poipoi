@@ -165,7 +165,7 @@ export default function ChatScreen() {
   useEffect(() => {
     if (!showHistory || !isConnected || !isAuthenticated || !apiConnector) return;
     const historyRefreshTimer = setInterval(() => {
-      void apiConnector.getChatSessions().then(setChatSessions).catch(console.error);
+      void apiConnector.getChatSessions().then(result => { if (result.success && result.data) setChatSessions(result.data); }).catch(console.error);
     }, 10000);
     return () => clearInterval(historyRefreshTimer);
   }, [showHistory, isConnected, isAuthenticated, apiConnector]);
