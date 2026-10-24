@@ -186,9 +186,24 @@ export class MobileAPIConnector {
       const input = encodeURIComponent(JSON.stringify({ json: { userId: 'mobile', sessionId: id } }));
       const response = await this.retryRequest(() => this.apiClient.get(`/api/trpc/chat.getMessages?input=${input}`));
 
-      const data = this.getTrpcData(response.data) || [];
+      const serverData = this.getTrpcData<ChatMessage[]>(response.data);
+
+      if (!Array.isArray(serverData)) {
+        throw new Error('PC版の会話履歴が不正です');
+      }
+
+      const savedData = await LocalCacheService.getChatHistory(id)
+        .catch(() => null) as ChatMessage[] | null;
+
+      const data = serverData.length > 0
+        ? serverData
+        : Array.isArray(savedData) ? savedData : [];
+
       this.setCache(cacheKey, data);
-      await LocalCacheService.saveChatHistory(id, data);
+
+      if (serverData.length > 0) {
+        await LocalCacheService.saveChatHistory(id, data);
+      }
 
       return {
         success: true,
@@ -380,10 +395,7 @@ export class MobileAPIConnector {
    * 認可失敗時の処理
    */
   private async handleUnauthorized(): Promise<void> {
-    const sessionId = this.sessionId;
-    this.sessionId = null;
     this.sessionToken = null;
-    await AsyncStorage.removeItem('chatSessionId');
     // 認証情報のみ削除し、端末内の会話は保持する
     await AsyncStorage.removeItem('sessionToken');
     delete this.apiClient.defaults.headers.common['Authorization'];
