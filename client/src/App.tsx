@@ -26,14 +26,14 @@ import FileProcessing from './pages/FileProcessing';
 import ManufacturingAIDashboard from './pages/ManufacturingAIDashboard';
 import ScheduleMemory from './pages/ScheduleMemory';
 import Settings from './pages/Settings';
-import Login from "./pages/Login";
+
 import NotFound from "./pages/NotFound";
 
 function Router() {
   // make sure to consider if you need authentication for certain routes
   return (
     <Switch>
-      <Route path={"/login"} component={Login} />
+      
       <Route path={"/"} component={Home} />
       {/* <Route path="/agent" component={AIAgent} /> */}
       <Route path="/streaming" component={StreamingChat} />
