@@ -141,3 +141,9 @@ export class ChatRepository {
     this.sessions.clear();
   }
 }
+
+let sharedChatRepository: ChatRepository | undefined;
+
+export function getSharedChatRepository(): ChatRepository {
+  return sharedChatRepository ??= new ChatRepository();
+}

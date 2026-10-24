@@ -159,7 +159,7 @@ export const chatRouter = router({
     .mutation(async ({ ctx, input }) => {
       const userId = String(ctx.user.id);
       const manager = getChatCoreManager();
-      const repository = new (await import("./repositories/ChatRepository")).ChatRepository();
+      const repository = (await import("./repositories/ChatRepository")).getSharedChatRepository();
       for (const conversation of input.conversations) {
         const existing = await repository.getSession(conversation.id);
         if (existing && existing.userId !== userId) continue;
@@ -189,13 +189,13 @@ export const chatRouter = router({
     }),
   getSessions: protectedProcedure
     .query(async ({ ctx }) => {
-      const repository = new (await import("./repositories/ChatRepository")).ChatRepository();
+      const repository = (await import("./repositories/ChatRepository")).getSharedChatRepository();
       return repository.getUserSessions(String(ctx.user.id));
     }),
   getMessages: protectedProcedure
     .input(z.object({ userId: z.string(), sessionId: z.string() }))
     .query(async ({ ctx, input }) => {
-      const repository = new (await import("./repositories/ChatRepository")).ChatRepository();
+      const repository = (await import("./repositories/ChatRepository")).getSharedChatRepository();
       const session = await repository.getSession(input.sessionId);
       if (!session || session.userId !== String(ctx.user.id)) return [];
       return repository.getMessages(input.sessionId);
