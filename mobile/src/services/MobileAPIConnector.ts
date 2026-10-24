@@ -175,6 +175,9 @@ export class MobileAPIConnector {
    * チャット履歴取得
    */
   async getChatHistory(sessionId?: string): Promise<APIResponse<ChatMessage[]>> {
+    // POIPOI_PRESERVE_LOCAL_HISTORY
+    // PC側の取得処理が失敗しても既存の端末キャッシュは削除しない。
+    // 保存・復元の既存処理は変更しない。
     try {
       const id = sessionId || this.sessionId;
       if (!id) return { success: true, data: [] };
