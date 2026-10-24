@@ -376,8 +376,10 @@ export default function ChatScreen() {
           const connected = await connector.checkConnectivity();
 
           if (!connected) {
+            setApiConnector(null);
             setIsConnected(false);
             setIsAuthenticated(false);
+            setSessionId(undefined);
             throw new Error(
               'PCに再接続できません。スマホ単独動作は継続できます。'
             );
