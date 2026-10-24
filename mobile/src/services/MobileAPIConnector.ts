@@ -147,7 +147,7 @@ export class MobileAPIConnector {
    */
   async sendChatMessage(request: ChatRequest): Promise<APIResponse<ChatResponse>> {
     try {
-      const sessionId = this.sessionId || request.sessionId || await this.createChatSession();
+      const sessionId = request.sessionId || this.sessionId || await this.createChatSession();
       const response = await this.apiClient.post('/api/trpc/chat.processMessage', {
         json: { userId: 'mobile', sessionId, message: request.message },
       });
