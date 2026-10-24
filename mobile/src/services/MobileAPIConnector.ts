@@ -381,7 +381,7 @@ export class MobileAPIConnector {
     this.sessionId = null;
     this.sessionToken = null;
     await AsyncStorage.removeItem('chatSessionId');
-    if (sessionId) await LocalCacheService.clearChatHistory(sessionId);
+    // 認証情報のみ削除し、端末内の会話は保持する
     await AsyncStorage.removeItem('sessionToken');
     delete this.apiClient.defaults.headers.common['Authorization'];
   }
