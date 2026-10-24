@@ -10,7 +10,7 @@ import {
   FlatList,
   StyleSheet,
   SafeAreaView,
-  ActivityIndicator,
+  KeyboardAvoidingView, ActivityIndicator,
   Alert,
   Modal,
 } from "react-native";
@@ -421,7 +421,7 @@ export default function ChatScreen() {
           />
           <TouchableOpacity
             style={styles.sendButton}
-            onPress={handleRegister}
+            onPress={() => { Keyboard.dismiss(); void handleRegister(); }}
             disabled={registerBusy || loginBusy}
           >
             <Text style={styles.sendButtonText}>
