@@ -119,6 +119,41 @@ export default function ChatScreen() {
       setLoginBusy(false);
     }
   };
+  const [registerName, setRegisterName] = useState('');
+  const [registerBusy, setRegisterBusy] = useState(false);
+
+  const handleRegister = async () => {
+    if (registerBusy) return;
+    if (loginUsername.trim().length < 3 || loginPassword.length < 6 || !registerName.trim()) {
+      Alert.alert('入力確認', 'ユーザー名3文字以上、パスワード6文字以上、表示名を入力してください');
+      return;
+    }
+    setRegisterBusy(true);
+    try {
+      const baseURL = Constants.expoConfig?.extra?.apiBaseUrl;
+      if (typeof baseURL !== 'string' || !baseURL.trim()) throw new Error('API URLが未設定です');
+      const response = await fetch(`${baseURL.replace(/\/$/, '')}/api/trpc/auth.register`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          json: {
+            username: loginUsername.trim(),
+            password: loginPassword,
+            name: registerName.trim(),
+          },
+        }),
+      });
+      const result = await response.json();
+      if (!response.ok || result?.error) {
+        throw new Error(result?.error?.message || '登録に失敗しました');
+      }
+      Alert.alert('登録完了', '続けて「ログイン実行」を押してください');
+    } catch (error) {
+      Alert.alert('登録エラー', error instanceof Error ? error.message : '登録に失敗しました');
+    } finally {
+      setRegisterBusy(false);
+    }
+  };
   const [cameraPermission, requestCameraPermission] = useCameraPermissions();
   const [cameraOpen, setCameraOpen] = useState(false);
   const cameraRef = useRef<CameraView>(null);
@@ -372,6 +407,25 @@ export default function ChatScreen() {
           >
             <Text style={styles.sendButtonText}>
               {loginBusy ? 'ログイン中…' : 'ログイン実行'}
+            </Text>
+          </TouchableOpacity>
+        </View>
+      )}
+      {showLogin && !isAuthenticated && (
+        <View style={{ paddingHorizontal: 12, paddingBottom: 8, gap: 8 }}>
+          <TextInput
+            placeholder="初回登録用の表示名"
+            value={registerName}
+            onChangeText={setRegisterName}
+            style={styles.input}
+          />
+          <TouchableOpacity
+            style={styles.sendButton}
+            onPress={handleRegister}
+            disabled={registerBusy || loginBusy}
+          >
+            <Text style={styles.sendButtonText}>
+              {registerBusy ? '登録中…' : '初回登録'}
             </Text>
           </TouchableOpacity>
         </View>
