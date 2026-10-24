@@ -197,7 +197,7 @@ export const chatRouter = router({
       const repository = (await import("./repositories/ChatRepository")).getSharedChatRepository();
       const session = await repository.getSession(input.sessionId);
       if (!session || session.userId !== String(ctx.user.id)) return [];
-      return repository.getMessages(input.sessionId);
+      return repository.getMessages(input.sessionId, 100000);
     }),
   createSession: protectedProcedure
     .input(
