@@ -61,6 +61,31 @@ export default function StreamingChat() {
   const persistChatMessage = (id: string, message: Message) => { setConversations(prev => { const next = prev.map(c => c.id !== id ? c : { ...c, title: c.title === "新しいチャット" && message.role === "user" ? message.content.slice(0, 30) : c.title, updatedAt: new Date().toISOString(), messages: [...c.messages, { id: message.id, role: message.role, content: message.content, timestamp: message.timestamp.toISOString(), type: message.type }] }); return next; }); };
   useEffect(() => { saveConversations(conversations); }, [conversations]);
   const streamingChat = trpc.streaming.chat.useMutation();
+  const syncHistory = trpc.chat.syncHistory.useMutation();
+  const syncHistoryRef = useRef(syncHistory);
+  syncHistoryRef.current = syncHistory;
+  useEffect(() => {
+    if (!conversations.length) return;
+    const timer = setTimeout(() => {
+      syncHistoryRef.current.mutate({
+        conversations: conversations.map(c => ({
+          id: c.id,
+          title: c.title,
+          updatedAt: c.updatedAt,
+          messages: c.messages
+            .filter(m => m.role === "user" || m.role === "assistant")
+            .map(m => ({
+              id: m.id,
+              role: m.role as "user" | "assistant",
+              content: m.content,
+              timestamp: m.timestamp,
+            })),
+        })),
+      });
+    }, 800);
+    return () => clearTimeout(timer);
+  }, [conversations]);
+
   const analyzeFeedback = trpc.evolution.analyzeFeedback.useMutation();
   const generateProgram = trpc.autoProgramGeneration.generateProgram.useMutation();
 
