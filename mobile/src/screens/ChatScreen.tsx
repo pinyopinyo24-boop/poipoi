@@ -386,6 +386,7 @@ export default function ChatScreen() {
 
       {showLogin && !isAuthenticated && (
         <View style={{ padding: 12, gap: 8 }}>
+          <Text style={{ color: "#222", fontSize: 16, fontWeight: "bold", marginBottom: 4 }}>ユーザー名（ログインID）</Text>
           <TextInput
             placeholder="ユーザー名"
             autoCapitalize="none"
@@ -393,6 +394,7 @@ export default function ChatScreen() {
             onChangeText={setLoginUsername}
             style={styles.input}
           />
+          <Text style={{ color: "#222", fontSize: 16, fontWeight: "bold", marginBottom: 4 }}>パスワード</Text>
           <TextInput
             placeholder="パスワード"
             secureTextEntry
@@ -413,6 +415,7 @@ export default function ChatScreen() {
       )}
       {showLogin && !isAuthenticated && (
         <View style={{ paddingHorizontal: 12, paddingBottom: 8, gap: 8 }}>
+          <Text style={{ color: "#222", fontSize: 16, fontWeight: "bold", marginBottom: 4 }}>表示名（初回登録用）</Text>
           <TextInput
             placeholder="初回登録用の表示名"
             value={registerName}
