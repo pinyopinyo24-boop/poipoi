@@ -95,6 +95,23 @@ async function startServer() {
   };
   app.get('/health', reportHealth);
   app.get('/api/health', reportHealth);
+
+  // POIPOI_MOBILE_UPDATE_API_V1
+  app.get('/api/mobile-update', async (_req: any, res: any) => {
+    try {
+      const fs = await import('node:fs/promises');
+      const manifestPath = path.resolve(process.cwd(), 'data/mobile-update.json');
+      const manifest = JSON.parse(await fs.readFile(manifestPath, 'utf8'));
+      res.setHeader('Cache-Control', 'no-store');
+      res.json(manifest);
+    } catch (error: any) {
+      if (error?.code === 'ENOENT') {
+        res.json({ available: false });
+        return;
+      }
+      res.status(500).json({ error: '更新情報を取得できません' });
+    }
+  });
   
   // Test video endpoint for development
   app.get('/api/test-video', (req: any, res: any) => {
