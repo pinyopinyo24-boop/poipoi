@@ -1,3 +1,5 @@
+import * as fs from "node:fs";
+import * as path from "node:path";
 /**
  * ChatRepository - チャットデータ永続化層
  */
@@ -23,10 +25,10 @@ export interface ChatSession {
 export class ChatRepository {
   private messages = new Map<string, ChatMessage[]>();
   private sessions = new Map<string, ChatSession>();
-  private readonly storagePath = require("path").join(process.cwd(), "data", "chat-history.json");
+  private readonly storagePath = path.join(process.cwd(), "data", "chat-history.json");
 
   constructor() {
-    const fs = require("fs");
+    
     if (fs.existsSync(this.storagePath)) {
       const data = JSON.parse(fs.readFileSync(this.storagePath, "utf8"));
       this.sessions = new Map(data.sessions || []);
@@ -35,8 +37,8 @@ export class ChatRepository {
   }
 
   private persist(): void {
-    const fs = require("fs");
-    fs.mkdirSync(require("path").dirname(this.storagePath), { recursive: true });
+    
+    fs.mkdirSync(path.dirname(this.storagePath), { recursive: true });
     const tmp = this.storagePath + ".tmp";
     fs.writeFileSync(tmp, JSON.stringify({
       sessions: [...this.sessions],
