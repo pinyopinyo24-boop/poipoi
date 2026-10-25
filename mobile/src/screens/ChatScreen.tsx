@@ -207,6 +207,31 @@ export default function ChatScreen() {
       setRegisterBusy(false);
     }
   };
+  // POIPOI_UPDATE_COMPLETED_NOTICE_V1
+  useEffect(() => {
+    const notifyCompletedUpdate = async () => {
+      try {
+        const currentCode = Number(Constants.expoConfig?.android?.versionCode ?? 0);
+        if (currentCode <= 0) return;
+
+        const key = 'POIPOI_INSTALLED_VERSION_CODE';
+        const previous = await AsyncStorage.getItem(key);
+
+        await AsyncStorage.setItem(key, String(currentCode));
+
+        if (previous !== null && currentCode > Number(previous)) {
+          Alert.alert(
+            'PoiPoiアップデート完了',
+            'PoiPoiを更新しました'
+          );
+        }
+      } catch (error) {
+        console.warn('[PoiPoi] 更新完了通知:', error);
+      }
+    };
+
+    void notifyCompletedUpdate();
+  }, []);
   // POIPOI_MOBILE_UPDATE_CHECK_V1
   const updatePromptedRef = React.useRef<string | null>(null);
 
