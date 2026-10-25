@@ -1,3 +1,4 @@
+import * as DocumentPicker from 'expo-document-picker';
 import * as ImagePicker from 'expo-image-picker';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { MobileSelfEvolution } from '../services/MobileSelfEvolution';
@@ -204,6 +205,31 @@ export default function ChatScreen() {
     }
   };
 
+  const pickDocument = async () => {
+    try {
+      const result = await DocumentPicker.getDocumentAsync({
+        type: [
+          'image/*',
+          'video/*',
+          'audio/*',
+          'text/plain',
+          'application/zip',
+          'application/json'
+        ],
+        copyToCacheDirectory: true
+      });
+
+      if (result.canceled || !result.assets?.length) return;
+
+      const file = result.assets[0];
+      Alert.alert('ファイル選択', `${file.name} を選択しました`);
+    } catch (error) {
+      Alert.alert(
+        '添付エラー',
+        error instanceof Error ? error.message : 'ファイルを選択できませんでした'
+      );
+    }
+  };
   const pickAttachment = async () => {
     try {
       const result = await ImagePicker.launchImageLibraryAsync({
@@ -773,6 +799,7 @@ export default function ChatScreen() {
           onPress={() => Alert.alert('添付', '添付方法を選択', [
             { text: '写真を選ぶ', onPress: () => { void pickAttachment(); } },
             { text: 'カメラ', onPress: () => { void handleOpenCamera(); } },
+            { text: 'ファイルを選ぶ', onPress: () => { void pickDocument(); } },
             { text: 'キャンセル', style: 'cancel' }
           ])}
         >
