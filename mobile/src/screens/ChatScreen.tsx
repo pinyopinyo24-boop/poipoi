@@ -801,7 +801,7 @@ export default function ChatScreen() {
       <View style={styles.inputArea}>
         <TouchableOpacity
           style={{ justifyContent: 'center', paddingHorizontal: 8 }}
-          onPress={() => { void pickDocument(); }}
+          onPress={() => { void pickAttachment(); }}
         >
           <Text style={{ fontSize: 32, color: '#06b6d4' }}>＋</Text>
         </TouchableOpacity>
