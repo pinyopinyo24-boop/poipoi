@@ -108,11 +108,22 @@ export const chatRouter = router({
           throw new TRPCError({ code: 'NOT_FOUND', message: 'チャットセッションが見つかりません' });
         }
 
-        const response = await manager.processMessage(
-          userId,
-          input.sessionId,
-          input.message
-        );
+        const { PoiPoiIdentity } = await import("./core/PoiPoiIdentity");
+
+          const originalMessage = input.message;
+          const rename = originalMessage.trim().match(
+            /^(?:あなたの)?名前(?:を|は)\s*[「『"]?(.{1,40}?)[」』"]?\s*(?:にして|に変更して|に変えて|です|だよ)[。！!]*$/
+          );
+
+          if (rename) {
+            PoiPoiIdentity.setName(rename[1].trim());
+          }
+
+          const response = await manager.processMessage(
+            userId,
+            input.sessionId,
+            `${PoiPoiIdentity.getSystemPrompt()}\n\n${originalMessage}`
+          );
 
         return {
           message: response.message,
