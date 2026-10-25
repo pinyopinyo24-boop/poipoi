@@ -1,5 +1,5 @@
-import ChatScreen from "./screens/ChatScreen";
+import PoiPoiHome from "./screens/PoiPoiHome";
 
 export default function App() {
-  return <ChatScreen />;
+  return <PoiPoiHome />;
 }
