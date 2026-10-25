@@ -1,3 +1,20 @@
+function extractAIMessage(value: unknown): string {
+  if (typeof value !== "string") {
+    return value == null ? "応答がありません" : JSON.stringify(value);
+  }
+
+  try {
+    const parsed = JSON.parse(value);
+    if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+      if (typeof parsed.message === "string") return parsed.message;
+      if (typeof parsed.content === "string") return parsed.content;
+    }
+  } catch {
+    // 通常の文章はそのまま表示
+  }
+
+  return value;
+}
 import * as DocumentPicker from 'expo-document-picker';
 import * as ImagePicker from 'expo-image-picker';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -713,7 +730,7 @@ export default function ChatScreen() {
           : response.data.message?.content || "応答がありません";
         const assistantMessage: Message = {
           id: (Date.now() + 1).toString(),
-          text: typeof messageContent === 'string' ? messageContent : JSON.stringify(messageContent),
+          text: extractAIMessage(messageContent),
           isUser: false,
           timestamp: Date.now()
         };
