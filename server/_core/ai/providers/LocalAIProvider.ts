@@ -52,7 +52,7 @@ export class LocalAIProvider extends BaseAIProvider {
             ],
             temperature: options?.temperature ?? 0.7,
             num_predict: options?.maxTokens ?? 2048,
-            format: "json",
+            ...(messages.some(m => m.role === "system" && /JSON形式|JSON format|valid JSON|JSON object/i.test(m.content)) ? { format: "json" } : {}),
             stream: false,
             top_p: options?.topP ?? 0.9,
           }),
