@@ -483,6 +483,43 @@ export class MobileAPIConnector {
   /**
    * 現在のセッションID取得
    */
+  async syncMobileConversations(messages: Array<{
+    id: string;
+    text: string;
+    isUser: boolean;
+    timestamp: number;
+  }>): Promise<boolean> {
+    try {
+      const history = messages
+        .filter(m => m.id !== '0' && typeof m.text === 'string')
+        .slice(-200);
+
+      if (history.length === 0) return true;
+
+      const sessionId = this.sessionId || await this.createChatSession();
+
+      await this.apiClient.post('/api/trpc/chat.syncConversations', {
+        json: {
+          conversations: [{
+            id: sessionId,
+            title: 'PoiPoiモバイルチャット',
+            updatedAt: new Date().toISOString(),
+            messages: history.map(m => ({
+              id: m.id,
+              role: m.isUser ? 'user' : 'assistant',
+              content: m.text,
+              timestamp: new Date(m.timestamp).toISOString(),
+            })),
+          }],
+        },
+      });
+
+      return true;
+    } catch (error) {
+      console.warn('[PoiPoi] 会話同期失敗:', error);
+      return false;
+    }
+  }
   async getChatSessions(): Promise<APIResponse<any[]>> {
     try {
       const response = await this.apiClient.get('/api/trpc/chat.getSessions');
