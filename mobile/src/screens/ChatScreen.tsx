@@ -85,57 +85,58 @@ export default function ChatScreen() {
   const [chatSessions, setChatSessions] = useState<Array<{ id: string; title?: string }>>([]);
   const [showHistory, setShowHistory] = useState(false);
 
-  const lastSyncedConversationRef = useRef<string>('');
+  // POIPOI_UNIFIED_CONVERSATION_SYNC_V2
+  const lastSyncedConversationRef = useRef('');
+  const conversationSyncInFlightRef = useRef(false);
+  const conversationSyncPendingRef = useRef(false);
+  const messagesRef = useRef(messages);
+  messagesRef.current = messages;
 
-  // POIPOI_AUTO_CONVERSATION_SYNC_V1
   useEffect(() => {
     if (!localHistoryReady || !apiConnector || !isConnected || isLoading) return;
 
     let cancelled = false;
-    const timer = setTimeout(() => {
-      if (cancelled) return;
-      const signature = JSON.stringify(messages.map(m => [m.id, m.text, m.isUser]));
-      if (signature === lastSyncedConversationRef.current) return;
-      void apiConnector.syncMobileConversations(messages).then(success => {
-        if (success) lastSyncedConversationRef.current = signature;
-      }).catch(error => {
-        console.warn('[PoiPoi] 自動会話同期失敗:', error);
-      });
-    }, 1500);
+    let retryTimer: ReturnType<typeof setTimeout> | null = null;
 
-    return () => {
-      cancelled = true;
-      clearTimeout(timer);
-    };
-  }, [messages, localHistoryReady, apiConnector, isConnected, isLoading]);
-  // POIPOI_PC_TO_MOBILE_SYNC_V1
-  useEffect(() => {
-    if (!localHistoryReady || !apiConnector || !isConnected || isLoading) return;
+    const sync = async () => {
+      if (cancelled || conversationSyncInFlightRef.current) {
+        conversationSyncPendingRef.current = true;
+        return;
+      }
 
-    let cancelled = false;
+      conversationSyncInFlightRef.current = true;
 
-    const syncFromPC = async () => {
       try {
-        const sessions = await apiConnector.getChatSessions();
-        if (!sessions.success || !sessions.data?.length || cancelled) return;
+        const current = messagesRef.current;
+        const signature = JSON.stringify(
+          current.map(m => [m.id, m.text, m.isUser, m.timestamp])
+        );
 
-        const currentSessionId = await AsyncStorage.getItem('chatSessionId');
-        if (!currentSessionId) return;
+        if (signature !== lastSyncedConversationRef.current) {
+          const success = await apiConnector.syncMobileConversations(current);
+          if (!success) throw new Error('PCへの会話同期に失敗しました');
+          lastSyncedConversationRef.current = signature;
+        }
 
-        const currentSession = sessions.data.find(s => s.id === currentSessionId);
-        if (!currentSession) return;
+        if (cancelled) return;
 
-        const result = await apiConnector.getChatHistory(currentSessionId);
+        const sessionId = await AsyncStorage.getItem('chatSessionId');
+        if (!sessionId || cancelled) return;
+
+        const result = await apiConnector.getChatHistory(sessionId);
         if (!result.success || !result.data || cancelled) return;
 
-        const incoming = result.data.map(m => ({
-          id: m.id,
-          text: m.content,
-          isUser: m.role === 'user',
-          timestamp: typeof m.timestamp === 'number'
-            ? m.timestamp
-            : new Date(m.timestamp).getTime(),
-        }));
+        const incoming = result.data
+          .filter(m => m && typeof m.id === 'string' && typeof m.content === 'string')
+          .map(m => ({
+            id: m.id,
+            text: m.content,
+            isUser: m.role === 'user',
+            timestamp: typeof m.timestamp === 'number'
+              ? m.timestamp
+              : new Date(m.timestamp).getTime(),
+          }))
+          .filter(m => Number.isFinite(m.timestamp));
 
         if (cancelled) return;
 
@@ -147,16 +148,31 @@ export default function ChatScreen() {
             : prev;
         });
       } catch (error) {
-        console.warn('[PoiPoi] PC履歴取得失敗:', error);
+        console.warn('[PoiPoi] 会話同期失敗:', error);
+        if (!cancelled) {
+          retryTimer = setTimeout(() => {
+            if (!cancelled) void sync();
+          }, 10000);
+        }
+      } finally {
+        conversationSyncInFlightRef.current = false;
+        if (conversationSyncPendingRef.current && !cancelled) {
+          conversationSyncPendingRef.current = false;
+          void sync();
+        }
       }
     };
 
-    void syncFromPC();
+    const timer = setTimeout(() => {
+      void sync();
+    }, 1500);
 
     return () => {
       cancelled = true;
+      clearTimeout(timer);
+      if (retryTimer) clearTimeout(retryTimer);
     };
-  }, [apiConnector, isConnected, localHistoryReady]);
+  }, [messages, localHistoryReady, apiConnector, isConnected, isLoading]);
   const openChatHistory = async () => {
     if (!apiConnector || !isConnected) {
       setShowHistory(true);
