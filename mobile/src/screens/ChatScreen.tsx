@@ -765,7 +765,7 @@ export default function ChatScreen() {
 
       {/* Input Area */}
       <View style={styles.mediaActions}>
-        <VoiceInputUI onVoiceData={handleVoiceData} isEnabled={!isLoading && !!apiConnector} />
+        
       </View>
       <View style={styles.inputArea}>
         <TouchableOpacity
