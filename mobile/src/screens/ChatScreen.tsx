@@ -205,6 +205,52 @@ export default function ChatScreen() {
       setRegisterBusy(false);
     }
   };
+  // POIPOI_AUTO_PC_RECONNECT_V1
+  useEffect(() => {
+    let active = true;
+    let checking = false;
+
+    const checkPC = async () => {
+      if (!active || checking) return;
+      checking = true;
+      try {
+        if (await AsyncStorage.getItem('POIPOI_PC_DISCONNECTED') === '1') return;
+
+        const url = (await AsyncStorage.getItem('POIPOI_PC_URL'))
+          || Constants.expoConfig?.extra?.apiBaseUrl;
+
+        if (typeof url !== 'string' || !url.trim()) return;
+
+        const reachable = await Promise.race([
+          fetch(`${url.replace(/\/$/, '')}/api/health`)
+            .then(response => response.ok)
+            .catch(() => false),
+          new Promise<boolean>(resolve => setTimeout(() => resolve(false), 4000)),
+        ]);
+
+        if (!active) return;
+
+        if (!reachable) {
+          setIsConnected(false);
+          return;
+        }
+
+        setIsConnected(true);
+      } catch (error) {
+        if (active) setIsConnected(false);
+      } finally {
+        checking = false;
+      }
+    };
+
+    void checkPC();
+    const timer = setInterval(() => { void checkPC(); }, 10000);
+
+    return () => {
+      active = false;
+      clearInterval(timer);
+    };
+  }, []);
   const [cameraPermission, requestCameraPermission] = useCameraPermissions();
   const [cameraOpen, setCameraOpen] = useState(false);
   const cameraRef = useRef<CameraView>(null);
