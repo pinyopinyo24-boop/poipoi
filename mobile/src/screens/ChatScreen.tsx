@@ -102,6 +102,52 @@ export default function ChatScreen() {
       clearTimeout(timer);
     };
   }, [messages, localHistoryReady, apiConnector, isConnected, isLoading]);
+  // POIPOI_PC_TO_MOBILE_SYNC_V1
+  useEffect(() => {
+    if (!localHistoryReady || !apiConnector || !isConnected || isLoading) return;
+
+    let cancelled = false;
+
+    const syncFromPC = async () => {
+      try {
+        const sessions = await apiConnector.getChatSessions();
+        if (!sessions.success || !sessions.data?.length || cancelled) return;
+
+        const latest = sessions.data[0];
+        if (!latest?.id) return;
+
+        const result = await apiConnector.getChatHistory(latest.id);
+        if (!result.success || !result.data || cancelled) return;
+
+        const incoming = result.data.map(m => ({
+          id: m.id,
+          text: m.content,
+          isUser: m.role === 'user',
+          timestamp: typeof m.timestamp === 'number'
+            ? m.timestamp
+            : new Date(m.timestamp).getTime(),
+        }));
+
+        if (cancelled) return;
+
+        setMessages(prev => {
+          const known = new Set(prev.map(m => m.id));
+          const additions = incoming.filter(m => !known.has(m.id));
+          return additions.length
+            ? [...prev, ...additions].sort((a, b) => a.timestamp - b.timestamp)
+            : prev;
+        });
+      } catch (error) {
+        console.warn('[PoiPoi] PC履歴取得失敗:', error);
+      }
+    };
+
+    void syncFromPC();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [apiConnector, isConnected, localHistoryReady]);
   const openChatHistory = async () => {
     if (!apiConnector || !isConnected) {
       setShowHistory(true);
