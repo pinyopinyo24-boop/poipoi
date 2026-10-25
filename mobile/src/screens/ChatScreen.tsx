@@ -85,6 +85,8 @@ export default function ChatScreen() {
   const [chatSessions, setChatSessions] = useState<Array<{ id: string; title?: string }>>([]);
   const [showHistory, setShowHistory] = useState(false);
 
+  const lastSyncedConversationRef = useRef<string>('');
+
   // POIPOI_AUTO_CONVERSATION_SYNC_V1
   useEffect(() => {
     if (!localHistoryReady || !apiConnector || !isConnected || isLoading) return;
@@ -92,7 +94,11 @@ export default function ChatScreen() {
     let cancelled = false;
     const timer = setTimeout(() => {
       if (cancelled) return;
-      void apiConnector.syncMobileConversations(messages).catch(error => {
+      const signature = JSON.stringify(messages.map(m => [m.id, m.text, m.isUser]));
+      if (signature === lastSyncedConversationRef.current) return;
+      void apiConnector.syncMobileConversations(messages).then(success => {
+        if (success) lastSyncedConversationRef.current = signature;
+      }).catch(error => {
         console.warn('[PoiPoi] 自動会話同期失敗:', error);
       });
     }, 1500);
