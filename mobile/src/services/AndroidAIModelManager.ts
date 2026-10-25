@@ -106,7 +106,43 @@ export class AndroidAIModelManager {
         }
       );
 
-      const result = await download.downloadAsync();
+      let result;
+
+      const savedResumeData = await FileSystem.getInfoAsync(
+        `${temporary}.resume`
+      );
+
+      if (savedResumeData.exists) {
+        try {
+          const resumeData = await FileSystem.readAsStringAsync(
+            `${temporary}.resume`
+          );
+          const resumable = FileSystem.createDownloadResumable(
+            model.downloadUrl,
+            temporary,
+            {},
+            (progress) => {
+              const total = progress.totalBytesExpectedToWrite;
+              if (total > 0) {
+                const percent = Math.floor(
+                  (progress.totalBytesWritten / total) * 100
+                );
+                AndroidAIModelManager.modelProgressListener?.(percent);
+              }
+            },
+            resumeData
+          );
+          result = await resumable.resumeAsync();
+        } catch {
+          await FileSystem.deleteAsync(
+            `${temporary}.resume`,
+            { idempotent: true }
+          );
+          result = await download.downloadAsync();
+        }
+      } else {
+        result = await download.downloadAsync();
+      }
       if (!result) {
         throw new Error('モデルダウンロードが中断されました');
       }
