@@ -143,7 +143,18 @@ export class MobileSelfEvolution {
 
     const key = 'poipoi:evolution:active';
     const saved = await AsyncStorage.getItem(key);
-    const active: number[] = saved ? JSON.parse(saved) : [];
+    const active: number[] = (() => {
+        try {
+          const parsed: unknown = saved ? JSON.parse(saved) : [];
+          return Array.isArray(parsed)
+            ? parsed.filter((v): v is number =>
+                typeof v === 'number' && Number.isInteger(v) && v >= 0
+              )
+            : [];
+        } catch {
+          return [];
+        }
+      })();
 
     if (!active.includes(index)) {
       active.push(index);
@@ -198,7 +209,18 @@ export class MobileSelfEvolution {
 
     const key = 'poipoi:evolution:active';
     const saved = await AsyncStorage.getItem(key);
-    const active: number[] = saved ? JSON.parse(saved) : [];
+    const active: number[] = (() => {
+        try {
+          const parsed: unknown = saved ? JSON.parse(saved) : [];
+          return Array.isArray(parsed)
+            ? parsed.filter((v): v is number =>
+                typeof v === 'number' && Number.isInteger(v) && v >= 0
+              )
+            : [];
+        } catch {
+          return [];
+        }
+      })();
 
     if (!active.includes(index)) {
       return 'この機能は登録されていません';
@@ -218,7 +240,18 @@ export class MobileSelfEvolution {
     }
 
     const saved = await AsyncStorage.getItem('poipoi:evolution:active');
-    const active: number[] = saved ? JSON.parse(saved) : [];
+    const active: number[] = (() => {
+        try {
+          const parsed: unknown = saved ? JSON.parse(saved) : [];
+          return Array.isArray(parsed)
+            ? parsed.filter((v): v is number =>
+                typeof v === 'number' && Number.isInteger(v) && v >= 0
+              )
+            : [];
+        } catch {
+          return [];
+        }
+      })();
     const design = await AsyncStorage.getItem('poipoi:evolution:design:' + index);
 
     return [
@@ -242,7 +275,18 @@ export class MobileSelfEvolution {
     }
 
     const saved = await AsyncStorage.getItem('poipoi:evolution:active');
-    const active: number[] = saved ? JSON.parse(saved) : [];
+    const active: number[] = (() => {
+        try {
+          const parsed: unknown = saved ? JSON.parse(saved) : [];
+          return Array.isArray(parsed)
+            ? parsed.filter((v): v is number =>
+                typeof v === 'number' && Number.isInteger(v) && v >= 0
+              )
+            : [];
+        } catch {
+          return [];
+        }
+      })();
     if (!active.includes(index)) {
       throw new Error('登録されていない機能です');
     }
