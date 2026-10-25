@@ -68,6 +68,14 @@ export class AICore {
       }
 
       // Get primary provider or use first available
+      // POIPOI_LOCAL_PROVIDER_REGISTERED_V1
+      if (!this.providers.has('local')) {
+        const localProvider = new LocalAIProvider(
+          process.env.LOCAL_AI_URL || 'http://localhost:11434'
+        );
+        this.providers.set('local', localProvider);
+        this.connectionMonitor.registerProvider('Local', 'real', true);
+      }
       let primaryProvider = this.providers.get(this.config.primaryProvider);
       if (!primaryProvider && this.providers.size > 0) {
         console.warn(`[AICore] Primary provider '${this.config.primaryProvider}' not available, using first available`);
