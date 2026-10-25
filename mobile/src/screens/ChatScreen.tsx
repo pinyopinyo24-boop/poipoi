@@ -840,7 +840,7 @@ export default function ChatScreen() {
         <Text onPress={() => { void openChatHistory(); }}>履歴</Text>
         <View style={styles.statusIndicator}>
           <View style={[styles.statusDot, { backgroundColor: isConnected ? "#4CAF50" : "#FF9800" }]} />
-          <Text style={styles.statusText}>{isConnected ? "接続済み" : "オフライン"}</Text>
+          <Text style={styles.statusText}>{isConnected ? "PC接続済み" : "スマホAI（PC未接続）"}</Text>
         </View>
       </View>
 
