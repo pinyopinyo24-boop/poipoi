@@ -786,7 +786,16 @@ export default function ChatScreen() {
           response = await apiConnector.sendChatMessage({
             message: input,
             sessionId: sessionId,
-            context: {},
+            context: {
+              poipoiConversation: messages
+                .filter(m => m.id !== '0')
+                .slice(-12)
+                .map(m => ({
+                  role: m.isUser ? 'user' : 'assistant',
+                  content: m.text,
+                })),
+              source: 'poipoi-mobile',
+            },
           });
 
           if (!response.success) {
