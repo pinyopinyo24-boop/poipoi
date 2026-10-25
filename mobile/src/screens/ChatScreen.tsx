@@ -1,4 +1,3 @@
-import * as React from 'react';
 import * as Linking from 'expo-linking';
 function extractAIMessage(value: unknown): string {
   if (typeof value !== "string") {
