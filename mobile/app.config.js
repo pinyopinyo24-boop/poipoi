@@ -2,6 +2,7 @@ const app = require("./app.json");
 
 module.exports = {
   ...app.expo,
+  icon: "./assets/poipoi-ai-icon.png",
   newArchEnabled: true,
   updates: {
     ...app.expo.updates,
