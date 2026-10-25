@@ -1,3 +1,5 @@
+import * as React from 'react';
+import * as Linking from 'expo-linking';
 function extractAIMessage(value: unknown): string {
   if (typeof value !== "string") {
     return value == null ? "応答がありません" : JSON.stringify(value);
@@ -205,6 +207,50 @@ export default function ChatScreen() {
       setRegisterBusy(false);
     }
   };
+  // POIPOI_MOBILE_UPDATE_CHECK_V1
+  const updatePromptedRef = React.useRef<string | null>(null);
+
+  const checkMobileUpdate = async (baseURL: string) => {
+    try {
+      const response = await fetch(`${baseURL.replace(/\/$/, '')}/api/mobile-update`);
+      if (!response.ok) return;
+
+      const update = await response.json();
+      const currentVersionCode = Number(
+        Constants.expoConfig?.android?.versionCode ?? 1
+      );
+
+      if (
+        update.available !== true ||
+        !Number.isInteger(update.versionCode) ||
+        update.versionCode <= currentVersionCode ||
+        typeof update.apkUrl !== 'string' ||
+        !/^https:\/\//.test(update.apkUrl)
+      ) return;
+
+      const key = `${update.versionCode}:${update.apkUrl}`;
+      if (updatePromptedRef.current === key) return;
+      updatePromptedRef.current = key;
+
+      Alert.alert(
+        'PoiPoiアップデート',
+        `新しいバージョン ${update.version} があります。更新しますか？`,
+        [
+          { text: 'あとで', style: 'cancel' },
+          {
+            text: '更新する',
+            onPress: () => {
+              void Linking.openURL(update.apkUrl).catch(error => {
+                Alert.alert('更新エラー', String(error));
+              });
+            },
+          },
+        ]
+      );
+    } catch (error) {
+      console.warn('[PoiPoi] 更新確認失敗:', error);
+    }
+  };
   // POIPOI_AUTO_PC_RECONNECT_V1
   useEffect(() => {
     let active = true;
@@ -245,6 +291,7 @@ export default function ChatScreen() {
         setIsAuthenticated(await connector.checkAuthentication());
         setSessionId(connector.getSessionId() || undefined);
         setIsConnected(true);
+        void checkMobileUpdate(url);
       } catch (error) {
         if (active) setIsConnected(false);
       } finally {
