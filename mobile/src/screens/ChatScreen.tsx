@@ -304,6 +304,8 @@ export default function ChatScreen() {
     initializeAPI();
   }, []);
 
+  const pcConnectionBusyRef = React.useRef(false);
+
   const handleSend = async () => {
     const command = input.trim();
 
@@ -316,8 +318,9 @@ export default function ChatScreen() {
       command === '/PCヘルプ' ||
       command.startsWith('/PC接続 ')
     ) {
-      if (isLoading) return;
+      if (pcConnectionBusyRef.current || isLoading) return;
 
+      pcConnectionBusyRef.current = true;
       setIsLoading(true);
 
       try {
@@ -501,6 +504,7 @@ export default function ChatScreen() {
           error instanceof Error ? error.message : String(error)
         );
       } finally {
+        pcConnectionBusyRef.current = false;
         setIsLoading(false);
       }
 
