@@ -89,66 +89,58 @@ export class AndroidAIModelManager {
     const destination = this.getModelPath(model.tier);
     const temporary = `${destination}.download`;
 
-    try {
-      const download = FileSystem.createDownloadResumable(
-        model.downloadUrl,
-        temporary,
-        {},
-        (progress) => {
-          const total = progress.totalBytesExpectedToWrite;
-          if (total > 0) {
-            const percent = Math.floor(
-              (progress.totalBytesWritten / total) * 100
-            );
-            console.log(`PoiPoi AIモデル取得: ${percent}%`);
-            AndroidAIModelManager.modelProgressListener?.(percent);
-          }
-        }
-      );
+    // POIPOI_MODEL_RESUME_V2
+    const resumePath = `${temporary}.resume`;
 
+    const onProgress = (progress: FileSystem.DownloadProgressData) => {
+      const total = progress.totalBytesExpectedToWrite;
+      if (total > 0) {
+        const percent = Math.floor(
+          (progress.totalBytesWritten / total) * 100
+        );
+        AndroidAIModelManager.modelProgressListener?.(percent);
+      }
+    };
+
+    const saved = await FileSystem.getInfoAsync(resumePath);
+    let resumeData = saved.exists
+      ? await FileSystem.readAsStringAsync(resumePath)
+      : undefined;
+
+    let download = FileSystem.createDownloadResumable(
+      model.downloadUrl,
+      temporary,
+      {},
+      onProgress,
+      resumeData
+    );
+
+    try {
       let result;
 
-      const savedResumeData = await FileSystem.getInfoAsync(
-        `${temporary}.resume`
-      );
+      try {
+        result = resumeData
+          ? await download.resumeAsync()
+          : await download.downloadAsync();
+      } catch (error) {
+        if (!resumeData) throw error;
 
-      if (savedResumeData.exists) {
-        try {
-          const resumeData = await FileSystem.readAsStringAsync(
-            `${temporary}.resume`
-          );
-          const resumable = FileSystem.createDownloadResumable(
-            model.downloadUrl,
-            temporary,
-            {},
-            (progress) => {
-              const total = progress.totalBytesExpectedToWrite;
-              if (total > 0) {
-                const percent = Math.floor(
-                  (progress.totalBytesWritten / total) * 100
-                );
-                AndroidAIModelManager.modelProgressListener?.(percent);
-              }
-            },
-            resumeData
-          );
-          result = await resumable.resumeAsync();
-        } catch {
-          await FileSystem.deleteAsync(
-            `${temporary}.resume`,
-            { idempotent: true }
-          );
-          result = await download.downloadAsync();
-        }
-      } else {
+        // 保存済みの再開情報が無効な場合は最初から取得
+        await FileSystem.deleteAsync(temporary, { idempotent: true });
+        await FileSystem.deleteAsync(resumePath, { idempotent: true });
+
+        resumeData = undefined;
+        download = FileSystem.createDownloadResumable(
+          model.downloadUrl,
+          temporary,
+          {},
+          onProgress
+        );
         result = await download.downloadAsync();
       }
-      if (!result) {
-        throw new Error('モデルダウンロードが中断されました');
-      }
 
-      if (result.status !== 200) {
-        throw new Error(`モデル取得失敗: HTTP ${result.status}`);
+      if (!result || result.status !== 200) {
+        throw new Error(`モデル取得失敗: HTTP ${result?.status ?? '不明'}`);
       }
 
       const info = await FileSystem.getInfoAsync(temporary);
@@ -161,11 +153,20 @@ export class AndroidAIModelManager {
         to: destination,
       });
 
+      await FileSystem.deleteAsync(resumePath, { idempotent: true });
       return destination;
     } catch (error) {
-      // POIPOI_MODEL_RESUME_SAVE_V1
-      // 通信エラー時は途中まで取得したファイルを残す
-      // 再開情報が取得できない場合もファイルを削除しない
+      try {
+        const data = download.savable();
+        if (data?.resumeData) {
+          await FileSystem.writeAsStringAsync(
+            resumePath,
+            data.resumeData
+          );
+        }
+      } catch {
+        // 再開情報を取得できない場合は元のエラーを維持
+      }
       throw error;
     }
   }
