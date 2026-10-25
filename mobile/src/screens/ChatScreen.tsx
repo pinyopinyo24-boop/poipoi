@@ -309,7 +309,7 @@ export default function ChatScreen() {
   const handleSend = async () => {
     const command = input.trim();
 
-    if (isLoading) return;
+    if (isLoading || pcConnectionBusyRef.current) return;
 
     if (
       command === '/PC状態' ||
@@ -390,6 +390,7 @@ export default function ChatScreen() {
             );
           }
 
+          await AsyncStorage.setItem('POIPOI_PC_URL', reconnectURL);
           setApiConnector(connector);
           setIsConnected(true);
           setIsAuthenticated(false);
