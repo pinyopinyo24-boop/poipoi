@@ -235,6 +235,15 @@ export default function ChatScreen() {
           return;
         }
 
+        const connector = new MobileAPIConnector(url);
+        await connector.initialize();
+
+        if (!active) return;
+        if (await AsyncStorage.getItem('POIPOI_PC_DISCONNECTED') === '1') return;
+
+        setApiConnector(connector);
+        setIsAuthenticated(await connector.checkAuthentication());
+        setSessionId(connector.getSessionId() || undefined);
         setIsConnected(true);
       } catch (error) {
         if (active) setIsConnected(false);
