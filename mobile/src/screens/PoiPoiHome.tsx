@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import {
   View, Text, ScrollView, TouchableOpacity,
-  StyleSheet, Alert, Linking, SafeAreaView
+  StyleSheet, Alert, Linking, SafeAreaView, TextInput
 } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import Constants from 'expo-constants';
@@ -9,25 +9,95 @@ import ChatScreen from './ChatScreen';
 
 const menus = [
   { title: 'AIチャット', route: '/streaming', local: true },
-  { title: 'ダッシュボード', route: '/dashboard' },
-  { title: '生産管理・分析', route: '/manufacturing' },
-  { title: 'ファイル処理', route: '/file-processing' },
-  { title: 'AIプロバイダー', route: '/ai-providers' },
-  { title: '資料作成', route: '/documents' },
-  { title: 'コード生成', route: '/code-generator' },
-  { title: '履歴・メモリー', route: '/history-memory' },
-  { title: 'スケジュール', route: '/schedule-memory' },
-  { title: '顔入れ替え', route: '/facefusion-hybrid' },
-  { title: '高度な機能', route: '/advanced-features' },
-  { title: '設定', route: '/settings' },
+  { title: '履歴', route: '/history', local: true },
+  { title: 'スケジュール', route: '/schedule', local: true },
+  { title: '設定', route: '/settings', local: true },
 ];
+// POIPOI_FOUR_FEATURES_V1
 
 export default function PoiPoiHome() {
   const [chat, setChat] = useState(false);
+  const [page, setPage] = useState('');
+  const [plans, setPlans] = useState<any[]>([]);
+  const [planTitle, setPlanTitle] = useState('');
+  const [planDate, setPlanDate] = useState('');
+  const [pcUrl, setPcUrl] = useState('');
+  const [history, setHistory] = useState<any[]>([]);
+
+  const loadPage = async (route: string) => {
+    setPage(route);
+    try {
+      if (route === '/schedule') {
+        const saved = await AsyncStorage.getItem('POIPOI_SCHEDULE');
+        setPlans(saved ? JSON.parse(saved) : []);
+      }
+      if (route === '/settings') {
+        setPcUrl(await AsyncStorage.getItem('POIPOI_PC_URL') || '');
+      }
+      if (route === '/history') {
+        const saved = await AsyncStorage.getItem('POIPOI_LOCAL_CHAT_V1');
+        setHistory(saved ? JSON.parse(saved) : []);
+      }
+    } catch {
+      Alert.alert('読み込みエラー');
+    }
+  };
+
+  const savePlan = async () => {
+    if (!planTitle.trim() || !planDate.trim()) {
+      Alert.alert('予定名と日時を入力してください');
+      return;
+    }
+    const next = [...plans, {
+      id: String(Date.now()),
+      title: planTitle.trim(),
+      date: planDate.trim()
+    }];
+    try {
+      await AsyncStorage.setItem('POIPOI_SCHEDULE', JSON.stringify(next));
+      setPlans(next);
+      setPlanTitle('');
+      setPlanDate('');
+    } catch {
+      Alert.alert('保存できませんでした');
+    }
+  };
+
+  const deletePlan = async (id: string) => {
+    const next = plans.filter(p => p.id !== id);
+    try {
+      await AsyncStorage.setItem('POIPOI_SCHEDULE', JSON.stringify(next));
+      setPlans(next);
+    } catch {
+      Alert.alert('削除できませんでした');
+    }
+  };
+
+  const savePcUrl = async () => {
+    const url = pcUrl.trim().replace(/\/+$/, '');
+    if (url && !/^https?:\/\/[^/\s]+$/.test(url)) {
+      Alert.alert('接続先URLが不正です');
+      return;
+    }
+    try {
+      if (url) {
+        await AsyncStorage.setItem('POIPOI_PC_URL', url);
+      } else {
+        await AsyncStorage.removeItem('POIPOI_PC_URL');
+      }
+      Alert.alert('設定を保存しました');
+    } catch {
+      Alert.alert('保存できませんでした');
+    }
+  };
 
   const openMenu = async (menu: typeof menus[number]) => {
     if (menu.local) {
-      setChat(true);
+      if (menu.route === '/streaming') {
+        setChat(true);
+      } else {
+        await loadPage(menu.route);
+      }
       return;
     }
 
@@ -58,6 +128,84 @@ export default function PoiPoiHome() {
     }
   };
 
+  if (page) {
+    return (
+      <SafeAreaView style={styles.root}>
+        <TouchableOpacity style={styles.back} onPress={() => setPage('')}>
+          <Text style={styles.backText}>‹ ホームへ戻る</Text>
+        </TouchableOpacity>
+        <ScrollView contentContainerStyle={styles.content}>
+          <Text style={styles.title}>
+            {page === '/history' ? '履歴' :
+             page === '/schedule' ? 'スケジュール' : '設定'}
+          </Text>
+
+          {page === '/history' && (
+            <View>
+              <Text>端末内の保存済みチャット履歴</Text>
+              {history.length === 0 && <Text>履歴はありません</Text>}
+              {history.map((item, index) => (
+                <View key={String(item.id ?? index)} style={styles.card}>
+                  <Text>{String(item.text ?? item.content ?? '')}</Text>
+                </View>
+              ))}
+              <TouchableOpacity onPress={() => {
+                setPage('');
+                setChat(true);
+              }}>
+                <Text style={styles.backText}>チャットを開く</Text>
+              </TouchableOpacity>
+            </View>
+          )}
+
+          {page === '/schedule' && (
+            <View>
+              <TextInput
+                style={extraStyles.input}
+                placeholder="予定名"
+                value={planTitle}
+                onChangeText={setPlanTitle}
+              />
+              <TextInput
+                style={extraStyles.input}
+                placeholder="日時 例：2026-10-26 09:00"
+                value={planDate}
+                onChangeText={setPlanDate}
+              />
+              <TouchableOpacity style={extraStyles.button} onPress={savePlan}>
+                <Text style={extraStyles.buttonText}>予定を登録</Text>
+              </TouchableOpacity>
+              {plans.map(p => (
+                <View key={p.id} style={extraStyles.item}>
+                  <Text>{p.date}　{p.title}</Text>
+                  <TouchableOpacity onPress={() => deletePlan(p.id)}>
+                    <Text style={styles.backText}>削除</Text>
+                  </TouchableOpacity>
+                </View>
+              ))}
+            </View>
+          )}
+
+          {page === '/settings' && (
+            <View>
+              <Text>PC接続先URL</Text>
+              <TextInput
+                style={extraStyles.input}
+                value={pcUrl}
+                onChangeText={setPcUrl}
+                autoCapitalize="none"
+                placeholder="http://192.168.1.7:3000"
+              />
+              <TouchableOpacity style={extraStyles.button} onPress={savePcUrl}>
+                <Text style={extraStyles.buttonText}>設定を保存</Text>
+              </TouchableOpacity>
+              <Text>AIモデル設定は既存チャット機能を利用します。</Text>
+            </View>
+          )}
+        </ScrollView>
+      </SafeAreaView>
+    );
+  }
   if (chat) {
     return (
       <SafeAreaView style={styles.root}>
@@ -132,4 +280,29 @@ const styles = StyleSheet.create({
   back: { padding: 10, paddingTop: 55, backgroundColor: '#ffffff' },
   backText: { color: '#2563eb', fontWeight: 'bold' },
   chat: { flex: 1 }
+});
+const extraStyles = StyleSheet.create({
+  input: {
+    backgroundColor: '#fff',
+    padding: 14,
+    borderRadius: 10,
+    marginVertical: 10
+  },
+  button: {
+    backgroundColor: '#2563eb',
+    padding: 16,
+    borderRadius: 10,
+    marginVertical: 10
+  },
+  buttonText: {
+    color: '#fff',
+    textAlign: 'center',
+    fontWeight: 'bold'
+  },
+  item: {
+    backgroundColor: '#fff',
+    padding: 16,
+    borderRadius: 10,
+    marginVertical: 6
+  }
 });
