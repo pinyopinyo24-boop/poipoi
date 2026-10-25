@@ -307,6 +307,8 @@ export default function ChatScreen() {
   const handleSend = async () => {
     const command = input.trim();
 
+    if (isLoading) return;
+
     if (
       command === '/PC状態' ||
       command === '/PC切断' ||
