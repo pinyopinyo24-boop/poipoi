@@ -1,4 +1,4 @@
-{
+﻿{
     "cli":  {
                 "version":  "\u003e= 5.0.0"
             },
@@ -15,7 +15,8 @@
                                   "distribution":  "internal",
                                   "android":  {
                                                   "buildType":  "apk"
-                                              }
+                                              },
+                                  "channel":  "preview"
                               },
                   "production":  {
                                      "android":  {
