@@ -43,7 +43,13 @@ export class LocalAIProvider extends BaseAIProvider {
           signal: AbortSignal.timeout(180000),
           body: JSON.stringify({
             model,
-            messages,
+            messages: [
+              {
+                role: "system",
+                content: (await import("../../../core/PoiPoiIdentity")).PoiPoiIdentity.getSystemPrompt(),
+              },
+              ...messages,
+            ],
             temperature: options?.temperature ?? 0.7,
             num_predict: options?.maxTokens ?? 2048,
             format: "json",
