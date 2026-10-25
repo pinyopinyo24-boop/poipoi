@@ -21,7 +21,7 @@ const runtimeRequestMetrics = { total: 0, failed: 0, durationMsTotal: 0 };
 function isPortAvailable(port: number): Promise<boolean> {
   return new Promise(resolve => {
     const server = net.createServer();
-    server.listen(port, () => {
+    server.listen(port, '0.0.0.0', () => {
       server.close(() => resolve(true));
     });
     server.on("error", () => resolve(false));
@@ -156,9 +156,9 @@ async function startServer() {
     serveStatic(app);
   }
   startupOptimizationService.recordStartupMetric('resource_loading', Date.now() - resourceLoadingStartedAt);
-  const port = await findAvailablePort();
+  const port = 3000;
   const listenStartedAt = Date.now();
-  server.listen(port, () => {
+  server.listen(port, '0.0.0.0', () => {
     serverReadyAt = Date.now();
     startupOptimizationService.recordStartupMetric('api_connection', serverReadyAt - listenStartedAt);
     console.log(`Server running on http://localhost:${port}/`);
