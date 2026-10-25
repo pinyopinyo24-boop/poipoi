@@ -222,7 +222,12 @@ export default function ChatScreen() {
       if (result.canceled || !result.assets?.length) return;
 
       const file = result.assets[0];
-      Alert.alert('ファイル選択', `${file.name} を選択しました`);
+      setMessages(prev => [...prev, {
+        id: `file-${Date.now()}`,
+        text: `📎 ${file.name}`,
+        isUser: true,
+        timestamp: Date.now()
+      }]);
     } catch (error) {
       Alert.alert(
         '添付エラー',
@@ -796,12 +801,7 @@ export default function ChatScreen() {
       <View style={styles.inputArea}>
         <TouchableOpacity
           style={{ justifyContent: 'center', paddingHorizontal: 8 }}
-          onPress={() => Alert.alert('添付', '添付方法を選択', [
-            { text: '写真を選ぶ', onPress: () => { void pickAttachment(); } },
-            { text: 'カメラ', onPress: () => { void handleOpenCamera(); } },
-            { text: 'ファイルを選ぶ', onPress: () => { void pickDocument(); } },
-            { text: 'キャンセル', style: 'cancel' }
-          ])}
+          onPress={() => { void pickDocument(); }}
         >
           <Text style={{ fontSize: 32, color: '#06b6d4' }}>＋</Text>
         </TouchableOpacity>
