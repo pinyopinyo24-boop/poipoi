@@ -1,3 +1,4 @@
+import * as ImagePicker from 'expo-image-picker';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { MobileSelfEvolution } from '../services/MobileSelfEvolution';
 import { AndroidAIModelManager } from '../services/AndroidAIModelManager';
@@ -203,6 +204,42 @@ export default function ChatScreen() {
     }
   };
 
+  const pickAttachment = async () => {
+    try {
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ['images'],
+        base64: true,
+        quality: 0.65
+      });
+      if (result.canceled) return;
+      if (!apiConnector) {
+        Alert.alert('接続が必要です', '画像の解析にはPC接続が必要です');
+        return;
+      }
+      const image = result.assets[0];
+      const base64 = image.base64 ||
+        await FileSystem.readAsStringAsync(image.uri, {
+          encoding: FileSystem.EncodingType.Base64
+        });
+      setIsAnalyzingImage(true);
+      const response = await apiConnector.analyzeImage(
+        `data:${image.mimeType || 'image/jpeg'};base64,${base64}`
+      );
+      if (!response.success || !response.data)
+        throw new Error(response.error || '画像解析に失敗しました');
+      setMessages(prev => [...prev, {
+        id: `attachment-${Date.now()}`,
+        text: response.data!.analysis,
+        isUser: false,
+        timestamp: Date.now()
+      }]);
+    } catch (error) {
+      Alert.alert('添付エラー',
+        error instanceof Error ? error.message : '画像を処理できませんでした');
+    } finally {
+      setIsAnalyzingImage(false);
+    }
+  };
   const handleOpenCamera = async () => {
     if (!cameraPermission?.granted) {
       const permission = await requestCameraPermission();
@@ -729,11 +766,18 @@ export default function ChatScreen() {
       {/* Input Area */}
       <View style={styles.mediaActions}>
         <VoiceInputUI onVoiceData={handleVoiceData} isEnabled={!isLoading && !!apiConnector} />
-        <TouchableOpacity style={styles.mediaButton} onPress={handleOpenCamera} disabled={!apiConnector || isAnalyzingImage}>
-          <Text style={styles.mediaButtonText}>{isAnalyzingImage ? '画像を読取中…' : '写真を読み取る'}</Text>
-        </TouchableOpacity>
       </View>
       <View style={styles.inputArea}>
+        <TouchableOpacity
+          style={{ justifyContent: 'center', paddingHorizontal: 8 }}
+          onPress={() => Alert.alert('添付', '添付方法を選択', [
+            { text: '写真を選ぶ', onPress: () => { void pickAttachment(); } },
+            { text: 'カメラ', onPress: () => { void handleOpenCamera(); } },
+            { text: 'キャンセル', style: 'cancel' }
+          ])}
+        >
+          <Text style={{ fontSize: 32, color: '#06b6d4' }}>＋</Text>
+        </TouchableOpacity>
         <TextInput
           style={styles.input}
           value={input}
