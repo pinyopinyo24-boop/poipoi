@@ -244,8 +244,6 @@ export default function ChatScreen() {
         // app.config.js から apiBaseUrl を取得
         const apiBaseUrl = (await AsyncStorage.getItem('POIPOI_PC_URL')) || Constants.expoConfig?.extra?.apiBaseUrl;
         if (typeof apiBaseUrl !== "string" || !apiBaseUrl.trim()) {
-          setIsConnected(false);
-          setApiConnector(null);
           return;
         }
         if (__DEV__) console.log("[ChatScreen] API Base URL:", apiBaseUrl);
@@ -284,7 +282,6 @@ export default function ChatScreen() {
             }
       
           } else {
-            setSessionId(undefined);
             // 端末内の会話履歴を保持
           }
         }
@@ -296,7 +293,6 @@ export default function ChatScreen() {
         }
       } catch (error) {
         console.error("[ChatScreen] API initialization error:", error);
-        setIsConnected(false);
         console.info("[PoiPoi] ローカルAIに切り替えました");
       }
     };
@@ -381,10 +377,6 @@ export default function ChatScreen() {
           const connected = await connector.checkConnectivity();
 
           if (!connected) {
-            setApiConnector(null);
-            setIsConnected(false);
-            setIsAuthenticated(false);
-            setSessionId(undefined);
             throw new Error(
               'PCに再接続できません。スマホ単独動作は継続できます。'
             );
@@ -393,7 +385,6 @@ export default function ChatScreen() {
           await AsyncStorage.setItem('POIPOI_PC_URL', reconnectURL);
           setApiConnector(connector);
           setIsConnected(true);
-          setIsAuthenticated(false);
           setSessionId(connector.getSessionId() || undefined);
           setInput('');
 
@@ -402,10 +393,6 @@ export default function ChatScreen() {
         }
         if (command === '/PC切断') {
           await AsyncStorage.removeItem('POIPOI_PC_URL');
-          setApiConnector(null);
-          setIsConnected(false);
-          setIsAuthenticated(false);
-          setSessionId(undefined);
           setInput('');
 
           Alert.alert(
@@ -482,7 +469,6 @@ export default function ChatScreen() {
 
         setApiConnector(connector);
         setIsConnected(true);
-        setIsAuthenticated(false);
         setSessionId(connector.getSessionId() || undefined);
         setInput('');
 
@@ -491,10 +477,6 @@ export default function ChatScreen() {
           'PCに接続しました。\n' + url
         );
       } catch (error) {
-        setApiConnector(null);
-        setIsConnected(false);
-        setIsAuthenticated(false);
-        setSessionId(undefined);
 
         if (command === '/PC再接続') {
           setInput(command);
