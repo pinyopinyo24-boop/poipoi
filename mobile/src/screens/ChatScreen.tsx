@@ -814,6 +814,14 @@ export default function ChatScreen() {
           return;
         } catch (localError) {
           console.error("[ChatScreen] Local AI fallback error:", localError);
+          const reason = localError instanceof Error ? localError.message : String(localError);
+          setMessages(prev => [...prev, {
+            id: (Date.now() + 2).toString(),
+            text: `スマホAIの起動に失敗しました: ${reason}`,
+            isUser: false,
+            timestamp: Date.now()
+          }]);
+          return;
         }
       }
       console.error("[ChatScreen] Send message error:", error);
