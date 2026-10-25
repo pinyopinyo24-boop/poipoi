@@ -60,6 +60,13 @@ export const chatRouter = router({
         userId: z.string(),
         sessionId: z.string(),
         message: z.string(),
+        context: z.object({
+          poipoiConversation: z.array(z.object({
+            role: z.enum(['user', 'assistant']),
+            content: z.string(),
+          })).max(12).optional(),
+          source: z.string().optional(),
+        }).optional(),
       })
     )
     .mutation(async ({ ctx, input }) => {
@@ -119,10 +126,16 @@ export const chatRouter = router({
             PoiPoiIdentity.setName(rename[1].trim());
           }
 
+          const mobileHistory = (input.context?.poipoiConversation ?? [])
+            .map(turn => `${turn.role === 'user' ? 'ユーザー' : 'PoiPoi'}: ${turn.content}`)
+            .join('\n');
+          const mobileHistoryPrefix = mobileHistory
+            ? `スマホ側の直前の会話:\n${mobileHistory}\n\n現在の質問:\n`
+            : '';
           const response = await manager.processMessage(
             userId,
             input.sessionId,
-            `${PoiPoiIdentity.getSystemPrompt()}\n\n${originalMessage}`
+            `${PoiPoiIdentity.getSystemPrompt()}\n\n${mobileHistoryPrefix}${originalMessage}`
           );
 
         return {
