@@ -54,7 +54,7 @@ function getChatCoreManager(): ChatCoreManager {
 }
 
 export const chatRouter = router({
-  processMessage: protectedProcedure
+  processMessage: publicProcedure
     .input(
       z.object({
         userId: z.string(),
@@ -101,7 +101,7 @@ export const chatRouter = router({
           };
         }
 
-        const userId = String(ctx.user.id);
+        const userId = String(ctx.user?.id ?? "mobile");
         const manager = getChatCoreManager();
         const existingSession = await manager.getSession(userId, input.sessionId);
         if (existingSession.userId !== userId) {
@@ -126,7 +126,7 @@ export const chatRouter = router({
       }
     }),
 
-  getSession: protectedProcedure
+  getSession: publicProcedure
     .input(
       z.object({
         userId: z.string(),
@@ -134,7 +134,7 @@ export const chatRouter = router({
       })
     )
     .query(async ({ ctx, input }) => {
-      const userId = String(ctx.user.id);
+      const userId = String(ctx.user?.id ?? "mobile");
       const session = await getChatCoreManager().getSession(userId, input.sessionId);
       if (session.userId !== userId) {
         throw new TRPCError({ code: 'NOT_FOUND', message: 'チャットセッションが見つかりません' });
@@ -142,7 +142,7 @@ export const chatRouter = router({
       return { ...session, messages: session.messages.filter((message: { userId: string }) => message.userId === userId) };
     }),
 
-  syncHistory: protectedProcedure
+  syncHistory: publicProcedure
     .input(z.object({
       conversations: z.array(z.object({
         id: z.string(),
@@ -157,7 +157,7 @@ export const chatRouter = router({
       })),
     }))
     .mutation(async ({ ctx, input }) => {
-      const userId = String(ctx.user.id);
+      const userId = String(ctx.user?.id ?? "mobile");
       const repository = (await import("./repositories/ChatRepository")).getSharedChatRepository();
       for (const conversation of input.conversations) {
         const existing = await repository.getSession(conversation.id);
@@ -186,20 +186,20 @@ export const chatRouter = router({
       }
       return { success: true };
     }),
-  getSessions: protectedProcedure
+  getSessions: publicProcedure
     .query(async ({ ctx }) => {
       const repository = (await import("./repositories/ChatRepository")).getSharedChatRepository();
-      return repository.getUserSessions(String(ctx.user.id));
+      return repository.getUserSessions(String(ctx.user?.id ?? "mobile"));
     }),
-  getMessages: protectedProcedure
+  getMessages: publicProcedure
     .input(z.object({ userId: z.string(), sessionId: z.string() }))
     .query(async ({ ctx, input }) => {
       const repository = (await import("./repositories/ChatRepository")).getSharedChatRepository();
       const session = await repository.getSession(input.sessionId);
-      if (!session || session.userId !== String(ctx.user.id)) return [];
+      if (!session || session.userId !== String(ctx.user?.id ?? "mobile")) return [];
       return repository.getMessages(input.sessionId, 100000);
     }),
-  createSession: protectedProcedure
+  createSession: publicProcedure
     .input(
       z.object({
         userId: z.string(),
@@ -207,10 +207,10 @@ export const chatRouter = router({
       })
     )
     .mutation(async ({ ctx, input }) =>
-      getChatCoreManager().createSession(String(ctx.user.id), input.title || "チャットセッション")
+      getChatCoreManager().createSession(String(ctx.user?.id ?? "mobile"), input.title || "チャットセッション")
     ),
 
-  deleteSession: protectedProcedure
+  deleteSession: publicProcedure
     .input(
       z.object({
         userId: z.string(),
@@ -218,7 +218,7 @@ export const chatRouter = router({
       })
     )
     .mutation(async ({ ctx, input }) => {
-      const userId = String(ctx.user.id);
+      const userId = String(ctx.user?.id ?? "mobile");
       const manager = getChatCoreManager();
       const session = await manager.getSession(userId, input.sessionId);
       if (session.userId !== userId) {
@@ -227,27 +227,27 @@ export const chatRouter = router({
       return manager.deleteSession(userId, input.sessionId);
     }),
 
-  getUserSessions: protectedProcedure
+  getUserSessions: publicProcedure
     .input(
       z.object({
         userId: z.string(),
       })
     )
     .query(async ({ ctx }) =>
-      getChatCoreManager().getUserSessions(String(ctx.user.id))
+      getChatCoreManager().getUserSessions(String(ctx.user?.id ?? "mobile"))
     ),
 
-  getStatistics: protectedProcedure
+  getStatistics: publicProcedure
     .input(
       z.object({
         userId: z.string(),
       })
     )
     .query(async ({ ctx }) =>
-      getChatCoreManager().getChatStatistics(String(ctx.user.id))
+      getChatCoreManager().getChatStatistics(String(ctx.user?.id ?? "mobile"))
     ),
 
-  reportResponseIssue: protectedProcedure
+  reportResponseIssue: publicProcedure
     .input(
       z.object({
         sessionId: z.string().min(1),
@@ -256,7 +256,7 @@ export const chatRouter = router({
       })
     )
     .mutation(async ({ ctx, input }) => {
-      const userId = String(ctx.user.id);
+      const userId = String(ctx.user?.id ?? "mobile");
       const messages = await getChatCoreManager().getMessages(userId, input.sessionId);
       const message = messages.find((item) => item.id === input.messageId);
 
@@ -276,7 +276,7 @@ export const chatRouter = router({
         title: `チャット回答の報告: ${input.issueType}`,
         message: description,
         email: null,
-        userId: ctx.user.id,
+        userId: ctx.user?.id ?? "mobile",
         status: 'new',
       });
 

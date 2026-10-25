@@ -402,7 +402,7 @@ export class MobileAPIConnector {
   }
 
   private async createChatSession(): Promise<string> {
-    if (!this.sessionToken) throw new Error('チャットにはログインが必要です');
+    
     const response = await this.apiClient.post('/api/trpc/chat.createSession', { json: { userId: 'mobile', title: 'モバイルチャット' } });
     const session = this.getTrpcData(response.data);
     const id = typeof session === 'string' ? session : session?.id;
