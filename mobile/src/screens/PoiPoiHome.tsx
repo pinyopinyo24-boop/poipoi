@@ -129,7 +129,7 @@ const styles = StyleSheet.create({
   cardHint: {
     fontSize: 11, color: '#64748b', marginTop: 8
   },
-  back: { padding: 10, backgroundColor: '#ffffff' },
+  back: { padding: 10, paddingTop: 55, backgroundColor: '#ffffff' },
   backText: { color: '#2563eb', fontWeight: 'bold' },
   chat: { flex: 1 }
 });
