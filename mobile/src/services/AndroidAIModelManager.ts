@@ -163,7 +163,9 @@ export class AndroidAIModelManager {
 
       return destination;
     } catch (error) {
-      await FileSystem.deleteAsync(temporary, { idempotent: true });
+      // POIPOI_MODEL_RESUME_SAVE_V1
+      // 通信エラー時は途中まで取得したファイルを残す
+      // 再開情報が取得できない場合もファイルを削除しない
       throw error;
     }
   }
