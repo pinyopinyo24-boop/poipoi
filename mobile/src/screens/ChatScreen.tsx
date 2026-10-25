@@ -113,10 +113,13 @@ export default function ChatScreen() {
         const sessions = await apiConnector.getChatSessions();
         if (!sessions.success || !sessions.data?.length || cancelled) return;
 
-        const latest = sessions.data[0];
-        if (!latest?.id) return;
+        const currentSessionId = await AsyncStorage.getItem('chatSessionId');
+        if (!currentSessionId) return;
 
-        const result = await apiConnector.getChatHistory(latest.id);
+        const currentSession = sessions.data.find(s => s.id === currentSessionId);
+        if (!currentSession) return;
+
+        const result = await apiConnector.getChatHistory(currentSessionId);
         if (!result.success || !result.data || cancelled) return;
 
         const incoming = result.data.map(m => ({
