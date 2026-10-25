@@ -1,8 +1,8 @@
-﻿{
+{
     "expo":  {
                  "name":  "PoiPoi Beta",
                  "slug":  "poipoi-beta",
-                 "version":  "0.1.0",
+                 "version":  "0.1.1",
                  "orientation":  "portrait",
                  "icon":  "./assets/poipoi-ai-icon.png",
                  "userInterfaceStyle":  "light",
@@ -28,7 +28,8 @@
                                                      "RECORD_AUDIO",
                                                      "READ_EXTERNAL_STORAGE",
                                                      "WRITE_EXTERNAL_STORAGE"
-                                                 ]
+                                                 ],
+                                 "versionCode":  2
                              },
                  "web":  {
                              "favicon":  "./assets/favicon.png"
