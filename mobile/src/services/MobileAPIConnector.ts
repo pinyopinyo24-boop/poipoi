@@ -149,7 +149,7 @@ export class MobileAPIConnector {
     try {
       const sessionId = request.sessionId || this.sessionId || await this.createChatSession();
       const response = await this.apiClient.post('/api/trpc/chat.processMessage', {
-        json: { userId: 'mobile', sessionId, message: request.message },
+        json: { userId: 'mobile', sessionId, message: request.message, context: request.context },
       });
       const data = this.getTrpcData(response.data);
       if (!data?.message) throw new Error('チャット応答がありません');
