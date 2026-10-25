@@ -139,31 +139,57 @@ export class AndroidLocalAI {
       { role: 'user', content: message },
     ];
 
-    const result = await this.context.completion({
-      messages,
-      n_predict: 128,
-      temperature: 0.7,
-      stop: ['<|im_end|>', '<|endoftext|>'],
-    });
+    // POIPOI_COMPLETION_TIMEOUT_V1
+    const context = this.context;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    let timedOut = false;
 
-    const answer = String(result?.text ?? '').trim();
-
-    if (!answer) {
-      throw new Error('ローカルAIから応答がありません');
-    }
-
-    this.history.push(
-      { role: 'user', content: message },
-      { role: 'assistant', content: answer },
-    );
-    this.history = this.history.slice(-40);
     try {
-      await this.saveHistory();
-    } catch (error) {
-      console.warn('[PoiPoi] 会話保存失敗:', error);
-    }
+      const completion = context.completion({
+        messages,
+        n_predict: 128,
+        temperature: 0.7,
+        stop: ['<|im_end|>', '<|endoftext|>'],
+      });
 
-    return answer;
+      const result = await Promise.race([
+        completion,
+        new Promise<never>((_, reject) => {
+          timer = setTimeout(() => {
+            timedOut = true;
+            void Promise.resolve()
+              .then(() => context.stopCompletion())
+              .catch(error => console.warn('[PoiPoi] AI生成停止失敗:', error));
+            reject(new Error('AI応答が120秒を超えたため生成停止を要求しました'));
+          }, 120000);
+        }),
+      ]);
+
+      const answer = String(result?.text ?? '').trim();
+
+      if (!answer) {
+        throw new Error('ローカルAIから応答がありません');
+      }
+
+      this.history.push(
+        { role: 'user', content: message },
+        { role: 'assistant', content: answer },
+      );
+      this.history = this.history.slice(-40);
+      try {
+        await this.saveHistory();
+      } catch (error) {
+        console.warn('[PoiPoi] 会話保存失敗:', error);
+      }
+
+      return answer;
+    } finally {
+      if (timer !== undefined) clearTimeout(timer);
+      if (timedOut) {
+        // Stop was requested; the native completion may still be settling.
+        console.warn('[PoiPoi] AI生成タイムアウト');
+      }
+    }
   }
 
   static clearHistory(): void {
