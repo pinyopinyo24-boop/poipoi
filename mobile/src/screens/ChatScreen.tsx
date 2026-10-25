@@ -746,6 +746,21 @@ export default function ChatScreen() {
         throw new Error(response.error || "API エラー");
       }
     } catch (error) {
+      if (apiConnector && isConnected) {
+        try {
+          const localAnswer = await AndroidLocalAI.sendMessage(input);
+          setIsConnected(false);
+          setMessages(prev => [...prev, {
+            id: (Date.now() + 1).toString(),
+            text: localAnswer,
+            isUser: false,
+            timestamp: Date.now()
+          }]);
+          return;
+        } catch (localError) {
+          console.error("[ChatScreen] Local AI fallback error:", localError);
+        }
+      }
       console.error("[ChatScreen] Send message error:", error);
       const errorText = error instanceof Error ? error.message : "不明なエラー";
       console.error("[ChatScreen] Full error:", error);
