@@ -108,7 +108,7 @@ export default function ChatScreen() {
     if (!apiConnector || !loginUsername.trim() || !loginPassword || loginBusy) return;
     setLoginBusy(true);
     try {
-      const baseURL = Constants.expoConfig?.extra?.apiBaseUrl;
+      const baseURL = (await AsyncStorage.getItem('POIPOI_PC_URL')) || Constants.expoConfig?.extra?.apiBaseUrl;
       if (typeof baseURL !== 'string' || !baseURL.trim()) throw new Error('API URLが未設定です');
       const response = await fetch(`${baseURL.replace(/\/$/, '')}/api/trpc/auth.login`, {
         method: 'POST',
@@ -160,7 +160,7 @@ export default function ChatScreen() {
     }
     setRegisterBusy(true);
     try {
-      const baseURL = Constants.expoConfig?.extra?.apiBaseUrl;
+      const baseURL = (await AsyncStorage.getItem('POIPOI_PC_URL')) || Constants.expoConfig?.extra?.apiBaseUrl;
       if (typeof baseURL !== 'string' || !baseURL.trim()) throw new Error('API URLが未設定です');
       const response = await fetch(`${baseURL.replace(/\/$/, '')}/api/trpc/auth.register`, {
         method: 'POST',
@@ -242,6 +242,7 @@ export default function ChatScreen() {
       }
       try {
         // app.config.js から apiBaseUrl を取得
+        if (await AsyncStorage.getItem('POIPOI_PC_DISCONNECTED') === '1') return;
         const apiBaseUrl = (await AsyncStorage.getItem('POIPOI_PC_URL')) || Constants.expoConfig?.extra?.apiBaseUrl;
         if (typeof apiBaseUrl !== "string" || !apiBaseUrl.trim()) {
           return;
@@ -383,7 +384,9 @@ export default function ChatScreen() {
           }
 
           await AsyncStorage.setItem('POIPOI_PC_URL', reconnectURL);
+          await AsyncStorage.removeItem('POIPOI_PC_DISCONNECTED');
           setApiConnector(connector);
+          setIsAuthenticated(await connector.checkAuthentication());
           setIsConnected(true);
           setSessionId(connector.getSessionId() || undefined);
           setInput('');
@@ -392,7 +395,15 @@ export default function ChatScreen() {
           return;
         }
         if (command === '/PC切断') {
+          await AsyncStorage.setItem('POIPOI_PC_DISCONNECTED', '1');
           await AsyncStorage.removeItem('POIPOI_PC_URL');
+          setApiConnector(null);
+          setIsConnected(false);
+          setIsAuthenticated(false);
+          setSessionId(undefined);
+          setChatSessions([]);
+          setShowHistory(false);
+          setShowLogin(false);
           setInput('');
 
           Alert.alert(
@@ -466,8 +477,10 @@ export default function ChatScreen() {
         }
 
         await AsyncStorage.setItem('POIPOI_PC_URL', url);
+        await AsyncStorage.removeItem('POIPOI_PC_DISCONNECTED');
 
         setApiConnector(connector);
+        setIsAuthenticated(await connector.checkAuthentication());
         setIsConnected(true);
         setSessionId(connector.getSessionId() || undefined);
         setInput('');
