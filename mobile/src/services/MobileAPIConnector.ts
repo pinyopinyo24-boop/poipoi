@@ -149,7 +149,7 @@ export class MobileAPIConnector {
     try {
       const sessionId = request.sessionId || this.sessionId || await this.createChatSession();
       const response = await this.apiClient.post('/api/trpc/chat.processMessage', {
-        userId: 'mobile', sessionId, message: request.message,
+        json: { userId: 'mobile', sessionId, message: request.message },
       });
       const data = this.getTrpcData(response.data);
       if (!data?.message) throw new Error('チャット応答がありません');
@@ -403,7 +403,7 @@ export class MobileAPIConnector {
 
   private async createChatSession(): Promise<string> {
     
-    const response = await this.apiClient.post('/api/trpc/chat.createSession', { userId: 'mobile', title: 'モバイルチャット' });
+    const response = await this.apiClient.post('/api/trpc/chat.createSession', { json: { userId: 'mobile', title: 'モバイルチャット' } });
     const session = this.getTrpcData(response.data);
     const id = typeof session === 'string' ? session : session?.id;
     if (typeof id !== 'string' || !id) throw new Error('チャットセッションを作成できませんでした');
