@@ -147,9 +147,11 @@ export class MobileSelfEvolution {
         try {
           const parsed: unknown = saved ? JSON.parse(saved) : [];
           return Array.isArray(parsed)
-            ? parsed.filter((v): v is number =>
-                typeof v === 'number' && Number.isInteger(v) && v >= 0
-              )
+            ? [...new Set(parsed.filter((v): v is number =>
+                typeof v === 'number' &&
+                Number.isSafeInteger(v) &&
+                v >= 0
+              ))]
             : [];
         } catch {
           return [];
@@ -213,9 +215,11 @@ export class MobileSelfEvolution {
         try {
           const parsed: unknown = saved ? JSON.parse(saved) : [];
           return Array.isArray(parsed)
-            ? parsed.filter((v): v is number =>
-                typeof v === 'number' && Number.isInteger(v) && v >= 0
-              )
+            ? [...new Set(parsed.filter((v): v is number =>
+                typeof v === 'number' &&
+                Number.isSafeInteger(v) &&
+                v >= 0
+              ))]
             : [];
         } catch {
           return [];
@@ -244,9 +248,11 @@ export class MobileSelfEvolution {
         try {
           const parsed: unknown = saved ? JSON.parse(saved) : [];
           return Array.isArray(parsed)
-            ? parsed.filter((v): v is number =>
-                typeof v === 'number' && Number.isInteger(v) && v >= 0
-              )
+            ? [...new Set(parsed.filter((v): v is number =>
+                typeof v === 'number' &&
+                Number.isSafeInteger(v) &&
+                v >= 0
+              ))]
             : [];
         } catch {
           return [];
@@ -279,9 +285,11 @@ export class MobileSelfEvolution {
         try {
           const parsed: unknown = saved ? JSON.parse(saved) : [];
           return Array.isArray(parsed)
-            ? parsed.filter((v): v is number =>
-                typeof v === 'number' && Number.isInteger(v) && v >= 0
-              )
+            ? [...new Set(parsed.filter((v): v is number =>
+                typeof v === 'number' &&
+                Number.isSafeInteger(v) &&
+                v >= 0
+              ))]
             : [];
         } catch {
           return [];
