@@ -8,6 +8,8 @@ function extractAIMessage(value: unknown): string {
     if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
       if (typeof parsed.message === "string") return parsed.message;
       if (typeof parsed.content === "string") return parsed.content;
+      if (typeof parsed.description === "string") return parsed.description;
+      if (typeof parsed.name === "string") return parsed.name;
     }
   } catch {
     // 通常の文章はそのまま表示
