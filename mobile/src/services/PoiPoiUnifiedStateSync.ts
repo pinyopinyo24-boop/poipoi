@@ -87,8 +87,12 @@ export function synchronizeMobilePoiPoiState(
       clearTimeout(timeout);
     }
 
+    // POIPOI_SYNC_RESPONSE_ERROR_HANDLING_V1
     if (!response.ok) {
-      throw new Error(`PoiPoi state sync failed: ${response.status}`);
+      const errorText = await response.text().catch(() => '');
+      throw new Error(
+        `PoiPoi state sync failed: ${response.status} ${errorText.slice(0, 300)}`
+      );
     }
 
     const payload: unknown = await response.json();
