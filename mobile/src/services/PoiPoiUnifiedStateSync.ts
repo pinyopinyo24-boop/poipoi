@@ -66,7 +66,10 @@ export function synchronizeMobilePoiPoiState(
     // POIPOI_SYNC_TIMEOUT_V1
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 10000);
-    const response = await fetch(
+        let response: Awaited<ReturnType<typeof fetch>>;
+
+    try {
+    response = await fetch(
       `${base}/api/trpc/poipoiUnifiedState.sync`,
       {
         method: 'POST',
@@ -79,7 +82,10 @@ export function synchronizeMobilePoiPoiState(
       }
     );
 
-    clearTimeout(timeout);
+    
+    } finally {
+      clearTimeout(timeout);
+    }
 
     if (!response.ok) {
       throw new Error(`PoiPoi state sync failed: ${response.status}`);
