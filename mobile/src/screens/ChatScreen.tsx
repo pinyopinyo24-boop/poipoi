@@ -420,7 +420,13 @@ export default function ChatScreen() {
         setIsConnected(true);
         void checkMobileUpdate(url);
         void synchronizeMobilePoiPoiState(url)
-          .then(() => MobileSelfEvolution.restoreEvolutionFromUnifiedState())
+          .then(async () => {
+            await MobileSelfEvolution.restoreEvolutionFromUnifiedState();
+            const pcResults = await MobileSelfEvolution.getPcEvolutionHistory(20);
+            if (__DEV__) {
+              console.log('[PoiPoi] PC自己進化履歴取得:', pcResults.length);
+            }
+          })
           .catch(error => {
             console.warn('[PoiPoi] PC・Android自己進化同期失敗:', error);
           });
