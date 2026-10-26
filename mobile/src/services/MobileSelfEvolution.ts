@@ -103,8 +103,13 @@ export class MobileSelfEvolution {
       console.warn('[PoiPoi] Evolution state registration failed:', error);
     }
     try {
-      await synchronizeMobilePoiPoiState('http://192.168.1.7:3000');
-      await this.restoreEvolutionFromUnifiedState();
+      const disconnected = await AsyncStorage.getItem('POIPOI_PC_DISCONNECTED');
+      const configuredUrl = await AsyncStorage.getItem('POIPOI_PC_URL');
+
+      if (disconnected !== '1' && configuredUrl?.trim()) {
+        await synchronizeMobilePoiPoiState(configuredUrl.trim());
+        await this.restoreEvolutionFromUnifiedState();
+      }
     } catch (error) {
       console.warn('[PoiPoi] Evolution PC sync unavailable:', error);
     }
