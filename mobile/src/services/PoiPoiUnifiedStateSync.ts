@@ -66,7 +66,7 @@ export function synchronizeMobilePoiPoiState(
     // POIPOI_SYNC_TIMEOUT_V1
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 10000);
-        let response: Awaited<ReturnType<typeof fetch>>;
+    let response: Awaited<ReturnType<typeof fetch>>;
 
     try {
     response = await fetch(
