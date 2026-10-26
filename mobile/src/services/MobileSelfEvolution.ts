@@ -437,6 +437,54 @@ export class MobileSelfEvolution {
         value !== null
       );
   }
+  // POIPOI_PC_EVOLUTION_INTEGRATION_V3
+  static async getPcEvolutionSummary(): Promise<{
+    totalRuns: number;
+    executedRuns: number;
+    errorRuns: number;
+    totalChangesApplied: number;
+    totalRollbacks: number;
+    latestResult: unknown | null;
+  }> {
+    const results = await this.getPcEvolutionResultsFromUnifiedState();
+
+    let executedRuns = 0;
+    let errorRuns = 0;
+    let totalChangesApplied = 0;
+    let totalRollbacks = 0;
+
+    for (const result of results) {
+      if (!result || typeof result !== 'object') continue;
+
+      const run = result as Record<string, unknown>;
+
+      if (run.outcome === 'executed') executedRuns++;
+      if (run.outcome === 'error') errorRuns++;
+
+      if (
+        typeof run.changesApplied === 'number' &&
+        Number.isFinite(run.changesApplied)
+      ) {
+        totalChangesApplied += run.changesApplied;
+      }
+
+      if (
+        typeof run.rollbacks === 'number' &&
+        Number.isFinite(run.rollbacks)
+      ) {
+        totalRollbacks += run.rollbacks;
+      }
+    }
+
+    return {
+      totalRuns: results.length,
+      executedRuns,
+      errorRuns,
+      totalChangesApplied,
+      totalRollbacks,
+      latestResult: results[0] ?? null,
+    };
+  }
   static async getLatestPcEvolutionResult(): Promise<unknown | null> {
     const results = await this.getPcEvolutionResultsFromUnifiedState();
     return results.length > 0 ? results[0] : null;
