@@ -1,3 +1,4 @@
+import { poipoiUnifiedStateRouter } from './routers/poipoiUnifiedState';
 import { router } from "./_core/trpc";
 import { systemRouter } from "./_core/systemRouter";
 import { publicProcedure, protectedProcedure } from "./_core/trpc";
@@ -10,6 +11,8 @@ import { documentRouter } from "./routers.documents";
 import { aiAssistantRouter } from "./routers.aiassistant";
 import { performanceRouter } from "./routers.performance";
 import { streamingRouter } from "./routers.streaming";
+import { analysisRouter } from "./routers.analysis";
+import { presentationRouter } from "./routers.presentation";
 import { apiDocsRouter } from "./routers.apidocs";
 import { feedbackRouter } from "./routers.feedback";
 import { exportRouter } from "./routers.export";
@@ -39,6 +42,7 @@ import { osRouter } from './routers.os';
 import { driveTransferRouter } from './routers.drive-transfer';
 
 export const appRouter = router({
+  poipoiUnifiedState: poipoiUnifiedStateRouter,
   executionLogs: executionLogsRouter,
   system: systemRouter,
   os: osRouter,
@@ -51,6 +55,8 @@ export const appRouter = router({
   aiAssistant: aiAssistantRouter,
   performance: performanceRouter,
   streaming: streamingRouter,
+  analysis: analysisRouter,
+  presentation: presentationRouter,
   apiDocs: apiDocsRouter,
   feedback: feedbackRouter,
   export: exportRouter,
