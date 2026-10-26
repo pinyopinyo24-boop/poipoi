@@ -436,6 +436,14 @@ export class MobileSelfEvolution {
     const results = await this.getPcEvolutionResultsFromUnifiedState();
     return results.length > 0 ? results[0] : null;
   }
+  static async getPcEvolutionHistory(limit = 20): Promise<unknown[]> {
+    if (!Number.isInteger(limit) || limit < 1 || limit > 1000) {
+      throw new Error('取得件数が不正です');
+    }
+
+    const results = await this.getPcEvolutionResultsFromUnifiedState();
+    return results.slice(0, limit);
+  }
   static async restoreEvolutionFromUnifiedState(): Promise<boolean> {
     const state = await getMobilePoiPoiState();
     const snapshot = state.records.find(record =>
