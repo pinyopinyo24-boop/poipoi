@@ -97,6 +97,7 @@ export class MobileSelfEvolution {
     const approved = this.approve(history[index]);
     history[index] = approved;
     await AsyncStorage.setItem('poipoi:evolution:proposals', JSON.stringify(history));
+    await this.syncEvolutionToUnifiedState();
     return approved;
   }
 
