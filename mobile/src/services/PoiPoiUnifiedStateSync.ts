@@ -105,6 +105,27 @@ export function synchronizeMobilePoiPoiState(
 
     const merged = mergePoiPoiState(local, remote);
     await saveLocal(merged);
+
+    if (serializePoiPoiState(merged) !== serializePoiPoiState(remote)) {
+      const confirmation = await fetch(
+        `${base}/api/trpc/poipoiUnifiedState.sync`,
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            ...headers,
+          },
+          body: JSON.stringify({ json: merged }),
+        }
+      );
+
+      if (!confirmation.ok) {
+        throw new Error(
+          `PoiPoi state confirmation failed: ${confirmation.status}`
+        );
+      }
+    }
+
     return merged;
   });
 }
