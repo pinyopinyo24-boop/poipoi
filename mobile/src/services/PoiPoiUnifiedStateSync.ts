@@ -117,7 +117,9 @@ export function synchronizeMobilePoiPoiState(
       JSON.stringify(remoteData)
     );
 
-    const merged = mergePoiPoiState(local, remote);
+    // Preserve Android updates made while the network request was running.
+    const latestLocal = await readLocal();
+    const merged = mergePoiPoiState(latestLocal, remote);
     await saveLocal(merged);
 
     if (merged.records.some(record =>
