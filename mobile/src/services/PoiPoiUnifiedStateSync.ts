@@ -88,9 +88,18 @@ export function synchronizeMobilePoiPoiState(
       throw new Error('Invalid PoiPoi sync response');
     }
 
-    const result = (payload as {
+    const responseBody = payload as {
+      error?: { message?: string };
       result?: { data?: unknown };
-    }).result?.data;
+    };
+
+    if (responseBody.error) {
+      throw new Error(
+        responseBody.error.message || 'PoiPoi state sync rejected'
+      );
+    }
+
+    const result = responseBody.result?.data;
 
     const remoteData =
       result &&
