@@ -99,7 +99,12 @@ export function synchronizeMobilePoiPoiState(
       );
     }
 
+    // POIPOI_TRPC_RESPONSE_VALIDATION_V2
     const result = responseBody.result?.data;
+
+    if (result === undefined || result === null) {
+      throw new Error('PoiPoi unified state response is empty');
+    }
 
     const remoteData =
       result &&
