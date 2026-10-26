@@ -173,8 +173,9 @@ export function synchronizeMobilePoiPoiState(
       }
 
       if (!confirmation.ok) {
+        const errorText = await confirmation.text().catch(() => '');
         throw new Error(
-          `PoiPoi state confirmation failed: ${confirmation.status}`
+          `PoiPoi state confirmation failed: ${confirmation.status} ${errorText.slice(0, 300)}`
         );
       }
     }
