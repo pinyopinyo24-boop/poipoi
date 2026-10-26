@@ -1,3 +1,4 @@
+import * as React from 'react';
 import { synchronizeMobilePoiPoiState } from '../services/PoiPoiUnifiedStateSync';
 import * as Linking from 'expo-linking';
 function extractAIMessage(value: unknown): string {
@@ -54,6 +55,29 @@ interface Message {
 }
 
 export default function ChatScreen() {
+  // POIPOI_UNIFIED_STATE_RUNTIME_V2
+  React.useEffect(() => {
+    let cancelled = false;
+
+    const sync = async () => {
+      if (cancelled) return;
+
+      try {
+        await synchronizeMobilePoiPoiState(
+          'http://192.168.1.7:3000'
+        );
+      } catch (error) {
+        console.warn('PoiPoi AI state sync:', error);
+      }
+    };
+
+    void sync();
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
 
   // POIPOI_UNIFIED_STATE_RUNTIME_V1
   React.useEffect(() => {
