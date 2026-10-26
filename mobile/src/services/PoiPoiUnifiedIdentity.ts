@@ -7,7 +7,7 @@ export const POIPOI_UNIFIED_IDENTITY = {
   pcProvider: 'Ollama',
   mobileProvider: 'AndroidLocalAI',
   conversationSync: true,
-  memorySync: false,
-  selfLearningSync: false,
-  selfEvolutionSync: false,
+  memorySync: true,
+  selfLearningSync: true,
+  selfEvolutionSync: true,
 } as const;
