@@ -54,6 +54,27 @@ interface Message {
 }
 
 export default function ChatScreen() {
+
+  // POIPOI_UNIFIED_STATE_RUNTIME_V1
+  React.useEffect(() => {
+    let active = true;
+
+    const sync = async () => {
+      if (!active) return;
+      try {
+        await synchronizeMobilePoiPoiState('http://192.168.1.7:3000');
+      } catch (error) {
+        console.warn('PoiPoi unified AI state sync:', error);
+      }
+    };
+
+    void sync();
+
+    return () => {
+      active = false;
+    };
+  }, []);
+
   const POIPOI_LOCAL_CHAT_V1 = 'POIPOI_LOCAL_CHAT_V1';
 
   useEffect(() => {
