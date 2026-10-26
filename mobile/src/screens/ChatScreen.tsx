@@ -633,6 +633,58 @@ export default function ChatScreen() {
   const handleSend = async () => {
     const command = input.trim();
     // POIPOI_PC_EVOLUTION_INTEGRATION_V1
+    // POIPOI_PC_EVOLUTION_RESULT_COMMAND_V2
+    if (command === '/PC進化結果') {
+      if (isLoading || pcConnectionBusyRef.current) return;
+
+      pcConnectionBusyRef.current = true;
+      setIsLoading(true);
+      setInput('');
+
+      try {
+        const url =
+          (await AsyncStorage.getItem('POIPOI_PC_URL')) ||
+          Constants.expoConfig?.extra?.apiBaseUrl;
+
+        const disconnected =
+          await AsyncStorage.getItem('POIPOI_PC_DISCONNECTED');
+
+        if (
+          disconnected !== '1' &&
+          typeof url === 'string' &&
+          url.trim()
+        ) {
+          await synchronizeMobilePoiPoiState(url);
+          await MobileSelfEvolution.restoreEvolutionFromUnifiedState();
+        }
+
+        const latest = await MobileSelfEvolution.getLatestPcEvolutionResult();
+
+        const resultText = latest
+          ? JSON.stringify(latest, null, 2)
+          : 'PC自己進化結果はありません。';
+
+        setMessages(prev => [...prev, {
+          id: `pc-evolution-result-${Date.now()}`,
+          text: resultText,
+          isUser: false,
+          timestamp: Date.now(),
+        }]);
+      } catch (error) {
+        setMessages(prev => [...prev, {
+          id: `pc-evolution-error-${Date.now()}`,
+          text: 'PC自己進化結果の取得失敗: ' +
+            (error instanceof Error ? error.message : String(error)),
+          isUser: false,
+          timestamp: Date.now(),
+        }]);
+      } finally {
+        pcConnectionBusyRef.current = false;
+        setIsLoading(false);
+      }
+
+      return;
+    }
     if (command === '/PC進化履歴' || command === '/PC進化状態') {
       if (isLoading || pcConnectionBusyRef.current) return;
 
