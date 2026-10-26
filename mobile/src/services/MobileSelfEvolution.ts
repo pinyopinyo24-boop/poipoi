@@ -411,6 +411,27 @@ export class MobileSelfEvolution {
       origin: 'android',
     });
   }
+  static async getPcEvolutionResultsFromUnifiedState(): Promise<unknown[]> {
+    const state = await getMobilePoiPoiState();
+
+    return state.records
+      .filter(record =>
+        record.category === 'evolution' &&
+        record.origin === 'pc' &&
+        record.id.startsWith('evolution_run_')
+      )
+      .sort((a, b) => b.updatedAt - a.updatedAt)
+      .map(record => {
+        try {
+          return JSON.parse(record.value);
+        } catch {
+          return null;
+        }
+      })
+      .filter((value): value is NonNullable<typeof value> =>
+        value !== null
+      );
+  }
   static async restoreEvolutionFromUnifiedState(): Promise<boolean> {
     const state = await getMobilePoiPoiState();
     const snapshot = state.records.find(record =>
