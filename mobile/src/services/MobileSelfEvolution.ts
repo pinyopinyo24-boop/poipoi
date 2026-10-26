@@ -432,6 +432,10 @@ export class MobileSelfEvolution {
         value !== null
       );
   }
+  static async getLatestPcEvolutionResult(): Promise<unknown | null> {
+    const results = await this.getPcEvolutionResultsFromUnifiedState();
+    return results.length > 0 ? results[0] : null;
+  }
   static async restoreEvolutionFromUnifiedState(): Promise<boolean> {
     const state = await getMobilePoiPoiState();
     const snapshot = state.records.find(record =>
