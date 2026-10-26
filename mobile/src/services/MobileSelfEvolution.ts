@@ -1,3 +1,4 @@
+import { updateMobilePoiPoiState } from './PoiPoiUnifiedStateSync';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { AndroidLocalAI } from './AndroidLocalAI';
 
@@ -387,6 +388,17 @@ export class MobileSelfEvolution {
     }
 
     return saved;
+  }
+    static async syncEvolutionToUnifiedState(): Promise<void> {
+    const data = await this.exportEvolutionData();
+
+    await updateMobilePoiPoiState({
+      id: 'mobile_evolution_snapshot',
+      category: 'evolution',
+      value: data,
+      updatedAt: Date.now(),
+      origin: 'mobile',
+    });
   }
   static async importEvolutionData(json: string): Promise<void> {
     if (
