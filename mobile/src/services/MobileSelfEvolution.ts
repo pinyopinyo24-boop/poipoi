@@ -104,6 +104,7 @@ export class MobileSelfEvolution {
     }
     try {
       await synchronizeMobilePoiPoiState('http://192.168.1.7:3000');
+      await this.restoreEvolutionFromUnifiedState();
     } catch (error) {
       console.warn('[PoiPoi] Evolution PC sync unavailable:', error);
     }
