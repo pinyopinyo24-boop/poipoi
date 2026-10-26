@@ -1,3 +1,4 @@
+import { syncPoiPoiUnifiedState } from './PoiPoiUnifiedStateStore';
 import { HeartbeatJob } from '../_core/heartbeat';
 import {
   SelfEvolutionWorkflow,
@@ -271,6 +272,21 @@ export class EvolutionScheduler {
 
     // 結果を保存して履歴へ
     this.saveRunResult(userId, result);
+
+    try {
+      await syncPoiPoiUnifiedState({
+        version: 1,
+        records: [{
+          id: `evolution_run_${userId}_${Date.now()}`,
+          category: 'evolution',
+          value: JSON.stringify(result),
+          updatedAt: Date.now(),
+          origin: 'pc',
+        }],
+      });
+    } catch (error) {
+      console.warn('[PoiPoi] Evolution result sync failed:', error);
+    }
     this.runHistory.push(result);
 
     return result;
