@@ -1,3 +1,4 @@
+import { synchronizeMobilePoiPoiState } from '../services/PoiPoiUnifiedStateSync';
 import * as Linking from 'expo-linking';
 function extractAIMessage(value: unknown): string {
   if (typeof value !== "string") {
@@ -1192,3 +1193,5 @@ const styles = StyleSheet.create({
     fontSize: 14
   }
 });
+
+/* POIPOI_UNIFIED_STATE_EFFECT_V1 */
