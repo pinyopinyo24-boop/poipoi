@@ -1,3 +1,4 @@
+import { syncPoiPoiUnifiedState } from '../PoiPoiUnifiedStateStore';
 import { SecurityEngine } from '../security/SecurityEngine';
 import { MemoryEngine } from '../memory/MemoryEngine';
 import { KnowledgeEngine } from '../knowledge/KnowledgeEngine';
@@ -198,6 +199,22 @@ export class SelfLearningEngine {
 
     // Save to memory
     await this.memoryEngine.setMemory(userId, `learning_result_${cycleId}`, result);
+
+    // Persist completed learning results to the shared PC/mobile state.
+    try {
+      await syncPoiPoiUnifiedState({
+        version: 1,
+        records: [{
+          id: `learning_result_${userId}_${cycleId}`,
+          category: 'learning',
+          value: JSON.stringify(result),
+          updatedAt: result.generatedAt,
+          origin: 'pc',
+        }],
+      });
+    } catch (error) {
+      console.error('[PoiPoi] Learning state sync failed:', error);
+    }
 
     // Save patterns as knowledge (deferred for now)
     // Will be implemented in Knowledge integration phase
