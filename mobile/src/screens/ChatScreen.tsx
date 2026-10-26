@@ -76,6 +76,7 @@ export default function ChatScreen() {
       try {
         await synchronizeMobilePoiPoiState('http://192.168.1.7:3000');
         await MobileSelfEvolution.restoreEvolutionFromUnifiedState();
+            await MobileSelfEvolution.applyPcEvolutionResults();
       } catch (error) {
         console.warn('PoiPoi unified AI state sync:', error);
       }
@@ -422,6 +423,7 @@ export default function ChatScreen() {
         void synchronizeMobilePoiPoiState(url)
           .then(async () => {
             await MobileSelfEvolution.restoreEvolutionFromUnifiedState();
+            await MobileSelfEvolution.applyPcEvolutionResults();
             const pcResults = await MobileSelfEvolution.getPcEvolutionHistory(20);
             if (__DEV__) {
               console.log('[PoiPoi] PC自己進化履歴取得:', pcResults.length);
@@ -656,6 +658,7 @@ export default function ChatScreen() {
         ) {
           await synchronizeMobilePoiPoiState(url);
           await MobileSelfEvolution.restoreEvolutionFromUnifiedState();
+            await MobileSelfEvolution.applyPcEvolutionResults();
         }
 
         const latest = await MobileSelfEvolution.getLatestPcEvolutionResult();
@@ -717,6 +720,7 @@ export default function ChatScreen() {
           try {
             await synchronizeMobilePoiPoiState(url);
             await MobileSelfEvolution.restoreEvolutionFromUnifiedState();
+            await MobileSelfEvolution.applyPcEvolutionResults();
           } catch (error) {
             console.warn('[PoiPoi] PC進化同期:', error);
           }
