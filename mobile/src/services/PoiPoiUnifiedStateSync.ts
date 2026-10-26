@@ -148,17 +148,29 @@ export function synchronizeMobilePoiPoiState(
         existing.origin === record.origin
       )
     )) {
-      const confirmation = await fetch(
-        `${base}/api/trpc/poipoiUnifiedState.sync`,
-        {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            ...headers,
-          },
-          body: JSON.stringify(merged),
-        }
+      const confirmationController = new AbortController();
+      const confirmationTimeout = setTimeout(
+        () => confirmationController.abort(),
+        10000
       );
+
+      let confirmation: Awaited<ReturnType<typeof fetch>>;
+      try {
+        confirmation = await fetch(
+          `${base}/api/trpc/poipoiUnifiedState.sync`,
+          {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              ...headers,
+            },
+            body: JSON.stringify(merged),
+            signal: confirmationController.signal,
+          }
+        );
+      } finally {
+        clearTimeout(confirmationTimeout);
+      }
 
       if (!confirmation.ok) {
         throw new Error(
