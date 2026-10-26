@@ -85,10 +85,8 @@ export default function ChatScreen() {
   const [chatSessions, setChatSessions] = useState<Array<{ id: string; title?: string }>>([]);
   const [showHistory, setShowHistory] = useState(false);
 
-  // POIPOI_UNIFIED_CONVERSATION_SYNC_V2
+  // POIPOI_UNIFIED_CONVERSATION_SYNC_V3
   const lastSyncedConversationRef = useRef('');
-  const conversationSyncInFlightRef = useRef(false);
-  const conversationSyncPendingRef = useRef(false);
   const messagesRef = useRef(messages);
   messagesRef.current = messages;
 
@@ -99,12 +97,7 @@ export default function ChatScreen() {
     let retryTimer: ReturnType<typeof setTimeout> | null = null;
 
     const sync = async () => {
-      if (cancelled || conversationSyncInFlightRef.current) {
-        conversationSyncPendingRef.current = true;
-        return;
-      }
-
-      conversationSyncInFlightRef.current = true;
+      if (cancelled) return;
 
       try {
         const current = messagesRef.current;
@@ -115,10 +108,9 @@ export default function ChatScreen() {
         if (signature !== lastSyncedConversationRef.current) {
           const success = await apiConnector.syncMobileConversations(current);
           if (!success) throw new Error('PCへの会話同期に失敗しました');
+          if (cancelled) return;
           lastSyncedConversationRef.current = signature;
         }
-
-        if (cancelled) return;
 
         const sessionId = await AsyncStorage.getItem('chatSessionId');
         if (!sessionId || cancelled) return;
@@ -138,8 +130,6 @@ export default function ChatScreen() {
           }))
           .filter(m => Number.isFinite(m.timestamp));
 
-        if (cancelled) return;
-
         setMessages(prev => {
           const known = new Set(prev.map(m => m.id));
           const additions = incoming.filter(m => !known.has(m.id));
@@ -150,22 +140,12 @@ export default function ChatScreen() {
       } catch (error) {
         console.warn('[PoiPoi] 会話同期失敗:', error);
         if (!cancelled) {
-          retryTimer = setTimeout(() => {
-            if (!cancelled) void sync();
-          }, 10000);
-        }
-      } finally {
-        conversationSyncInFlightRef.current = false;
-        if (conversationSyncPendingRef.current && !cancelled) {
-          conversationSyncPendingRef.current = false;
-          void sync();
+          retryTimer = setTimeout(() => void sync(), 10000);
         }
       }
     };
 
-    const timer = setTimeout(() => {
-      void sync();
-    }, 1500);
+    const timer = setTimeout(() => void sync(), 1500);
 
     return () => {
       cancelled = true;
