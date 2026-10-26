@@ -438,6 +438,69 @@ export class MobileSelfEvolution {
       );
   }
   // POIPOI_PC_EVOLUTION_INTEGRATION_V3
+  // POIPOI_PC_EVOLUTION_APPLY_V1
+  static async applyPcEvolutionResults(): Promise<{
+    imported: number;
+    skipped: number;
+  }> {
+    const state = await getMobilePoiPoiState();
+
+    const pcRecords = state.records.filter(record =>
+      record.category === 'evolution' &&
+      record.origin === 'pc' &&
+      record.id.startsWith('evolution_run_')
+    );
+
+    const key = 'poipoi:evolution:pc-applied';
+    const saved = await AsyncStorage.getItem(key);
+
+    const applied: Record<string, number> = saved
+      ? JSON.parse(saved)
+      : {};
+
+    let imported = 0;
+    let skipped = 0;
+
+    for (const record of pcRecords) {
+      if (applied[record.id] === record.updatedAt) {
+        skipped++;
+        continue;
+      }
+
+      let result: unknown;
+
+      try {
+        result = JSON.parse(record.value);
+      } catch {
+        skipped++;
+        continue;
+      }
+
+      if (!result || typeof result !== 'object') {
+        skipped++;
+        continue;
+      }
+
+      const run = result as Record<string, unknown>;
+
+      if (run.outcome !== 'executed') {
+        skipped++;
+        continue;
+      }
+
+      await AsyncStorage.setItem(
+        'poipoi:evolution:pc-result:' + record.id,
+        record.value
+      );
+
+      applied[record.id] = record.updatedAt;
+      imported++;
+    }
+
+    await AsyncStorage.setItem(key, JSON.stringify(applied));
+
+    return { imported, skipped };
+  }
   static async getPcEvolutionSummary(): Promise<{
     totalRuns: number;
     executedRuns: number;
