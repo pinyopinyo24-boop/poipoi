@@ -76,7 +76,7 @@ export default function ChatScreen() {
       try {
         await synchronizeMobilePoiPoiState('http://192.168.1.7:3000');
         await MobileSelfEvolution.restoreEvolutionFromUnifiedState();
-            await MobileSelfEvolution.applyPcEvolutionResults();
+        await MobileSelfEvolution.applyPcEvolutionResults();
       } catch (error) {
         console.warn('PoiPoi unified AI state sync:', error);
       }
@@ -658,7 +658,7 @@ export default function ChatScreen() {
         ) {
           await synchronizeMobilePoiPoiState(url);
           await MobileSelfEvolution.restoreEvolutionFromUnifiedState();
-            await MobileSelfEvolution.applyPcEvolutionResults();
+          await MobileSelfEvolution.applyPcEvolutionResults();
         }
 
         const latest = await MobileSelfEvolution.getLatestPcEvolutionResult();
