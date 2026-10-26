@@ -87,6 +87,7 @@ export default function ChatScreen() {
       if (!active) return;
       try {
         await synchronizeMobilePoiPoiState('http://192.168.1.7:3000');
+        await MobileSelfEvolution.restoreEvolutionFromUnifiedState();
       } catch (error) {
         console.warn('PoiPoi unified AI state sync:', error);
       }
