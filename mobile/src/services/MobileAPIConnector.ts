@@ -1,3 +1,4 @@
+import { synchronizeMobilePoiPoiState } from './PoiPoiUnifiedStateSync';
 /**
  * MobileAPIConnector - Mobile App Backend API接続管理
  * 
@@ -73,6 +74,11 @@ export interface FileUploadResponse {
 }
 
 export class MobileAPIConnector {
+  // POIPOI_UNIFIED_STATE_SYNC_V1
+  public async syncUnifiedAIState(): Promise<void> {
+    await synchronizeMobilePoiPoiState(this.baseURL);
+  }
+
   private apiClient: AxiosInstance;
   private baseURL: string;
   private sessionId: string | null = null;
