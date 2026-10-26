@@ -59,19 +59,7 @@ export default function ChatScreen() {
   React.useEffect(() => {
     let cancelled = false;
 
-    const sync = async () => {
-      if (cancelled) return;
 
-      try {
-        await synchronizeMobilePoiPoiState(
-          'http://192.168.1.7:3000'
-        );
-      } catch (error) {
-        console.warn('PoiPoi AI state sync:', error);
-      }
-    };
-
-    void sync();
 
     return () => {
       cancelled = true;
