@@ -74,7 +74,7 @@ export default function ChatScreen() {
     const sync = async () => {
       if (!active) return;
       try {
-        await synchronizeMobilePoiPoiState('http://192.168.1.7:3000');
+        await synchronizeMobilePoiPoiState('http://192.168.1.12:3000');
         await MobileSelfEvolution.restoreEvolutionFromUnifiedState();
         await MobileSelfEvolution.applyPcEvolutionResults();
       } catch (error) {
@@ -820,7 +820,7 @@ export default function ChatScreen() {
         if (command === '/PCヘルプ') {
           Alert.alert(
             'PoiPoi PC接続',
-            '/PC接続 http://192.168.1.7:3000\n' +
+            '/PC接続 http://192.168.1.12:3000\n' +
             '/PC再接続\n' +
             '/PC状態\n' +
             '/PC切断\n\n' +
@@ -957,7 +957,7 @@ export default function ChatScreen() {
           url.length > 2048
         ) {
           throw new Error(
-            '接続先を指定してください。例: /PC接続 http://192.168.1.7:3000'
+            '接続先を指定してください。例: /PC接続 http://192.168.1.12:3000'
           );
         }
 
