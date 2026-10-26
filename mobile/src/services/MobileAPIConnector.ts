@@ -76,6 +76,7 @@ export interface FileUploadResponse {
 export class MobileAPIConnector {
   // POIPOI_UNIFIED_STATE_SYNC_V1
   public async syncUnifiedAIState(): Promise<void> {
+    // POIPOI_AUTO_UNIFIED_STATE_SYNC_V3
     await synchronizeMobilePoiPoiState(this.baseURL);
   }
 
