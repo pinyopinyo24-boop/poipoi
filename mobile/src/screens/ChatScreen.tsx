@@ -632,6 +632,119 @@ export default function ChatScreen() {
 
   const handleSend = async () => {
     const command = input.trim();
+    // POIPOI_PC_EVOLUTION_INTEGRATION_V1
+    if (command === '/PC進化履歴' || command === '/PC進化状態') {
+      if (isLoading || pcConnectionBusyRef.current) return;
+
+      pcConnectionBusyRef.current = true;
+      setIsLoading(true);
+      setInput('');
+
+      const appendEvolutionMessage = (text: string) => {
+        setMessages(prev => [...prev, {
+          id: `pc-evolution-${Date.now()}`,
+          text,
+          isUser: false,
+          timestamp: Date.now(),
+        }]);
+      };
+
+      try {
+        const disconnected =
+          await AsyncStorage.getItem('POIPOI_PC_DISCONNECTED');
+
+        const url =
+          (await AsyncStorage.getItem('POIPOI_PC_URL')) ||
+          Constants.expoConfig?.extra?.apiBaseUrl;
+
+        if (
+          disconnected !== '1' &&
+          typeof url === 'string' &&
+          url.trim()
+        ) {
+          try {
+            await synchronizeMobilePoiPoiState(url);
+            await MobileSelfEvolution.restoreEvolutionFromUnifiedState();
+          } catch (error) {
+            console.warn('[PoiPoi] PC進化同期:', error);
+          }
+        }
+
+        const history =
+          await MobileSelfEvolution.getPcEvolutionHistory(100);
+
+        const runs = history.filter((item): item is {
+          runId: string;
+          outcome: string;
+          completedAt: number;
+          changesApplied: number;
+          rollbacks: number;
+          error?: string;
+        } => {
+          if (!item || typeof item !== 'object') return false;
+          const value = item as Record<string, unknown>;
+          return (
+            typeof value.runId === 'string' &&
+            typeof value.outcome === 'string' &&
+            typeof value.completedAt === 'number' &&
+            typeof value.changesApplied === 'number' &&
+            typeof value.rollbacks === 'number'
+          );
+        });
+
+        if (command === '/PC進化状態') {
+          const executed = runs.filter(
+            run => run.outcome === 'executed'
+          ).length;
+
+          const errors = runs.filter(
+            run => run.outcome === 'error'
+          ).length;
+
+          const applied = runs.reduce(
+            (total, run) => total + run.changesApplied, 0
+          );
+
+          const rollbacks = runs.reduce(
+            (total, run) => total + run.rollbacks, 0
+          );
+
+          appendEvolutionMessage([
+            'PC自己進化状態',
+            `取得履歴: ${runs.length}件`,
+            `実行: ${executed}件`,
+            `エラー: ${errors}件`,
+            `適用変更: ${applied}件`,
+            `ロールバック: ${rollbacks}件`,
+            `PC接続: ${isConnected ? '接続中' : '未接続'}`,
+            '※PCでの変更をAndroidへ自動適用したことは意味しません。',
+          ].join('\n'));
+        } else {
+          appendEvolutionMessage(
+            runs.length === 0
+              ? 'PC自己進化履歴はありません。'
+              : runs.slice(0, 20).map((run, index) => [
+                  `${index + 1}. ${new Date(run.completedAt).toLocaleString()}`,
+                  `結果: ${run.outcome}`,
+                  `変更: ${run.changesApplied}件`,
+                  `ロールバック: ${run.rollbacks}件`,
+                  run.error ? `エラー: ${run.error}` : '',
+                ].filter(Boolean).join('\n')).join('\n\n')
+          );
+        }
+      } catch (error) {
+        appendEvolutionMessage(
+          'PC自己進化情報の取得に失敗しました: ' +
+          (error instanceof Error ? error.message : String(error))
+        );
+      } finally {
+        pcConnectionBusyRef.current = false;
+        setIsLoading(false);
+      }
+
+      return;
+    }
+
 
     if (isLoading || pcConnectionBusyRef.current) return;
 
