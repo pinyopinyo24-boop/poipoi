@@ -419,6 +419,11 @@ export default function ChatScreen() {
         setSessionId(connector.getSessionId() || undefined);
         setIsConnected(true);
         void checkMobileUpdate(url);
+        void synchronizeMobilePoiPoiState(url)
+          .then(() => MobileSelfEvolution.restoreEvolutionFromUnifiedState())
+          .catch(error => {
+            console.warn('[PoiPoi] PC・Android自己進化同期失敗:', error);
+          });
       } catch (error) {
         if (active) setIsConnected(false);
       } finally {
