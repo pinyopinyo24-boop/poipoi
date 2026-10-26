@@ -120,7 +120,15 @@ export function synchronizeMobilePoiPoiState(
     const merged = mergePoiPoiState(local, remote);
     await saveLocal(merged);
 
-    if (serializePoiPoiState(merged) !== serializePoiPoiState(remote)) {
+    if (merged.records.some(record =>
+      !remote.records.some(existing =>
+        existing.id === record.id &&
+        existing.category === record.category &&
+        existing.value === record.value &&
+        existing.updatedAt === record.updatedAt &&
+        existing.origin === record.origin
+      )
+    )) {
       const confirmation = await fetch(
         `${base}/api/trpc/poipoiUnifiedState.sync`,
         {
