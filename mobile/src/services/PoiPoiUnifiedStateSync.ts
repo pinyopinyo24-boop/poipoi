@@ -62,6 +62,10 @@ export function synchronizeMobilePoiPoiState(
   return locked(async () => {
     const local = await readLocal();
     const base = serverUrl.replace(/\/+$/, '');
+
+    // POIPOI_SYNC_TIMEOUT_V1
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 10000);
     const response = await fetch(
       `${base}/api/trpc/poipoiUnifiedState.sync`,
       {
@@ -71,8 +75,11 @@ export function synchronizeMobilePoiPoiState(
           ...headers,
         },
         body: JSON.stringify(local),
+        signal: controller.signal,
       }
     );
+
+    clearTimeout(timeout);
 
     if (!response.ok) {
       throw new Error(`PoiPoi state sync failed: ${response.status}`);
