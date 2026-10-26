@@ -1,4 +1,4 @@
-import { updateMobilePoiPoiState, synchronizeMobilePoiPoiState } from './PoiPoiUnifiedStateSync';
+import { updateMobilePoiPoiState, synchronizeMobilePoiPoiState, getMobilePoiPoiState } from './PoiPoiUnifiedStateSync';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { AndroidLocalAI } from './AndroidLocalAI';
 
@@ -409,6 +409,43 @@ export class MobileSelfEvolution {
       updatedAt: Date.now(),
       origin: 'mobile',
     });
+  }
+  static async restoreEvolutionFromUnifiedState(): Promise<boolean> {
+    const state = await getMobilePoiPoiState();
+    const snapshot = state.records.find(record =>
+      record.category === 'evolution' &&
+      record.id === 'mobile_evolution_snapshot' &&
+      record.origin === 'android'
+    );
+
+    if (!snapshot) {
+      return false;
+    }
+
+    const current = await this.exportEvolutionData();
+    const incoming = JSON.parse(snapshot.value);
+
+    if (
+      !incoming ||
+      incoming.version !== 1 ||
+      !Array.isArray(incoming.proposals) ||
+      !Array.isArray(incoming.active) ||
+      !Array.isArray(incoming.designs)
+    ) {
+      throw new Error('同期済み自己進化データが不正です');
+    }
+
+    const existing = JSON.parse(current);
+    if (
+      existing.proposals.length > 0 ||
+      existing.active.length > 0 ||
+      existing.designs.some((design: unknown) => design !== null)
+    ) {
+      return false;
+    }
+
+    await this.importEvolutionDataExclusive(snapshot.value);
+    return true;
   }
   static async importEvolutionData(json: string): Promise<void> {
     if (
