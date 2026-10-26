@@ -139,9 +139,15 @@ export function synchronizeMobilePoiPoiState(
     const merged = mergePoiPoiState(local, remote);
     await saveLocal(merged);
 
-    // The server already merges the submitted Android state.
-    // A second POST is unnecessary and can duplicate network traffic.
-    if (false) {
+    if (merged.records.some(record =>
+      !remote.records.some(existing =>
+        existing.id === record.id &&
+        existing.category === record.category &&
+        existing.value === record.value &&
+        existing.updatedAt === record.updatedAt &&
+        existing.origin === record.origin
+      )
+    )) {
       const confirmation = await fetch(
         `${base}/api/trpc/poipoiUnifiedState.sync`,
         {
