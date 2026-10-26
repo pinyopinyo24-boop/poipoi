@@ -408,7 +408,7 @@ export class MobileSelfEvolution {
       category: 'evolution',
       value: data,
       updatedAt: Date.now(),
-      origin: 'mobile',
+      origin: 'android',
     });
   }
   static async restoreEvolutionFromUnifiedState(): Promise<boolean> {
