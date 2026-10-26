@@ -44,3 +44,53 @@ export function mergePoiPoiState(
     ),
   };
 }
+
+export function serializePoiPoiState(
+  state: PoiPoiUnifiedState
+): string {
+  return JSON.stringify(state);
+}
+
+export function deserializePoiPoiState(
+  json: string
+): PoiPoiUnifiedState {
+  const parsed: unknown = JSON.parse(json);
+
+  if (
+    !parsed ||
+    typeof parsed !== 'object' ||
+    !('version' in parsed) ||
+    parsed.version !== 1 ||
+    !('records' in parsed) ||
+    !Array.isArray(parsed.records)
+  ) {
+    throw new Error('Invalid PoiPoi unified state');
+  }
+
+  const records: PoiPoiStateRecord[] = [];
+
+  for (const item of parsed.records) {
+    if (
+      !item ||
+      typeof item !== 'object' ||
+      typeof item.id !== 'string' ||
+      !['memory', 'learning', 'evolution'].includes(item.category) ||
+      typeof item.value !== 'string' ||
+      typeof item.updatedAt !== 'number' ||
+      !Number.isFinite(item.updatedAt) ||
+      !['pc', 'android'].includes(item.origin)
+    ) {
+      throw new Error('Invalid PoiPoi state record');
+    }
+
+    records.push({
+      id: item.id,
+      category: item.category,
+      value: item.value,
+      updatedAt: item.updatedAt,
+      origin: item.origin,
+    });
+  }
+
+  return { version: 1, records };
+}
