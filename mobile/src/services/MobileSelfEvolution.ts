@@ -1,4 +1,4 @@
-import { updateMobilePoiPoiState } from './PoiPoiUnifiedStateSync';
+import { updateMobilePoiPoiState, synchronizeMobilePoiPoiState } from './PoiPoiUnifiedStateSync';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { AndroidLocalAI } from './AndroidLocalAI';
 
@@ -97,7 +97,16 @@ export class MobileSelfEvolution {
     const approved = this.approve(history[index]);
     history[index] = approved;
     await AsyncStorage.setItem('poipoi:evolution:proposals', JSON.stringify(history));
-    await this.syncEvolutionToUnifiedState();
+    try {
+      await this.syncEvolutionToUnifiedState();
+    } catch (error) {
+      console.warn('[PoiPoi] Evolution state registration failed:', error);
+    }
+    try {
+      await synchronizeMobilePoiPoiState('http://192.168.1.7:3000');
+    } catch (error) {
+      console.warn('[PoiPoi] Evolution PC sync unavailable:', error);
+    }
     return approved;
   }
 
