@@ -26,7 +26,6 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { MobileSelfEvolution } from '../services/MobileSelfEvolution';
 import { AndroidAIModelManager } from '../services/AndroidAIModelManager';
 import { AndroidLocalAI } from '../services/AndroidLocalAI';
-import React, { useState, useEffect } from "react";
 import { Keyboard, 
   View,
   Text,
