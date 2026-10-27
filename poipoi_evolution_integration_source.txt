@@ -1,0 +1,2857 @@
+========== mobile/src/services/MobileSelfEvolution.ts ==========
+import { updateMobilePoiPoiState, synchronizeMobilePoiPoiState, getMobilePoiPoiState } from './PoiPoiUnifiedStateSync';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { AndroidLocalAI } from './AndroidLocalAI';
+
+export type FeatureProposal = {
+  request: string;
+  proposal: string;
+  status: 'pending' | 'approved';
+};
+
+export class MobileSelfEvolution {
+  private static operationQueue: Promise<void> = Promise.resolve();
+
+  private static async exclusive<T>(
+    operation: () => Promise<T>
+  ): Promise<T> {
+    const previous = this.operationQueue;
+    let release!: () => void;
+
+    this.operationQueue = new Promise<void>(resolve => {
+      release = resolve;
+    });
+
+    await previous;
+
+    try {
+      return await operation();
+    } finally {
+      release();
+    }
+  }
+  static async getProposals(): Promise<FeatureProposal[]> {
+    const saved = await AsyncStorage.getItem('poipoi:evolution:proposals');
+    if (!saved) return [];
+
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(saved);
+    } catch {
+      throw new Error('自己進化の保存データが破損しています');
+    }
+
+    if (
+      !Array.isArray(parsed) ||
+      !parsed.every(item =>
+        item &&
+        typeof item.request === 'string' &&
+        typeof item.proposal === 'string' &&
+        (item.status === 'pending' || item.status === 'approved')
+      )
+    ) {
+      throw new Error('自己進化の保存形式が不正です');
+    }
+
+    return parsed as FeatureProposal[];
+  }
+    static async proposeExclusive(request: string): Promise<FeatureProposal> {
+    if (typeof request !== 'string' || !request.trim()) {
+      throw new Error('追加したい機能を入力してください');
+    }
+
+    return this.exclusive(async () => {
+      return this.propose(request.trim());
+    });
+  }
+  static async propose(request: string): Promise<FeatureProposal> {
+    if (
+      typeof request !== 'string' ||
+      !request.trim() ||
+      request.length > 10000
+    ) {
+      throw new Error('機能追加の依頼内容が不正です');
+    }
+    request = request.trim();
+    const proposal = await AndroidLocalAI.sendMessage(
+      `次の機能追加要求について、実装方針・必要な処理・安全上の注意を日本語で提案してください。まだ実行しないでください。\n${request}`
+    );
+
+    const feature: FeatureProposal = { request, proposal, status: 'pending' };
+    const key = 'poipoi:evolution:proposals';
+    const history = await this.getProposals();
+    history.push(feature);
+    await AsyncStorage.setItem(key, JSON.stringify(history));
+    return feature;
+  }
+
+    static async approveAndSaveExclusive(index: number): Promise<FeatureProposal> {
+    return this.exclusive(async () => {
+      return this.approveAndSave(index);
+    });
+  }
+  static async approveAndSave(index: number): Promise<FeatureProposal> {
+    const history = await this.getProposals();
+    if (!Number.isInteger(index) || index < 0 || index >= history.length) {
+      throw new Error('提案が見つかりません');
+    }
+    const approved = this.approve(history[index]);
+    history[index] = approved;
+    await AsyncStorage.setItem('poipoi:evolution:proposals', JSON.stringify(history));
+    try {
+      await this.syncEvolutionToUnifiedState();
+    } catch (error) {
+      console.warn('[PoiPoi] Evolution state registration failed:', error);
+    }
+    try {
+      await synchronizeMobilePoiPoiState('http://192.168.1.7:3000');
+      await this.restoreEvolutionFromUnifiedState();
+    } catch (error) {
+      console.warn('[PoiPoi] Evolution PC sync unavailable:', error);
+    }
+    return approved;
+  }
+
+    static async generateFeatureDesignExclusive(index: number): Promise<string> {
+    return this.exclusive(async () => {
+      return this.generateFeatureDesign(index);
+    });
+  }
+  static async generateFeatureDesign(index: number): Promise<string> {
+    const history = await this.getProposals();
+    const feature = history[index];
+    if (!feature || feature.status !== 'approved') {
+      throw new Error('承認済みの提案がありません');
+    }
+    const design = await AndroidLocalAI.sendMessage(
+      `次の承認済み機能について、実装設計を作成してください。既存機能は削除せず、コードは実行しないでください。\n要求: ${feature.request}\n提案: ${feature.proposal}`
+    );
+    await AsyncStorage.setItem('poipoi:evolution:design:' + index, design);
+    return design;
+  }
+  static async getFeatureDesign(index: number): Promise<string> {
+    const history = await this.getProposals();
+    if (!Number.isInteger(index) || index < 0 || index >= history.length) {
+      throw new Error('提案が見つかりません');
+    }
+    return await AsyncStorage.getItem('poipoi:evolution:design:' + index)
+      || '設計はまだ生成されていません';
+  }
+    static async activateFeatureExclusive(index: number): Promise<string> {
+    return this.exclusive(async () => {
+      return this.activateFeature(index);
+    });
+  }
+  static async activateFeature(index: number): Promise<string> {
+    const history = await this.getProposals();
+    const feature = history[index];
+    if (!feature || feature.status !== 'approved') {
+      throw new Error('承認済みの提案がありません');
+    }
+
+    const design = await AsyncStorage.getItem('poipoi:evolution:design:' + index);
+    if (!design) {
+      throw new Error('先に設計を生成してください');
+    }
+
+    const key = 'poipoi:evolution:active';
+    const saved = await AsyncStorage.getItem(key);
+    const active: number[] = (() => {
+        try {
+          const parsed: unknown = saved ? JSON.parse(saved) : [];
+          return Array.isArray(parsed)
+            ? [...new Set(parsed.filter((v): v is number =>
+                typeof v === 'number' &&
+                Number.isSafeInteger(v) &&
+                v >= 0
+              ))]
+            : [];
+        } catch {
+          return [];
+        }
+      })();
+
+    if (!active.includes(index)) {
+      active.push(index);
+      await AsyncStorage.setItem(key, JSON.stringify(active));
+    }
+
+    return '拡張機能を登録しました: ' + feature.request;
+  }
+  static async getActiveFeatures(): Promise<string> {
+    const saved = await AsyncStorage.getItem('poipoi:evolution:active');
+    let active: number[] = [];
+
+    if (saved) {
+      let parsed: unknown;
+
+      try {
+        parsed = JSON.parse(saved);
+      } catch {
+        throw new Error('登録済み機能データが破損しています');
+      }
+
+      if (
+        !Array.isArray(parsed) ||
+        !parsed.every(value =>
+          Number.isSafeInteger(value) && value >= 0
+        )
+      ) {
+        throw new Error('登録済み機能データの形式が不正です');
+      }
+
+      active = parsed as number[];
+    }
+
+    const history = await this.getProposals();
+
+    if (!active.length) return '登録済み機能はありません';
+
+    return active.map(i =>
+      (i + 1) + '. ' + (history[i]?.request || '不明な機能')
+    ).join('\n');
+  }
+    static async deactivateFeatureExclusive(index: number): Promise<string> {
+    return this.exclusive(async () => {
+      return this.deactivateFeature(index);
+    });
+  }
+  static async deactivateFeature(index: number): Promise<string> {
+    const history = await this.getProposals();
+    if (!Number.isInteger(index) || index < 0 || index >= history.length) {
+      throw new Error('提案が見つかりません');
+    }
+
+    const key = 'poipoi:evolution:active';
+    const saved = await AsyncStorage.getItem(key);
+    const active: number[] = (() => {
+        try {
+          const parsed: unknown = saved ? JSON.parse(saved) : [];
+          return Array.isArray(parsed)
+            ? [...new Set(parsed.filter((v): v is number =>
+                typeof v === 'number' &&
+                Number.isSafeInteger(v) &&
+                v >= 0
+              ))]
+            : [];
+        } catch {
+          return [];
+        }
+      })();
+
+    if (!active.includes(index)) {
+      return 'この機能は登録されていません';
+    }
+
+    await AsyncStorage.setItem(
+      key,
+      JSON.stringify(active.filter(i => i !== index))
+    );
+
+    return '登録を解除しました: ' + history[index].request;
+  }
+  static async getFeatureStatus(index: number): Promise<string> {
+    const history = await this.getProposals();
+    if (!Number.isInteger(index) || index < 0 || index >= history.length) {
+      throw new Error('提案が見つかりません');
+    }
+
+    const saved = await AsyncStorage.getItem('poipoi:evolution:active');
+    const active: number[] = (() => {
+        try {
+          const parsed: unknown = saved ? JSON.parse(saved) : [];
+          return Array.isArray(parsed)
+            ? [...new Set(parsed.filter((v): v is number =>
+                typeof v === 'number' &&
+                Number.isSafeInteger(v) &&
+                v >= 0
+              ))]
+            : [];
+        } catch {
+          return [];
+        }
+      })();
+    const design = await AsyncStorage.getItem('poipoi:evolution:design:' + index);
+
+    return [
+      '機能: ' + history[index].request,
+      '承認: ' + (history[index].status === 'approved' ? '済み' : '未承認'),
+      '設計: ' + (design ? '保存済み' : '未作成'),
+      '登録: ' + (active.includes(index) ? '有効' : '無効'),
+      '実行: ' + (active.includes(index) && design ? 'ローカルAI実行可能' : '利用不可')
+    ].join('\n');
+  }
+  static async executeFeature(index: number, input: string): Promise<string> {
+    if (typeof input !== 'string' || !input.trim()) {
+      throw new Error('実行する依頼を入力してください');
+    }
+    const history = await this.getProposals();
+    if (!Number.isInteger(index) || index < 0 || index >= history.length) {
+      throw new Error('提案が見つかりません');
+    }
+    if (history[index].status !== 'approved') {
+      throw new Error('未承認の機能です');
+    }
+
+    const saved = await AsyncStorage.getItem('poipoi:evolution:active');
+    const active: number[] = (() => {
+        try {
+          const parsed: unknown = saved ? JSON.parse(saved) : [];
+          return Array.isArray(parsed)
+            ? [...new Set(parsed.filter((v): v is number =>
+                typeof v === 'number' &&
+                Number.isSafeInteger(v) &&
+                v >= 0
+              ))]
+            : [];
+        } catch {
+          return [];
+        }
+      })();
+    if (!active.includes(index)) {
+      throw new Error('登録されていない機能です');
+    }
+
+    const design = await AsyncStorage.getItem('poipoi:evolution:design:' + index);
+    if (!design) {
+      throw new Error('設計がありません');
+    }
+
+    return AndroidLocalAI.sendMessage(
+      '次の機能設計に従って依頼に回答してください。外部操作やコード実行は行わないでください。\n'
+      + '機能: ' + history[index].request
+      + '\n設計: ' + design
+      + '\n依頼: ' + input
+    );
+  }
+  static async exportEvolutionData(): Promise<string> {
+    const proposals = await this.getProposals();
+    const saved = await AsyncStorage.getItem('poipoi:evolution:active');
+    const active = saved ? JSON.parse(saved) : [];
+    const designs = await Promise.all(
+      proposals.map((_, index) =>
+        AsyncStorage.getItem('poipoi:evolution:design:' + index)
+      )
+    );
+
+    return JSON.stringify({
+      version: 1,
+      exportedAt: new Date().toISOString(),
+      proposals,
+      active,
+      designs
+    });
+  }
+
+    static async importEvolutionDataExclusive(json: string): Promise<void> {
+    return this.exclusive(async () => {
+      const previous = await this.exportEvolutionData();
+      const backupKey = 'poipoi:evolution:before-import';
+
+      await AsyncStorage.setItem(backupKey, previous);
+
+      try {
+        await this.importEvolutionData(json);
+      } catch (error) {
+        try {
+          await this.importEvolutionData(previous);
+        } catch (rollbackError) {
+          throw new Error(
+            '復元失敗。自動退避データを保持しました: ' +
+            String(rollbackError)
+          );
+        }
+        throw error;
+      }
+    });
+  }
+
+  static async restorePreviousEvolutionData(): Promise<string> {
+    const backupKey = 'poipoi:evolution:before-import';
+    const saved = await AsyncStorage.getItem(backupKey);
+
+    if (!saved) {
+      throw new Error('復元前のバックアップがありません');
+    }
+
+    await this.exclusive(async () => {
+      const current = await this.exportEvolutionData();
+
+      try {
+        await this.importEvolutionData(saved);
+      } catch (error) {
+        await this.importEvolutionData(current);
+        throw error;
+      }
+
+      await AsyncStorage.setItem(backupKey, current);
+    });
+
+    return '復元前の自己進化データに戻しました';
+  }
+
+  static async getPreviousEvolutionBackup(): Promise<string> {
+    const saved = await AsyncStorage.getItem(
+      'poipoi:evolution:before-import'
+    );
+
+    if (!saved) {
+      throw new Error('復元前のバックアップがありません');
+    }
+
+    return saved;
+  }
+    static async syncEvolutionToUnifiedState(): Promise<void> {
+    const data = await this.exportEvolutionData();
+
+    await updateMobilePoiPoiState({
+      id: 'mobile_evolution_snapshot',
+      category: 'evolution',
+      value: data,
+      updatedAt: Date.now(),
+      origin: 'android',
+    });
+  }
+  static async getPcEvolutionResultsFromUnifiedState(): Promise<unknown[]> {
+    const state = await getMobilePoiPoiState();
+
+    return state.records
+      .filter(record =>
+        record.category === 'evolution' &&
+        record.origin === 'pc' &&
+        record.id.startsWith('evolution_run_')
+      )
+      .sort((a, b) => b.updatedAt - a.updatedAt)
+      .map(record => {
+        try {
+          return JSON.parse(record.value);
+        } catch {
+          return null;
+        }
+      })
+      .filter((value): value is NonNullable<typeof value> =>
+        value !== null
+      );
+  }
+  static async getLatestPcEvolutionResult(): Promise<unknown | null> {
+    const results = await this.getPcEvolutionResultsFromUnifiedState();
+    return results.length > 0 ? results[0] : null;
+  }
+  static async getPcEvolutionHistory(limit = 20): Promise<unknown[]> {
+    if (!Number.isInteger(limit) || limit < 1 || limit > 1000) {
+      throw new Error('取得件数が不正です');
+    }
+
+    const results = await this.getPcEvolutionResultsFromUnifiedState();
+    return results.slice(0, limit);
+  }
+  static async restoreEvolutionFromUnifiedState(): Promise<boolean> {
+    const state = await getMobilePoiPoiState();
+    const snapshot = state.records.find(record =>
+      record.category === 'evolution' &&
+      record.id === 'mobile_evolution_snapshot' &&
+      record.origin === 'android'
+    );
+
+    if (!snapshot) {
+      return false;
+    }
+
+    const current = await this.exportEvolutionData();
+    const incoming = JSON.parse(snapshot.value);
+
+    if (
+      !incoming ||
+      incoming.version !== 1 ||
+      !Array.isArray(incoming.proposals) ||
+      !Array.isArray(incoming.active) ||
+      !Array.isArray(incoming.designs)
+    ) {
+      throw new Error('同期済み自己進化データが不正です');
+    }
+
+    const existing = JSON.parse(current);
+    if (
+      existing.proposals.length > 0 ||
+      existing.active.length > 0 ||
+      existing.designs.some((design: unknown) => design !== null)
+    ) {
+      return false;
+    }
+
+    await this.importEvolutionDataExclusive(snapshot.value);
+    return true;
+  }
+  static async importEvolutionData(json: string): Promise<void> {
+    if (
+      typeof json !== 'string' ||
+      json.length === 0 ||
+      json.length > 5_000_000
+    ) {
+      throw new Error('バックアップデータのサイズが不正です');
+    }
+    const data: unknown = JSON.parse(json);
+
+    if (!data || typeof data !== 'object') {
+      throw new Error('自己進化データが不正です');
+    }
+
+    const value = data as Record<string, unknown>;
+
+    if (
+      value.version !== 1 ||
+      !Array.isArray(value.proposals) ||
+      !Array.isArray(value.active) ||
+      !Array.isArray(value.designs) ||
+      value.designs.length !== value.proposals.length
+    ) {
+      throw new Error('対応していない自己進化データです');
+    }
+
+    const proposals = value.proposals;
+
+    if (!proposals.every(item =>
+      item &&
+      typeof item.request === 'string' &&
+      typeof item.proposal === 'string' &&
+      (item.status === 'pending' || item.status === 'approved')
+    )) {
+      throw new Error('提案データが不正です');
+    }
+
+    if (!value.designs.every(item =>
+      item === null || typeof item === 'string'
+    )) {
+      throw new Error('設計データが不正です');
+    }
+
+    if (!value.active.every(item =>
+      Number.isInteger(item) &&
+      item >= 0 &&
+      item < proposals.length &&
+      proposals[item].status === 'approved' &&
+      typeof value.designs[item] === 'string' &&
+      value.designs[item].length > 0
+    )) {
+      throw new Error('有効化データが不正です');
+    }
+
+    const keys = [
+      'poipoi:evolution:proposals',
+      'poipoi:evolution:active',
+      ...proposals.map((_, index) => 'poipoi:evolution:design:' + index)
+    ];
+
+    const existing = await AsyncStorage.multiGet(keys);
+    const existingMap = new Map(existing);
+    const updates: [string, string][] = [
+      ['poipoi:evolution:proposals', JSON.stringify(proposals)],
+      ['poipoi:evolution:active', JSON.stringify(value.active)]
+    ];
+
+    value.designs.forEach((design, index) => {
+      if (typeof design === 'string') {
+        updates.push(['poipoi:evolution:design:' + index, design]);
+      }
+    });
+
+    try {
+      await AsyncStorage.multiSet(updates);
+      const missingDesignKeys = value.designs
+        .map((design, index) =>
+          design === null ? 'poipoi:evolution:design:' + index : null
+        )
+        .filter((key): key is string => key !== null);
+
+      if (missingDesignKeys.length) {
+        await AsyncStorage.multiRemove(missingDesignKeys);
+      }
+    } catch (error) {
+      await AsyncStorage.multiSet(
+        existing.filter((entry): entry is [string, string] =>
+          entry[1] !== null
+        )
+      );
+      await AsyncStorage.multiRemove(
+        existing.filter(entry => entry[1] === null).map(entry => entry[0])
+      );
+      throw error;
+    }
+  }
+  static approve(feature: FeatureProposal): FeatureProposal {
+    return { ...feature, status: 'approved' };
+  }
+}
+
+
+========== mobile/src/services/PoiPoiUnifiedStateSync.ts ==========
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import {
+  mergePoiPoiState,
+  deserializePoiPoiState,
+  serializePoiPoiState,
+  type PoiPoiUnifiedState,
+  type PoiPoiStateRecord,
+} from './PoiPoiUnifiedState';
+
+const STORAGE_KEY = 'poipoi:unified-ai-state:v1';
+
+const emptyState = (): PoiPoiUnifiedState => ({
+  version: 1,
+  records: [],
+});
+
+let queue: Promise<unknown> = Promise.resolve();
+
+function locked<T>(operation: () => Promise<T>): Promise<T> {
+  const result = queue.then(operation);
+  queue = result.then(
+    () => undefined,
+    () => undefined
+  );
+  return result;
+}
+
+async function readLocal(): Promise<PoiPoiUnifiedState> {
+  const json = await AsyncStorage.getItem(STORAGE_KEY);
+  return json ? deserializePoiPoiState(json) : emptyState();
+}
+
+async function saveLocal(state: PoiPoiUnifiedState): Promise<void> {
+  await AsyncStorage.setItem(
+    STORAGE_KEY,
+    serializePoiPoiState(state)
+  );
+}
+
+export function getMobilePoiPoiState(): Promise<PoiPoiUnifiedState> {
+  return locked(readLocal);
+}
+
+export function updateMobilePoiPoiState(
+  record: PoiPoiStateRecord
+): Promise<PoiPoiUnifiedState> {
+  return locked(async () => {
+    const current = await readLocal();
+    const merged = mergePoiPoiState(current, {
+      version: 1,
+      records: [record],
+    });
+    await saveLocal(merged);
+    return merged;
+  });
+}
+
+export function synchronizeMobilePoiPoiState(
+  serverUrl: string,
+  headers: Record<string, string> = {}
+): Promise<PoiPoiUnifiedState> {
+  return locked(async () => {
+    const local = await readLocal();
+    const base = serverUrl.replace(/\/+$/, '');
+
+    // POIPOI_SYNC_TIMEOUT_V1
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 10000);
+    let response: Awaited<ReturnType<typeof fetch>>;
+
+    try {
+    response = await fetch(
+      `${base}/api/trpc/poipoiUnifiedState.sync`,
+      {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...headers,
+        },
+        body: JSON.stringify(local),
+        signal: controller.signal,
+      }
+    );
+
+    
+    } finally {
+      clearTimeout(timeout);
+    }
+
+    // POIPOI_SYNC_RESPONSE_ERROR_HANDLING_V1
+    if (!response.ok) {
+      const errorText = await response.text().catch(() => '');
+      throw new Error(
+        `PoiPoi state sync failed: ${response.status} ${errorText.slice(0, 300)}`
+      );
+    }
+
+    const payload: unknown = await response.json();
+
+    if (
+      !payload ||
+      typeof payload !== 'object' ||
+      !('result' in payload)
+    ) {
+      throw new Error('Invalid PoiPoi sync response');
+    }
+
+    const responseBody = payload as {
+      error?: { message?: string };
+      result?: { data?: unknown };
+    };
+
+    if (responseBody.error) {
+      throw new Error(
+        responseBody.error.message || 'PoiPoi state sync rejected'
+      );
+    }
+
+    // POIPOI_TRPC_RESPONSE_VALIDATION_V2
+    const result = responseBody.result?.data;
+
+    if (result === undefined || result === null) {
+      throw new Error('PoiPoi unified state response is empty');
+    }
+
+    const remoteData =
+      result &&
+      typeof result === 'object' &&
+      'json' in result
+        ? result.json
+        : result;
+
+    const remote = deserializePoiPoiState(
+      JSON.stringify(remoteData)
+    );
+
+    // Preserve Android updates made while the network request was running.
+    // The queue serializes local writes and synchronization.
+    const merged = mergePoiPoiState(local, remote);
+    await saveLocal(merged);
+
+    if (merged.records.some(record =>
+      !remote.records.some(existing =>
+        existing.id === record.id &&
+        existing.category === record.category &&
+        existing.value === record.value &&
+        existing.updatedAt === record.updatedAt &&
+        existing.origin === record.origin
+      )
+    )) {
+      const confirmationController = new AbortController();
+      const confirmationTimeout = setTimeout(
+        () => confirmationController.abort(),
+        10000
+      );
+
+      let confirmation: Awaited<ReturnType<typeof fetch>>;
+      try {
+        confirmation = await fetch(
+          `${base}/api/trpc/poipoiUnifiedState.sync`,
+          {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              ...headers,
+            },
+            body: JSON.stringify(merged),
+            signal: confirmationController.signal,
+          }
+        );
+      } finally {
+        clearTimeout(confirmationTimeout);
+      }
+
+      if (!confirmation.ok) {
+        const errorText = await confirmation.text().catch(() => '');
+        throw new Error(
+          `PoiPoi state confirmation failed: ${confirmation.status} ${errorText.slice(0, 300)}`
+        );
+      }
+    }
+
+    return merged;
+  });
+}
+
+========== mobile/src/screens/ChatScreen.tsx ==========
+import * as React from 'react';
+import { synchronizeMobilePoiPoiState } from '../services/PoiPoiUnifiedStateSync';
+import * as Linking from 'expo-linking';
+function extractAIMessage(value: unknown): string {
+  if (typeof value !== "string") {
+    return value == null ? "応答がありません" : JSON.stringify(value);
+  }
+
+  try {
+    const parsed = JSON.parse(value);
+    if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+      if (typeof parsed.message === "string") return parsed.message;
+      if (typeof parsed.content === "string") return parsed.content;
+      if (typeof parsed.description === "string") return parsed.description;
+      if (typeof parsed.name === "string") return parsed.name;
+    }
+  } catch {
+    // 通常の文章はそのまま表示
+  }
+
+  return value;
+}
+import * as DocumentPicker from 'expo-document-picker';
+import * as ImagePicker from 'expo-image-picker';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { MobileSelfEvolution } from '../services/MobileSelfEvolution';
+import { AndroidAIModelManager } from '../services/AndroidAIModelManager';
+import { AndroidLocalAI } from '../services/AndroidLocalAI';
+import React, { useState, useEffect } from "react";
+import { Keyboard, 
+  View,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  FlatList,
+  StyleSheet,
+  SafeAreaView,
+  KeyboardAvoidingView, ActivityIndicator,
+  Alert,
+  Modal,
+  Share,
+} from 'react-native';
+import { CameraView, useCameraPermissions } from 'expo-camera';
+import { useRef } from 'react';
+import * as FileSystem from 'expo-file-system';
+import { VoiceInputUI } from '../components/VoiceInputUI';
+import { MobileAPIConnector, ChatRequest, ChatResponse } from "../services/MobileAPIConnector";
+import Constants from "expo-constants";
+
+interface Message {
+  id: string;
+  text: string;
+  isUser: boolean;
+  timestamp: number;
+}
+
+export default function ChatScreen() {
+  // POIPOI_UNIFIED_STATE_RUNTIME_V2
+  React.useEffect(() => {
+    let cancelled = false;
+
+
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+
+  // POIPOI_UNIFIED_STATE_RUNTIME_V1
+  React.useEffect(() => {
+    let active = true;
+
+    const sync = async () => {
+      if (!active) return;
+      try {
+        await synchronizeMobilePoiPoiState('http://192.168.1.7:3000');
+        await MobileSelfEvolution.restoreEvolutionFromUnifiedState();
+      } catch (error) {
+        console.warn('PoiPoi unified AI state sync:', error);
+      }
+    };
+
+    void sync();
+
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  const POIPOI_LOCAL_CHAT_V1 = 'POIPOI_LOCAL_CHAT_V1';
+
+  useEffect(() => {
+    localHistoryLoad.current = AsyncStorage.getItem(POIPOI_LOCAL_CHAT_V1)
+      .then(value => {
+        if (value) {
+          const saved = JSON.parse(value);
+          if (Array.isArray(saved)) setMessages(saved);
+        }
+      })
+      .catch(console.warn).finally(() => setLocalHistoryReady(true));
+  }, []);
+
+  const [messages, setMessages] = useState<Message[]>([
+    { id: "0", text: "ようこそPoiPoiへ。何かお手伝いできることはありますか？", isUser: false, timestamp: Date.now() }
+  ]);
+  const [localHistoryReady, setLocalHistoryReady] = useState(false);
+  const localHistoryLoad = useRef<Promise<void> | null>(null);
+
+  useEffect(() => {
+    if (!localHistoryReady) return;
+    AsyncStorage.setItem(
+      POIPOI_LOCAL_CHAT_V1,
+      JSON.stringify(messages)
+    ).catch(console.warn);
+  }, [messages, localHistoryReady]);
+  const [input, setInput] = useState("");
+  const [isLoading, setIsLoading] = useState(false);
+  const [modelDownloadProgress,setModelDownloadProgress]=useState<number|null>(null);
+  const [chatSessions, setChatSessions] = useState<Array<{ id: string; title?: string }>>([]);
+  const [showHistory, setShowHistory] = useState(false);
+
+  // POIPOI_UNIFIED_CONVERSATION_SYNC_V3
+  const lastSyncedConversationRef = useRef('');
+  const messagesRef = useRef(messages);
+  messagesRef.current = messages;
+
+  useEffect(() => {
+    if (!localHistoryReady || !apiConnector || !isConnected || isLoading) return;
+
+    let cancelled = false;
+    let retryTimer: ReturnType<typeof setTimeout> | null = null;
+
+    const sync = async () => {
+      if (cancelled) return;
+
+      try {
+        const current = messagesRef.current;
+        const signature = JSON.stringify(
+          current.map(m => [m.id, m.text, m.isUser, m.timestamp])
+        );
+
+        if (signature !== lastSyncedConversationRef.current) {
+          const success = await apiConnector.syncMobileConversations(current);
+          if (!success) throw new Error('PCへの会話同期に失敗しました');
+          if (cancelled) return;
+          lastSyncedConversationRef.current = signature;
+        }
+
+        const sessionId = await AsyncStorage.getItem('chatSessionId');
+        if (!sessionId || cancelled) return;
+
+        const result = await apiConnector.getChatHistory(sessionId);
+        if (!result.success || !result.data || cancelled) return;
+
+        const incoming = result.data
+          .filter(m => m && typeof m.id === 'string' && typeof m.content === 'string')
+          .map(m => ({
+            id: m.id,
+            text: m.content,
+            isUser: m.role === 'user',
+            timestamp: typeof m.timestamp === 'number'
+              ? m.timestamp
+              : new Date(m.timestamp).getTime(),
+          }))
+          .filter(m => Number.isFinite(m.timestamp));
+
+        setMessages(prev => {
+          const known = new Set(prev.map(m => m.id));
+          const additions = incoming.filter(m => !known.has(m.id));
+          return additions.length
+            ? [...prev, ...additions].sort((a, b) => a.timestamp - b.timestamp)
+            : prev;
+        });
+      } catch (error) {
+        console.warn('[PoiPoi] 会話同期失敗:', error);
+        if (!cancelled) {
+          retryTimer = setTimeout(() => void sync(), 10000);
+        }
+      }
+    };
+
+    const timer = setTimeout(() => void sync(), 1500);
+
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+      if (retryTimer) clearTimeout(retryTimer);
+    };
+  }, [messages, localHistoryReady, apiConnector, isConnected, isLoading]);
+  const openChatHistory = async () => {
+    if (!apiConnector || !isConnected) {
+      setShowHistory(true);
+      return;
+    }
+    const result = await apiConnector.getChatSessions();
+    if (!result.success || !result.data) {
+      Alert.alert('履歴エラー', '履歴を取得できませんでした');
+      return;
+    }
+    setChatSessions(result.data);
+    setShowHistory(true);
+  };
+
+  const openChatSession = async (id: string) => {
+    if (!apiConnector) return;
+    const result = await apiConnector.getChatHistory(id);
+    if (!result.success || !result.data) {
+      Alert.alert('履歴エラー', '会話を取得できませんでした');
+      return;
+    }
+    await apiConnector.selectChatSession(id);
+    setSessionId(id);
+    setMessages(result.data.map(message => ({
+      id: message.id,
+      text: message.content,
+      isUser: message.role === 'user',
+      timestamp: message.timestamp,
+    })));
+    setShowHistory(false);
+  };
+  useEffect(()=>{AndroidAIModelManager.setProgressListener(setModelDownloadProgress);return ()=>AndroidAIModelManager.setProgressListener(null);},[]);
+  const [apiConnector, setApiConnector] = useState<MobileAPIConnector | null>(null);
+  const [isConnected, setIsConnected] = useState(false);
+  const [sessionId, setSessionId] = useState<string | undefined>();
+  const [loginUsername, setLoginUsername] = useState('');
+  const [loginPassword, setLoginPassword] = useState('');
+  const [loginBusy, setLoginBusy] = useState(false);
+  const [showLogin, setShowLogin] = useState(false);
+  const [isAuthenticated, setIsAuthenticated] = useState(false);
+
+  const handleLogin = async () => {
+    if (!apiConnector || !loginUsername.trim() || !loginPassword || loginBusy) return;
+    setLoginBusy(true);
+    try {
+      const baseURL = (await AsyncStorage.getItem('POIPOI_PC_URL')) || Constants.expoConfig?.extra?.apiBaseUrl;
+      if (typeof baseURL !== 'string' || !baseURL.trim()) throw new Error('API URLが未設定です');
+      const response = await fetch(`${baseURL.replace(/\/$/, '')}/api/trpc/auth.login`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ json: { username: loginUsername.trim(), password: loginPassword } }),
+      });
+      const result = await response.json();
+      const token = result?.result?.data?.json?.token ?? result?.result?.data?.token;
+      if (!response.ok || typeof token !== 'string' || !token) {
+        throw new Error(result?.error?.message || 'ログインに失敗しました');
+      }
+      const previousSessionId = apiConnector.getSessionId();
+      apiConnector.setAuthToken(token);
+      const authResponse = await fetch(`${baseURL.replace(/\/$/, '')}/api/trpc/auth.me`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      const authResult = await authResponse.json();
+      const authUser = authResult?.result?.data?.json ?? authResult?.result?.data;
+      if (!authResponse.ok || !authUser?.id) throw new Error('認証確認に失敗しました');
+      if (!apiConnector.getSessionId()) {
+        setSessionId(undefined);
+        
+        setChatSessions([]);
+        setShowHistory(false);
+      } else {
+        setSessionId(previousSessionId || undefined);
+      }
+      setIsConnected(true);
+      setIsAuthenticated(true);
+      setLoginPassword('');
+      setShowLogin(false);
+      Alert.alert('ログイン完了', 'PoiPoiに接続しました');
+    } catch (error) {
+      Alert.alert('ログインエラー', error instanceof Error ? error.message : '認証失敗');
+    } finally {
+      setLoginBusy(false);
+    }
+  };
+  const [registerName, setRegisterName] = useState('');
+  const [registerUsername, setRegisterUsername] = useState('');
+  const [registerPassword, setRegisterPassword] = useState('');
+  const [registerBusy, setRegisterBusy] = useState(false);
+
+  const handleRegister = async () => {
+    if (registerBusy) return;
+    if (registerUsername.trim().length < 3 || registerPassword.length < 6) {
+      Alert.alert('入力確認', 'ユーザー名3文字以上、パスワード6文字以上、表示名を入力してください');
+      return;
+    }
+    setRegisterBusy(true);
+    try {
+      const baseURL = (await AsyncStorage.getItem('POIPOI_PC_URL')) || Constants.expoConfig?.extra?.apiBaseUrl;
+      if (typeof baseURL !== 'string' || !baseURL.trim()) throw new Error('API URLが未設定です');
+      const response = await fetch(`${baseURL.replace(/\/$/, '')}/api/trpc/auth.register`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          json: {
+            username: registerUsername.trim(),
+            password: registerPassword,
+            name: registerUsername.trim(),
+          },
+        }),
+      });
+      const result = await response.json();
+      if (!response.ok || result?.error) {
+        throw new Error(result?.error?.message || '登録に失敗しました');
+      }
+      Alert.alert('登録完了', '続けて「ログイン実行」を押してください');
+    } catch (error) {
+      Alert.alert('登録エラー', error instanceof Error ? error.message : '登録に失敗しました');
+    } finally {
+      setRegisterBusy(false);
+    }
+  };
+  // POIPOI_UPDATE_COMPLETED_NOTICE_V1
+  useEffect(() => {
+    const notifyCompletedUpdate = async () => {
+      try {
+        const currentCode = Number(Constants.expoConfig?.android?.versionCode ?? 0);
+        if (currentCode <= 0) return;
+
+        const key = 'POIPOI_INSTALLED_VERSION_CODE';
+        const previous = await AsyncStorage.getItem(key);
+
+        await AsyncStorage.setItem(key, String(currentCode));
+
+        if (previous !== null && currentCode > Number(previous)) {
+          Alert.alert(
+            'PoiPoiアップデート完了',
+            'PoiPoiを更新しました'
+          );
+        }
+      } catch (error) {
+        console.warn('[PoiPoi] 更新完了通知:', error);
+      }
+    };
+
+    void notifyCompletedUpdate();
+  }, []);
+  // POIPOI_MOBILE_UPDATE_CHECK_V1
+  const updatePromptedRef = React.useRef<string | null>(null);
+
+  const checkMobileUpdate = async (baseURL: string) => {
+    try {
+      const response = await fetch(`${baseURL.replace(/\/$/, '')}/api/mobile-update`);
+      if (!response.ok) return;
+
+      const update = await response.json();
+      const currentVersionCode = Number(
+        Constants.expoConfig?.android?.versionCode ?? 1
+      );
+
+      if (
+        update.available !== true ||
+        !Number.isInteger(update.versionCode) ||
+        update.versionCode <= currentVersionCode ||
+        typeof update.apkUrl !== 'string' ||
+        !/^https:\/\//.test(update.apkUrl)
+      ) return;
+
+      const key = `${update.versionCode}:${update.apkUrl}`;
+      if (updatePromptedRef.current === key) return;
+      updatePromptedRef.current = key;
+
+      Alert.alert(
+        'PoiPoiアップデート',
+        `新しいバージョン ${update.version} があります。更新しますか？`,
+        [
+          { text: 'あとで', style: 'cancel' },
+          {
+            text: '更新する',
+            onPress: () => {
+              void Linking.openURL(update.apkUrl).catch(error => {
+                Alert.alert('更新エラー', String(error));
+              });
+            },
+          },
+        ]
+      );
+    } catch (error) {
+      console.warn('[PoiPoi] 更新確認失敗:', error);
+    }
+  };
+  // POIPOI_AUTO_PC_RECONNECT_V1
+  useEffect(() => {
+    let active = true;
+    let checking = false;
+
+    const checkPC = async () => {
+      if (!active || checking) return;
+      checking = true;
+      try {
+        if (await AsyncStorage.getItem('POIPOI_PC_DISCONNECTED') === '1') return;
+
+        const url = (await AsyncStorage.getItem('POIPOI_PC_URL'))
+          || Constants.expoConfig?.extra?.apiBaseUrl;
+
+        if (typeof url !== 'string' || !url.trim()) return;
+
+        const reachable = await Promise.race([
+          fetch(`${url.replace(/\/$/, '')}/api/health`)
+            .then(response => response.ok)
+            .catch(() => false),
+          new Promise<boolean>(resolve => setTimeout(() => resolve(false), 4000)),
+        ]);
+
+        if (!active) return;
+
+        if (!reachable) {
+          setIsConnected(false);
+          return;
+        }
+
+        const connector = new MobileAPIConnector(url);
+        await connector.initialize();
+
+        if (!active) return;
+        if (await AsyncStorage.getItem('POIPOI_PC_DISCONNECTED') === '1') return;
+
+        setApiConnector(connector);
+        setIsAuthenticated(await connector.checkAuthentication());
+        setSessionId(connector.getSessionId() || undefined);
+        setIsConnected(true);
+        void checkMobileUpdate(url);
+        void synchronizeMobilePoiPoiState(url)
+          .then(async () => {
+            await MobileSelfEvolution.restoreEvolutionFromUnifiedState();
+            const pcResults = await MobileSelfEvolution.getPcEvolutionHistory(20);
+            if (__DEV__) {
+              console.log('[PoiPoi] PC自己進化履歴取得:', pcResults.length);
+            }
+          })
+          .catch(error => {
+            console.warn('[PoiPoi] PC・Android自己進化同期失敗:', error);
+          });
+      } catch (error) {
+        if (active) setIsConnected(false);
+      } finally {
+        checking = false;
+      }
+    };
+
+    void checkPC();
+    const timer = setInterval(() => { void checkPC(); }, 10000);
+
+    return () => {
+      active = false;
+      clearInterval(timer);
+    };
+  }, []);
+  const [cameraPermission, requestCameraPermission] = useCameraPermissions();
+  const [cameraOpen, setCameraOpen] = useState(false);
+  const cameraRef = useRef<CameraView>(null);
+  const [isAnalyzingImage, setIsAnalyzingImage] = useState(false);
+
+  const handleVoiceData = async (uri: string) => {
+    if (!apiConnector || !uri) return Alert.alert('音声入力', 'API接続後に録音してください');
+    try {
+      const base64 = await FileSystem.readAsStringAsync(uri, { encoding: FileSystem.EncodingType.Base64 });
+      const response = await apiConnector.sendVoiceMessage({ audioUrl: `data:audio/mp4;base64,${base64}`, language: 'ja' });
+      if (!response.success || !response.data) throw new Error(response.error || '文字起こしに失敗しました');
+      const transcript = typeof response.data.message === 'string' ? response.data.message : response.data.message.content;
+      setInput(transcript);
+      Alert.alert('文字起こし完了', '内容を確認して送信してください。');
+    } catch (error) {
+      Alert.alert('音声入力エラー', error instanceof Error ? error.message : '音声を処理できませんでした');
+    }
+  };
+
+  const pickDocument = async () => {
+    try {
+      const result = await DocumentPicker.getDocumentAsync({
+        type: [
+          'image/*',
+          'video/*',
+          'audio/*',
+          'text/plain',
+          'application/zip',
+          'application/json'
+        ],
+        copyToCacheDirectory: true
+      });
+
+      if (result.canceled || !result.assets?.length) return;
+
+      const file = result.assets[0];
+      setMessages(prev => [...prev, {
+        id: `file-${Date.now()}`,
+        text: `📎 ${file.name}`,
+        isUser: true,
+        timestamp: Date.now()
+      }]);
+    } catch (error) {
+      Alert.alert(
+        '添付エラー',
+        error instanceof Error ? error.message : 'ファイルを選択できませんでした'
+      );
+    }
+  };
+  const pickAttachment = async () => {
+    try {
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ['images'],
+        base64: true,
+        quality: 0.65
+      });
+      if (result.canceled) return;
+      if (!apiConnector) {
+        Alert.alert('接続が必要です', '画像の解析にはPC接続が必要です');
+        return;
+      }
+      const image = result.assets[0];
+      const base64 = image.base64 ||
+        await FileSystem.readAsStringAsync(image.uri, {
+          encoding: FileSystem.EncodingType.Base64
+        });
+      setIsAnalyzingImage(true);
+      const response = await apiConnector.analyzeImage(
+        `data:${image.mimeType || 'image/jpeg'};base64,${base64}`
+      );
+      if (!response.success || !response.data)
+        throw new Error(response.error || '画像解析に失敗しました');
+      setMessages(prev => [...prev, {
+        id: `attachment-${Date.now()}`,
+        text: response.data!.analysis,
+        isUser: false,
+        timestamp: Date.now()
+      }]);
+    } catch (error) {
+      Alert.alert('添付エラー',
+        error instanceof Error ? error.message : '画像を処理できませんでした');
+    } finally {
+      setIsAnalyzingImage(false);
+    }
+  };
+  const handleOpenCamera = async () => {
+    if (!cameraPermission?.granted) {
+      const permission = await requestCameraPermission();
+      if (!permission.granted) return Alert.alert('カメラ権限', '画像読み取りにはカメラ権限が必要です。');
+    }
+    setCameraOpen(true);
+  };
+
+  const handleCaptureAndAnalyze = async () => {
+    try {
+      const photo = await cameraRef.current?.takePictureAsync({ base64: true, quality: 0.65 });
+      if (!photo?.base64 || !apiConnector) throw new Error('画像を取得できませんでした');
+      setCameraOpen(false);
+      setIsAnalyzingImage(true);
+      const response = await apiConnector.analyzeImage(`data:image/jpeg;base64,${photo.base64}`);
+      if (!response.success || !response.data) throw new Error(response.error || '画像分析に失敗しました');
+      setMessages(prev => [...prev, { id: `ocr-${Date.now()}`, text: response.data!.analysis, isUser: false, timestamp: Date.now() }]);
+    } catch (error) {
+      Alert.alert('画像読み取りエラー', error instanceof Error ? error.message : '画像を処理できませんでした');
+    } finally {
+      setIsAnalyzingImage(false);
+    }
+  };
+
+  useEffect(() => {
+    if (!showHistory || !isConnected || !apiConnector) return;
+    const historyRefreshTimer = setInterval(() => {
+      void apiConnector.getChatSessions().then(result => { if (result.success && result.data) setChatSessions(result.data); }).catch(console.error);
+    }, 10000);
+    return () => clearInterval(historyRefreshTimer);
+  }, [showHistory, isConnected, apiConnector]);
+  // API コネクタの初期化
+  useEffect(() => {
+    const initializeAPI = async () => {
+      if (localHistoryLoad.current) {
+        await localHistoryLoad.current;
+      }
+      try {
+        // app.config.js から apiBaseUrl を取得
+        if (await AsyncStorage.getItem('POIPOI_PC_DISCONNECTED') === '1') return;
+        const apiBaseUrl = (await AsyncStorage.getItem('POIPOI_PC_URL')) || Constants.expoConfig?.extra?.apiBaseUrl;
+        if (typeof apiBaseUrl !== "string" || !apiBaseUrl.trim()) {
+          return;
+        }
+        if (__DEV__) console.log("[ChatScreen] API Base URL:", apiBaseUrl);
+
+      const connector = new MobileAPIConnector(apiBaseUrl);
+      setApiConnector(connector);
+      const hasSavedSession = await connector.initialize();
+      
+      // Initialize session
+      const savedSessionId = hasSavedSession ? connector.getSessionId() : null;
+      setSessionId(savedSessionId || undefined);
+        // 接続確認
+        const connected = await connector.checkConnectivity();
+        let authenticated = false;
+        if (connected && hasSavedSession) {
+          try {
+            const authResponse = await connector.checkAuthentication();
+            authenticated = authResponse;
+          } catch {
+            authenticated = false;
+          }
+        }
+        setIsAuthenticated(authenticated);
+        if (connected && savedSessionId) {
+          const sessions = await connector.getChatSessions();
+          if (sessions.success && sessions.data?.some(s => s.id === savedSessionId)) {
+
+            const history = await connector.getChatHistory(savedSessionId);
+            if (history.success && history.data?.length) {
+              setMessages(history.data.map((message) => ({
+                id: message.id,
+                text: message.content,
+                isUser: message.role === 'user',
+                timestamp: message.timestamp,
+              })));
+            }
+      
+          } else {
+            // 端末内の会話履歴を保持
+          }
+        }
+        setIsConnected(connected);
+        if (__DEV__) console.log("[ChatScreen] Backend connectivity:", connected);
+
+        if (!connected) {
+          console.info("[PoiPoi] オフラインAIモード");
+        }
+      } catch (error) {
+        console.error("[ChatScreen] API initialization error:", error);
+        console.info("[PoiPoi] ローカルAIに切り替えました");
+      }
+    };
+
+    initializeAPI();
+  }, []);
+
+  const pcConnectionBusyRef = React.useRef(false);
+
+  const handleSend = async () => {
+    const command = input.trim();
+    // POIPOI_PC_EVOLUTION_INTEGRATION_V1
+    // POIPOI_PC_EVOLUTION_RESULT_COMMAND_V2
+    if (command === '/PC進化結果') {
+      if (isLoading || pcConnectionBusyRef.current) return;
+
+      pcConnectionBusyRef.current = true;
+      setIsLoading(true);
+      setInput('');
+
+      try {
+        const url =
+          (await AsyncStorage.getItem('POIPOI_PC_URL')) ||
+          Constants.expoConfig?.extra?.apiBaseUrl;
+
+        const disconnected =
+          await AsyncStorage.getItem('POIPOI_PC_DISCONNECTED');
+
+        if (
+          disconnected !== '1' &&
+          typeof url === 'string' &&
+          url.trim()
+        ) {
+          await synchronizeMobilePoiPoiState(url);
+          await MobileSelfEvolution.restoreEvolutionFromUnifiedState();
+        }
+
+        const latest = await MobileSelfEvolution.getLatestPcEvolutionResult();
+
+        const resultText = latest
+          ? JSON.stringify(latest, null, 2)
+          : 'PC自己進化結果はありません。';
+
+        setMessages(prev => [...prev, {
+          id: `pc-evolution-result-${Date.now()}`,
+          text: resultText,
+          isUser: false,
+          timestamp: Date.now(),
+        }]);
+      } catch (error) {
+        setMessages(prev => [...prev, {
+          id: `pc-evolution-error-${Date.now()}`,
+          text: 'PC自己進化結果の取得失敗: ' +
+            (error instanceof Error ? error.message : String(error)),
+          isUser: false,
+          timestamp: Date.now(),
+        }]);
+      } finally {
+        pcConnectionBusyRef.current = false;
+        setIsLoading(false);
+      }
+
+      return;
+    }
+    if (command === '/PC進化履歴' || command === '/PC進化状態') {
+      if (isLoading || pcConnectionBusyRef.current) return;
+
+      pcConnectionBusyRef.current = true;
+      setIsLoading(true);
+      setInput('');
+
+      const appendEvolutionMessage = (text: string) => {
+        setMessages(prev => [...prev, {
+          id: `pc-evolution-${Date.now()}`,
+          text,
+          isUser: false,
+          timestamp: Date.now(),
+        }]);
+      };
+
+      try {
+        const disconnected =
+          await AsyncStorage.getItem('POIPOI_PC_DISCONNECTED');
+
+        const url =
+          (await AsyncStorage.getItem('POIPOI_PC_URL')) ||
+          Constants.expoConfig?.extra?.apiBaseUrl;
+
+        if (
+          disconnected !== '1' &&
+          typeof url === 'string' &&
+          url.trim()
+        ) {
+          try {
+            await synchronizeMobilePoiPoiState(url);
+            await MobileSelfEvolution.restoreEvolutionFromUnifiedState();
+          } catch (error) {
+            console.warn('[PoiPoi] PC進化同期:', error);
+          }
+        }
+
+        const history =
+          await MobileSelfEvolution.getPcEvolutionHistory(100);
+
+        const runs = history.filter((item): item is {
+          runId: string;
+          outcome: string;
+          completedAt: number;
+          changesApplied: number;
+          rollbacks: number;
+          error?: string;
+        } => {
+          if (!item || typeof item !== 'object') return false;
+          const value = item as Record<string, unknown>;
+          return (
+            typeof value.runId === 'string' &&
+            typeof value.outcome === 'string' &&
+            typeof value.completedAt === 'number' &&
+            typeof value.changesApplied === 'number' &&
+            typeof value.rollbacks === 'number'
+          );
+        });
+
+        if (command === '/PC進化状態') {
+          const executed = runs.filter(
+            run => run.outcome === 'executed'
+          ).length;
+
+          const errors = runs.filter(
+            run => run.outcome === 'error'
+          ).length;
+
+          const applied = runs.reduce(
+            (total, run) => total + run.changesApplied, 0
+          );
+
+          const rollbacks = runs.reduce(
+            (total, run) => total + run.rollbacks, 0
+          );
+
+          appendEvolutionMessage([
+            'PC自己進化状態',
+            `取得履歴: ${runs.length}件`,
+            `実行: ${executed}件`,
+            `エラー: ${errors}件`,
+            `適用変更: ${applied}件`,
+            `ロールバック: ${rollbacks}件`,
+            `PC接続: ${isConnected ? '接続中' : '未接続'}`,
+            '※PCでの変更をAndroidへ自動適用したことは意味しません。',
+          ].join('\n'));
+        } else {
+          appendEvolutionMessage(
+            runs.length === 0
+              ? 'PC自己進化履歴はありません。'
+              : runs.slice(0, 20).map((run, index) => [
+                  `${index + 1}. ${new Date(run.completedAt).toLocaleString()}`,
+                  `結果: ${run.outcome}`,
+                  `変更: ${run.changesApplied}件`,
+                  `ロールバック: ${run.rollbacks}件`,
+                  run.error ? `エラー: ${run.error}` : '',
+                ].filter(Boolean).join('\n')).join('\n\n')
+          );
+        }
+      } catch (error) {
+        appendEvolutionMessage(
+          'PC自己進化情報の取得に失敗しました: ' +
+          (error instanceof Error ? error.message : String(error))
+        );
+      } finally {
+        pcConnectionBusyRef.current = false;
+        setIsLoading(false);
+      }
+
+      return;
+    }
+
+
+    if (isLoading || pcConnectionBusyRef.current) return;
+
+    if (
+      command === '/PC状態' ||
+      command === '/PC切断' ||
+      command === '/PC再接続' ||
+      command === '/PCヘルプ' ||
+      command.startsWith('/PC接続 ')
+    ) {
+      if (pcConnectionBusyRef.current || isLoading) return;
+
+      pcConnectionBusyRef.current = true;
+      setIsLoading(true);
+
+      try {
+        if (command === '/PCヘルプ') {
+          Alert.alert(
+            'PoiPoi PC接続',
+            '/PC接続 http://192.168.1.7:3000\n' +
+            '/PC再接続\n' +
+            '/PC状態\n' +
+            '/PC切断\n\n' +
+            '同一Wi-Fiまたはインターネット経由で接続できます。'
+          );
+          setInput('');
+          return;
+        }
+
+        if (command === '/PC再接続') {
+          const savedURL = await AsyncStorage.getItem('POIPOI_PC_URL');
+
+          if (!savedURL) {
+            throw new Error(
+              'PC接続先が未設定です。/PC接続 URL で設定してください。'
+            );
+          }
+
+          const reconnectURL = savedURL.trim();
+
+          if (
+            reconnectURL.length > 2048 ||
+            /[?#@\s]/.test(reconnectURL) ||
+            !/^https?:\/\/[a-zA-Z0-9.-]+(?::\d{1,5})?(?:\/[^\s]*)?$/.test(reconnectURL)
+          ) {
+            throw new Error('保存されたPC接続先が不正です。');
+          }
+
+          if (
+            /^http:\/\//i.test(reconnectURL) &&
+            !/^http:\/\/(?:localhost|127\.0\.0\.1|10\.\d{1,3}\.\d{1,3}\.\d{1,3}|192\.168\.\d{1,3}\.\d{1,3}|172\.(?:1[6-9]|2\d|3[01])\.\d{1,3}\.\d{1,3})(?::\d{1,5})?(?:\/|$)/i.test(reconnectURL)
+          ) {
+            throw new Error('インターネット経由のPC接続にはHTTPSが必要です。');
+          }
+
+          const reconnectPort = reconnectURL.match(
+            /^https?:\/\/[^/]+:(\d+)(?:\/|$)/i
+          );
+
+          if (
+            reconnectPort &&
+            (Number(reconnectPort[1]) < 1 ||
+              Number(reconnectPort[1]) > 65535)
+          ) {
+            throw new Error('保存されたPC接続先のポート番号が不正です。');
+          }
+
+          const connector = new MobileAPIConnector(reconnectURL);
+          await connector.initialize();
+
+          const connected = await connector.checkConnectivity();
+
+          if (!connected) {
+            throw new Error(
+              'PCに再接続できません。スマホ単独動作は継続できます。'
+            );
+          }
+
+          await AsyncStorage.setItem('POIPOI_PC_URL', reconnectURL);
+          await AsyncStorage.removeItem('POIPOI_PC_DISCONNECTED');
+          setApiConnector(connector);
+          setIsAuthenticated(await connector.checkAuthentication());
+          setIsConnected(true);
+          setSessionId(connector.getSessionId() || undefined);
+          setInput('');
+
+          Alert.alert('PoiPoi', 'PCへの再接続が完了しました。');
+          return;
+        }
+        if (command === '/PC切断') {
+          await AsyncStorage.setItem('POIPOI_PC_DISCONNECTED', '1');
+          await AsyncStorage.removeItem('POIPOI_PC_URL');
+          setApiConnector(null);
+          setIsConnected(false);
+          setIsAuthenticated(false);
+          setSessionId(undefined);
+          setChatSessions([]);
+          setShowHistory(false);
+          setShowLogin(false);
+          setInput('');
+
+          Alert.alert(
+            'PoiPoi',
+            'PCとの接続を解除しました。スマホ単独で利用できます。'
+          );
+          return;
+        }
+
+        if (command === '/PC状態') {
+          const savedURL = await AsyncStorage.getItem('POIPOI_PC_URL');
+
+          Alert.alert(
+            'PC接続状態',
+            '状態: ' + (isConnected ? '接続中' : '未接続') +
+            '\n接続先: ' + (savedURL || '未設定')
+          );
+
+          setInput('');
+          return;
+        }
+
+        const rawURL = command.slice('/PC接続 '.length).trim();
+        const url = rawURL.replace(/\/+$/, '');
+
+        if (
+          /[?#@]/.test(url) ||
+          /[\u0000-\u001f\u007f]/.test(url)
+        ) {
+          throw new Error(
+            'PC接続先には認証情報・クエリ・制御文字を含めないでください。'
+          );
+        }
+
+        const portMatch = url.match(/^https?:\/\/[^/]+:(\d+)(?:\/|$)/i);
+
+        if (
+          portMatch &&
+          (Number(portMatch[1]) < 1 || Number(portMatch[1]) > 65535)
+        ) {
+          throw new Error('ポート番号は1～65535で指定してください。');
+        }
+
+        if (
+          /^http:\/\//i.test(url) &&
+          !/^http:\/\/(?:localhost|127\.0\.0\.1|10\.\d{1,3}\.\d{1,3}\.\d{1,3}|192\.168\.\d{1,3}\.\d{1,3}|172\.(?:1[6-9]|2\d|3[01])\.\d{1,3}\.\d{1,3})(?::\d{1,5})?(?:\/|$)/i.test(url)
+        ) {
+          throw new Error(
+            'インターネット経由の接続にはHTTPSを使用してください。'
+          );
+        }
+
+        if (
+          !/^https?:\/\/[a-zA-Z0-9.-]+(?::\d{1,5})?(?:\/[^\s]*)?$/.test(url) ||
+          url.length > 2048
+        ) {
+          throw new Error(
+            '接続先を指定してください。例: /PC接続 http://192.168.1.7:3000'
+          );
+        }
+
+        const connector = new MobileAPIConnector(url);
+        await connector.initialize();
+
+        const connected = await connector.checkConnectivity();
+
+        if (!connected) {
+          throw new Error(
+            'PCに接続できません。PC版の起動とネットワークを確認してください。'
+          );
+        }
+
+        await AsyncStorage.setItem('POIPOI_PC_URL', url);
+        await AsyncStorage.removeItem('POIPOI_PC_DISCONNECTED');
+
+        setApiConnector(connector);
+        setIsAuthenticated(await connector.checkAuthentication());
+        setIsConnected(true);
+        setSessionId(connector.getSessionId() || undefined);
+        setInput('');
+
+        Alert.alert(
+          'PoiPoi',
+          'PCに接続しました。\n' + url
+        );
+      } catch (error) {
+
+        if (command === '/PC再接続') {
+          setInput(command);
+        }
+
+        Alert.alert(
+          'PC接続エラー',
+          error instanceof Error ? error.message : String(error)
+        );
+      } finally {
+        pcConnectionBusyRef.current = false;
+        setIsLoading(false);
+      }
+
+      return;
+    }
+      const numberedEvolutionCommands = [
+        '/進化登録 ',
+        '/進化無効 ',
+        '/進化設計確認 ',
+        '/進化設計 ',
+        '/進化承認 ',
+        '/進化実行 ',
+        '/進化状態 ',
+      ];
+
+      const matchedEvolutionCommand = numberedEvolutionCommands.find(
+        command => input.startsWith(command)
+      );
+
+      if (matchedEvolutionCommand) {
+        const argument = input.slice(matchedEvolutionCommand.length).trim();
+        const numberPart = argument.split(/\s+/)[0];
+
+        if (
+          !/^[1-9]\d*$/.test(numberPart) ||
+          !Number.isSafeInteger(Number(numberPart))
+        ) {
+          Alert.alert('入力エラー', '有効な機能番号を指定してください');
+          return;
+        }
+
+        if (
+          matchedEvolutionCommand === '/進化実行 ' &&
+          !/^[1-9]\d*\s+\S[\s\S]*$/.test(argument)
+        ) {
+          Alert.alert(
+            '入力エラー',
+            '使い方: /進化実行 1 依頼内容'
+          );
+          return;
+        }
+      }
+
+    if (!input.trim() || isLoading) return;
+
+    // ユーザーメッセージを追加
+    const userMessage: Message = {
+      id: Date.now().toString(),
+      text: input,
+      isUser: true,
+      timestamp: Date.now()
+    };
+
+    setMessages(prev => [...prev, userMessage]);
+    setInput("");
+    setIsLoading(true);
+
+    try {
+
+      // API にメッセージを送信
+      let response: any;
+
+      if (
+        apiConnector &&
+        !input.trim().startsWith('/進化') &&
+        (isConnected || await apiConnector.checkConnectivity())
+      ) {
+        if (!isConnected) setIsConnected(true);
+        try {
+          response = await apiConnector.sendChatMessage({
+            message: input,
+            sessionId: sessionId,
+            context: {
+              poipoiConversation: messages
+                .filter(m => m.id !== '0')
+                .slice(-12)
+                .map(m => ({
+                  role: m.isUser ? 'user' : 'assistant',
+                  content: m.text,
+                })),
+              source: 'poipoi-mobile',
+            },
+          });
+
+          if (!response.success) {
+            throw new Error(response.error || 'API エラー');
+          }
+        } catch (error) {
+          console.warn('サーバー通信失敗:', error);
+          setIsConnected(false);
+          response = undefined;
+        }
+      }
+
+      if (!response?.success) {
+        response = {
+          success: true,
+          data: {
+            message: await (input.trim() === '/進化復旧'
+  ? MobileSelfEvolution.restorePreviousEvolutionData()
+  : input.trim() === '/進化復旧バックアップ'
+    ? MobileSelfEvolution.getPreviousEvolutionBackup().then(async json => {
+        await Share.share({
+          title: 'PoiPoi 復元前バックアップ',
+          message: json,
+        });
+        return '復元前バックアップの共有画面を開きました';
+      })
+    : input.trim() === '/進化バックアップ'
+  ? MobileSelfEvolution.exportEvolutionData().then(async json => {
+        const result = await Share.share({
+          title: 'PoiPoi 自己進化バックアップ',
+          message: json,
+        });
+        return result.action === Share.dismissedAction
+          ? 'バックアップの共有をキャンセルしました'
+          : 'バックアップの共有先を選択しました';
+      })
+  : input.startsWith('/進化復元 ')
+    ? MobileSelfEvolution.importEvolutionDataExclusive(
+        input.slice('/進化復元 '.length).trim()
+      ).then(() => '自己進化データを復元しました')
+    : input.trim() === '/進化ヘルプ' ? Promise.resolve([
+  '/進化 機能名：提案作成',
+  '/進化一覧：提案一覧',
+  '/進化承認 1：承認',
+  '/進化設計 1：設計生成',
+  '/進化設計確認 1：設計表示',
+  '/進化登録 1：登録',
+  '/進化登録一覧：登録一覧',
+  '/進化状態 1：状態確認',
+  '/進化実行 1 内容：ローカルAI応答',
+  '/進化無効 1：登録解除',
+  '/進化バックアップ：自己進化データを書き出す',
+  '/進化復元 JSON：バックアップから復元'
+].join('\n')) : input.startsWith('/進化実行 ') ? (() => {
+  const args = input.slice('/進化実行 '.length).trim();
+  const match = args.match(/^(\d+)\s+([\s\S]+)$/);
+  if (!match) return Promise.reject(new Error('使い方: /進化実行 1 内容'));
+  return MobileSelfEvolution.executeFeature(Number(match[1]) - 1, match[2]);
+})() : input.startsWith('/進化状態 ') ? MobileSelfEvolution.getFeatureStatus(Number(input.slice('/進化状態 '.length).trim()) - 1) : input.startsWith('/進化無効 ') ? MobileSelfEvolution.deactivateFeatureExclusive(Number(input.slice('/進化無効 '.length).trim()) - 1) : input.trim() === '/進化登録一覧' ? MobileSelfEvolution.getActiveFeatures() : input.startsWith('/進化登録 ') ? MobileSelfEvolution.activateFeatureExclusive(Number(input.slice('/進化登録 '.length).trim()) - 1) : input.startsWith('/進化設計確認 ') ? MobileSelfEvolution.getFeatureDesign(Number(input.slice('/進化設計確認 '.length).trim()) - 1) : input.startsWith('/進化設計 ') ? MobileSelfEvolution.generateFeatureDesignExclusive(Number(input.slice('/進化設計 '.length).trim()) - 1) : input.startsWith('/進化承認 ') ? MobileSelfEvolution.approveAndSaveExclusive(Number(input.slice(6).trim()) - 1).then(f => '承認しました: ' + f.request) : input.trim() === '/進化一覧' ? MobileSelfEvolution.getProposals().then(list => list.length ? list.map((f,i) => (i+1) + '. [' + f.status + '] ' + f.request).join('\n') : '提案はありません') : input.startsWith('/進化 ') ? MobileSelfEvolution.proposeExclusive(input.slice(4)).then(r => r.proposal) : AndroidLocalAI.sendMessage(input)),
+          },
+        };
+      }
+
+      if (response.success && response.data) {
+        // Extract message content from ChatMessage object
+        // response.data structure: { message: ChatMessage, session: ChatSession, ... }
+        const messageContent = typeof response.data.message === 'string'
+          ? response.data.message
+          : response.data.message?.content || "応答がありません";
+        const assistantMessage: Message = {
+          id: (Date.now() + 1).toString(),
+          text: extractAIMessage(messageContent),
+          isUser: false,
+          timestamp: Date.now()
+        };
+        setMessages(prev => [...prev, assistantMessage]);
+        
+        // Update session ID if provided
+        if (response.data.session?.id || apiConnector?.getSessionId()) {
+          setSessionId(response.data.session?.id || apiConnector?.getSessionId() || undefined);
+        }
+      } else {
+        throw new Error(response.error || "API エラー");
+      }
+    } catch (error) {
+      if (apiConnector && isConnected) {
+        try {
+          const localAnswer = await AndroidLocalAI.sendMessage(input);
+          setIsConnected(false);
+          setMessages(prev => [...prev, {
+            id: (Date.now() + 1).toString(),
+            text: localAnswer,
+            isUser: false,
+            timestamp: Date.now()
+          }]);
+          return;
+        } catch (localError) {
+          console.error("[ChatScreen] Local AI fallback error:", localError);
+          const reason = localError instanceof Error ? localError.message : String(localError);
+          setMessages(prev => [...prev, {
+            id: (Date.now() + 2).toString(),
+            text: `スマホAIの起動に失敗しました: ${reason}`,
+            isUser: false,
+            timestamp: Date.now()
+          }]);
+          return;
+        }
+      }
+      console.error("[ChatScreen] Send message error:", error);
+      const errorText = error instanceof Error ? error.message : "不明なエラー";
+      console.error("[ChatScreen] Full error:", error);
+      const errorMessage: Message = {
+        id: (Date.now() + 2).toString(),
+        text: `エラーが発生しました: ${errorText}`,
+        isUser: false,
+        timestamp: Date.now()
+      };
+      setMessages(prev => [...prev, errorMessage]);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  return (
+    <SafeAreaView style={styles.container}>
+      {/* Header */}
+      <View>{modelDownloadProgress !== null && <Text>{modelDownloadProgress === 100 ? 'AIモデルのダウンロード完了' : `AIモデル取得中：${modelDownloadProgress}%`}</Text>}</View>
+      <View style={styles.header}>
+        <Text style={styles.headerTitle}>🦝 PoiPoi</Text>
+        <Text onPress={() => { void openChatHistory(); }}>履歴</Text>
+        <View style={styles.statusIndicator}>
+          <View style={[styles.statusDot, { backgroundColor: isConnected ? "#4CAF50" : "#FF9800" }]} />
+          <Text style={styles.statusText}>{isConnected ? "PC接続済み" : "スマホAI（PC未接続）"}</Text>
+        </View>
+      </View>
+
+
+      {showHistory && (
+        <View style={{ padding: 12 }}>
+          <Text onPress={() => setShowHistory(false)}>閉じる</Text>
+          {!isConnected && (
+            <Text>端末に保存された現在の会話を表示中です</Text>
+          )}
+          {chatSessions.map(s => (
+            <Text key={s.id} onPress={() => { void openChatSession(s.id); }} style={{ padding: 10 }}>
+              {s.title || s.id}
+            </Text>
+          ))}
+        </View>
+      )}
+      {/* Messages */}
+      <FlatList
+        data={messages}
+        keyExtractor={item => item.id}
+        renderItem={({ item }) => (
+          <View style={[styles.messageContainer, item.isUser && styles.userMessage]}>
+            <Text style={[styles.messageText, item.isUser && styles.userMessageText]}>
+              {item.text}
+            </Text>
+            <Text style={styles.timestamp}>
+              {new Date(item.timestamp).toLocaleTimeString()}
+            </Text>
+          </View>
+        )}
+        contentContainerStyle={styles.messagesList}
+      />
+
+      {/* Loading Indicator */}
+      {isLoading && (
+        <View style={styles.loadingContainer}>
+          <ActivityIndicator size="large" color="#06b6d4" />
+          <Text style={styles.loadingText}>応答中...</Text>
+        </View>
+      )}
+
+      {/* Input Area */}
+      <View style={styles.mediaActions}>
+        
+      </View>
+      <View style={styles.inputArea}>
+        <TouchableOpacity
+          style={{ justifyContent: 'center', paddingHorizontal: 8 }}
+          onPress={() => { void pickAttachment(); }}
+        >
+          <Text style={{ fontSize: 32, color: '#06b6d4' }}>＋</Text>
+        </TouchableOpacity>
+        <TextInput
+          style={styles.input}
+          value={input}
+          onChangeText={setInput}
+          placeholder="メッセージを入力"
+          placeholderTextColor="#999"
+          editable={!isLoading}
+          multiline
+        />
+        <TouchableOpacity
+          style={[styles.sendButton, isLoading && styles.sendButtonDisabled]}
+          onPress={handleSend}
+          disabled={isLoading || !input.trim()}
+        >
+          <Text style={styles.sendButtonText}>送信</Text>
+        </TouchableOpacity>
+      </View>
+      <Modal visible={cameraOpen} animationType="slide" onRequestClose={() => setCameraOpen(false)}>
+        <View style={styles.cameraContainer}>
+          <CameraView ref={cameraRef} style={styles.camera} facing="back" />
+          <View style={styles.cameraActions}>
+            <TouchableOpacity style={styles.mediaButton} onPress={() => setCameraOpen(false)}><Text style={styles.mediaButtonText}>閉じる</Text></TouchableOpacity>
+            <TouchableOpacity style={styles.sendButton} onPress={handleCaptureAndAnalyze}><Text style={styles.sendButtonText}>撮影して文字を読む</Text></TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+    </SafeAreaView>
+  );
+}
+
+const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+    backgroundColor: "#fff"
+  },
+  header: {
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: "#e0e0e0",
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center"
+  },
+  headerTitle: {
+    fontSize: 24,
+    fontWeight: "bold",
+    color: "#000"
+  },
+  statusIndicator: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6
+  },
+  statusDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4
+  },
+  statusText: {
+    fontSize: 12,
+    color: "#666"
+  },
+  messagesList: {
+    flexGrow: 1,
+    paddingHorizontal: 16,
+    paddingVertical: 12
+  },
+  messageContainer: {
+    marginVertical: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    backgroundColor: "#f0f0f0",
+    borderRadius: 8,
+    maxWidth: "80%"
+  },
+  userMessage: {
+    alignSelf: "flex-end",
+    backgroundColor: "#06b6d4"
+  },
+  messageText: {
+    fontSize: 16,
+    color: "#000"
+  },
+  userMessageText: {
+    color: "#fff"
+  },
+  timestamp: {
+    fontSize: 12,
+    color: "#999",
+    marginTop: 4
+  },
+  loadingContainer: {
+    padding: 16,
+    alignItems: "center",
+    justifyContent: "center"
+  },
+  loadingText: {
+    marginTop: 8,
+    fontSize: 14,
+    color: "#666"
+  },
+  inputArea: {
+    flexDirection: "row",
+    paddingHorizontal: 12,
+    paddingVertical: 12,
+    borderTopWidth: 1,
+    borderTopColor: "#e0e0e0",
+    gap: 8
+  },
+  mediaActions: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-around', paddingHorizontal: 12, paddingTop: 8 },
+  mediaButton: { paddingHorizontal: 14, paddingVertical: 10, borderRadius: 8, backgroundColor: '#eef2ff' },
+  mediaButtonText: { color: '#1e3a8a', fontWeight: '600' },
+  cameraContainer: { flex: 1, backgroundColor: '#000', justifyContent: 'center' },
+  camera: { flex: 1 },
+  cameraActions: { padding: 16, flexDirection: 'row', justifyContent: 'space-around' },
+  input: {
+    flex: 1,
+    borderWidth: 1,
+    borderColor: "#ddd",
+    borderRadius: 20,
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    fontSize: 16,
+    maxHeight: 100
+  },
+  sendButton: {
+    backgroundColor: "#06b6d4",
+    borderRadius: 20,
+    paddingHorizontal: 20,
+    paddingVertical: 10,
+    justifyContent: "center"
+  },
+  sendButtonDisabled: {
+    opacity: 0.5
+  },
+  sendButtonText: {
+    color: "#fff",
+    fontWeight: "bold",
+    fontSize: 14
+  }
+});
+
+/* POIPOI_UNIFIED_STATE_EFFECT_V1 */
+
+========== server/core/EvolutionScheduler.ts ==========
+import { syncPoiPoiUnifiedState } from './PoiPoiUnifiedStateStore';
+import { HeartbeatJob } from '../_core/heartbeat';
+import {
+  SelfEvolutionWorkflow,
+  ExecutionWorkflowResult,
+  SimulationResult,
+} from './SelfEvolutionWorkflow';
+import { SafeImprovementApplier, ApplyBatchSummary } from './SafeImprovementApplier';
+import { ImprovementCandidate } from './SelfImprovementManager';
+import { SelfLearningEngine } from './learning/SelfLearningEngine';
+import { MemoryEngine } from './memory/MemoryEngine';
+
+// ── 定数 ─────────────────────────────────────────────────────────────────
+
+/** デフォルト実行間隔(ms) — 60分 */
+const DEFAULT_INTERVAL_MS = 60 * 60 * 1000;
+/** 最小実行間隔(ms) — 60秒 */
+const MIN_INTERVAL_MS = 60 * 1000;
+/** 1サイクルあたり実変更の上限（デフォルト） */
+const DEFAULT_MAX_CHANGES_PER_CYCLE = 3;
+/** 連続失敗の停止しきい値（デフォルト） */
+const DEFAULT_MAX_CONSECUTIVE_FAILURES = 3;
+
+// ── 型定義 ──────────────────────────────────────────────────────────────
+
+/** スケジューラ設定 */
+export interface EvolutionSchedulerConfig {
+  /** 実行間隔(ms) — MIN_INTERVAL_MS 以上 */
+  intervalMs: number;
+  /** 1サイクルあたりの最大実変更数 */
+  maxChangesPerCycle: number;
+  /** 連続失敗でオートストップする回数 */
+  maxConsecutiveFailures: number;
+  /** 失敗率でオートストップするしきい値(0–1) */
+  failureRateThreshold: number;
+}
+
+/** スケジューラ状態 */
+export type SchedulerStatus =
+  | 'idle'           // 未開始
+  | 'running'        // 稼働中
+  | 'stopped'        // 手動停止済み
+  | 'auto_stopped';  // 安全条件により自動停止
+
+/** 1回の定期実行結果 */
+export interface ScheduledRunResult {
+  runId: string;
+  userId: string;
+  startedAt: number;
+  completedAt: number;
+  /** 'simulation_only' = 安全条件で execution に進まなかった */
+  outcome: 'simulation_only' | 'executed' | 'skipped' | 'error';
+  /** simulation フェーズ結果 */
+  simulationResult?: SimulationResult;
+  /** execution フェーズ結果（実行した場合のみ） */
+  executionResult?: ExecutionWorkflowResult;
+  /** SafeImprovementApplier によるパラメータ変更結果（実行した場合のみ） */
+  applyResult?: ApplyBatchSummary;
+  error?: string;
+  /** このサイクルで実際に変更された件数 */
+  changesApplied: number;
+  /** ロールバック発生件数 */
+  rollbacks: number;
+}
+
+// ── EvolutionScheduler ───────────────────────────────────────────────────
+
+/**
+ * EvolutionScheduler
+ *
+ * SelfEvolutionWorkflow を定期的・安全に実行するスケジューラ。
+ *
+ * ## 既存 Heartbeat との関係
+ *   - `server/_core/heartbeat.ts` の HeartbeatJob 型定義を再利用し、
+ *     ジョブ記述を統一した形式で管理する。
+ *   - 実際のタイマー制御はローカル `setInterval` で行う（Heartbeat スタブ API は
+ *     HTTP コールバック前提のため、ローカル完結の本実装には使用しない）。
+ *
+ * ## 安全条件（いずれかに違反すると自動停止または execution をスキップ）
+ *   1. `self_improvement.enable_auto_cycle` が true でなければ実行しない
+ *   2. 1サイクルの実変更数が `maxChangesPerCycle` を超えたら execution をスキップ
+ *   3. critical 候補は自動適用しない（ImprovementExecutor 側で拒否済み）
+ *   4. 累積失敗率が `failureRateThreshold` を超えたら自動停止
+ *   5. 連続失敗が `maxConsecutiveFailures` に達したら自動停止
+ *   6. rollback_failed が 1 件でも発生したら即時停止
+ *   7. 同時に複数サイクルを実行しない（`running` フラグで排他制御）
+ */
+export class EvolutionScheduler {
+  private static instance: EvolutionScheduler;
+
+  // ── 依存 ──
+  private workflow: SelfEvolutionWorkflow;
+  private applier: SafeImprovementApplier;
+  private learningEngine: SelfLearningEngine;
+  private memoryEngine: MemoryEngine;
+
+  // ── 状態 ──
+  private status: SchedulerStatus = 'idle';
+  private config: EvolutionSchedulerConfig;
+  private runHistory: ScheduledRunResult[];
+  /** setInterval の handle */
+  private timer: ReturnType<typeof setInterval> | null = null;
+  /** 現在サイクルが実行中かどうか（排他制御用） */
+  private cycleRunning = false;
+  /** 連続失敗カウンタ */
+  private consecutiveFailures = 0;
+  /** HeartbeatJob 形式のジョブ記述（型再利用のみ） */
+  private jobDescriptor: HeartbeatJob;
+
+  private constructor() {
+    this.workflow = SelfEvolutionWorkflow.getInstance();
+    this.applier = SafeImprovementApplier.getInstance();
+    this.learningEngine = SelfLearningEngine.getInstance();
+    this.memoryEngine = MemoryEngine.getInstance();
+    this.runHistory = [];
+    this.config = {
+      intervalMs: DEFAULT_INTERVAL_MS,
+      maxChangesPerCycle: DEFAULT_MAX_CHANGES_PER_CYCLE,
+      maxConsecutiveFailures: DEFAULT_MAX_CONSECUTIVE_FAILURES,
+      failureRateThreshold: 0.5,
+    };
+    this.jobDescriptor = {
+      name: 'self-evolution',
+      cron: '0 0 * * * *', // hourly (6-field: sec min hour dom mon dow)
+      path: '/api/scheduled/self-evolution',
+      method: 'POST',
+      description: 'Periodic self-improvement cycle for PoiPoi AI',
+    };
+  }
+
+  public static getInstance(): EvolutionScheduler {
+    if (!EvolutionScheduler.instance) {
+      EvolutionScheduler.instance = new EvolutionScheduler();
+    }
+    return EvolutionScheduler.instance;
+  }
+
+  // ── 設定 API ────────────────────────────────────────────────────────────
+
+  /** スケジューラ設定を更新する */
+  public configure(partial: Partial<EvolutionSchedulerConfig>): void {
+    if (partial.intervalMs !== undefined) {
+      if (!Number.isSafeInteger(partial.intervalMs) ||
+          partial.intervalMs < MIN_INTERVAL_MS ||
+          partial.intervalMs > 2_147_483_647) {
+        throw new Error(
+          `intervalMs must be between ${MIN_INTERVAL_MS}ms and 2147483647ms (got ${partial.intervalMs})`
+        );
+      }
+    }
+    if (partial.maxChangesPerCycle !== undefined &&
+        (!Number.isSafeInteger(partial.maxChangesPerCycle) ||
+          partial.maxChangesPerCycle < 0 ||
+          partial.maxChangesPerCycle > 20)) {
+      throw new Error('maxChangesPerCycle must be an integer between 0 and 20');
+    }
+    if (partial.maxConsecutiveFailures !== undefined &&
+        (!Number.isSafeInteger(partial.maxConsecutiveFailures) ||
+          partial.maxConsecutiveFailures < 1 ||
+          partial.maxConsecutiveFailures > 10)) {
+      throw new Error('maxConsecutiveFailures must be an integer between 1 and 10');
+    }
+    if (partial.failureRateThreshold !== undefined &&
+        (!Number.isFinite(partial.failureRateThreshold) || partial.failureRateThreshold < 0 || partial.failureRateThreshold > 1)) {
+      throw new Error('failureRateThreshold must be between 0 and 1');
+    }
+    this.config = { ...this.config, ...partial };
+  }
+
+  /** 現在の設定を取得する */
+  public getConfig(): Readonly<EvolutionSchedulerConfig> {
+    return { ...this.config };
+  }
+
+  /** Heartbeat 型で記述されたジョブ仕様を取得する */
+  public getJobDescriptor(): Readonly<HeartbeatJob> {
+    return { ...this.jobDescriptor };
+  }
+
+  // ── ライフサイクル API ───────────────────────────────────────────────────
+
+  /**
+   * スケジューラを起動する
+   * 既に running の場合は何もしない。
+   */
+  public start(): void {
+    if (this.status === 'running') return;
+
+    this.status = 'running';
+    this.consecutiveFailures = 0;
+
+    this.timer = setInterval(() => {
+      this.triggerCycle('system').catch(() => {
+        // エラーは triggerCycle 内で記録済み
+      });
+    }, this.config.intervalMs);
+  }
+
+  /** スケジューラを手動停止する */
+  public stop(): void {
+    this.clearTimer();
+    this.status = 'stopped';
+  }
+
+  /** 現在の状態を取得する */
+  public getStatus(): SchedulerStatus {
+    return this.status;
+  }
+
+  // ── 手動トリガー API ─────────────────────────────────────────────────────
+
+  /**
+   * サイクルを即時1回実行する（手動トリガー）
+   * スケジューラが停止していても呼べる（既存の手動実行APIを壊さない）。
+   */
+  public async triggerOnce(userId: string): Promise<ScheduledRunResult> {
+    return this.triggerCycle(userId);
+  }
+
+  // ── 内部実行ロジック ─────────────────────────────────────────────────────
+
+  /**
+   * 1サイクルの定期実行コア
+   *
+   * 安全条件チェック → simulation → (条件OK なら) execution → 結果保存
+   */
+  private async triggerCycle(userId: string): Promise<ScheduledRunResult> {
+    const runId = `sched-run-${Date.now()}-${Math.random().toString(36).substr(2, 7)}`;
+    const startedAt = Date.now();
+
+    // ─ 安全条件 1: 同時実行防止 ─
+    if (this.cycleRunning) {
+      const skipped = this.buildResult(runId, userId, startedAt, 'skipped', 0, 0, undefined, undefined, 'Another cycle is already running');
+      this.runHistory.push(skipped);
+      return skipped;
+    }
+
+    // ─ 安全条件 2: auto_cycle フラグ確認 ─
+    const autoEnabled = this.applier.getCurrentValue('self_improvement.enable_auto_cycle');
+    if (!autoEnabled) {
+      const skipped = this.buildResult(runId, userId, startedAt, 'skipped', 0, 0, undefined, undefined, 'auto_cycle is disabled');
+      this.runHistory.push(skipped);
+      return skipped;
+    }
+
+    this.cycleRunning = true;
+    let result: ScheduledRunResult;
+
+    try {
+      result = await this.executeOneCycle(runId, userId, startedAt);
+    } catch (err) {
+      const error = err instanceof Error ? err.message : String(err);
+      result = this.buildResult(runId, userId, startedAt, 'error', 0, 0, undefined, undefined, error);
+    } finally {
+      this.cycleRunning = false;
+    }
+
+    // 失敗カウンタ更新
+    if (result.outcome === 'error') {
+      this.consecutiveFailures++;
+    } else {
+      this.consecutiveFailures = 0;
+    }
+
+    // ─ 安全条件 5: 連続失敗チェック ─
+    if (this.consecutiveFailures >= this.config.maxConsecutiveFailures) {
+      this.autoStop('Consecutive failures exceeded threshold');
+    }
+
+    // ─ 安全条件 4: 累積失敗率チェック ─
+    this.checkFailureRate(userId, result);
+
+    // 結果を保存して履歴へ
+    this.saveRunResult(userId, result);
+
+    try {
+      await syncPoiPoiUnifiedState({
+        version: 1,
+        records: [{
+          id: `evolution_run_${userId}_${Date.now()}`,
+          category: 'evolution',
+          value: JSON.stringify(result),
+          updatedAt: Date.now(),
+          origin: 'pc',
+        }],
+      });
+    } catch (error) {
+      console.warn('[PoiPoi] Evolution result sync failed:', error);
+    }
+    this.runHistory.push(result);
+
+    return result;
+  }
+
+  /**
+   * サイクルの本体処理
+   */
+  private async executeOneCycle(
+    runId: string,
+    userId: string,
+    startedAt: number
+  ): Promise<ScheduledRunResult> {
+    // Step 1: シミュレーション
+    const simResult = await this.workflow.runSimulation(userId);
+
+    // ─ 安全条件 3: critical 候補のフィルタリング ─
+    // ImprovementExecutor 側で critical+高impact は拒否済みだが、
+    // スケジューラ層でも critical 候補を approved から除外する
+    const safeApproved = simResult.approvedCandidates.filter(
+      (c) => c.priority !== 'critical'
+    );
+
+    // ─ 安全条件 2: 実変更数上限 ─
+    if (safeApproved.length > this.config.maxChangesPerCycle) {
+      return this.buildResult(
+        runId, userId, startedAt, 'simulation_only',
+        0, 0, simResult, undefined,
+        `Approved candidates (${safeApproved.length}) exceed maxChangesPerCycle (${this.config.maxChangesPerCycle})`
+      );
+    }
+
+    // ─ approved が 0 件の場合はシミュレーションのみ ─
+    if (safeApproved.length === 0) {
+      return this.buildResult(runId, userId, startedAt, 'simulation_only', 0, 0, simResult);
+    }
+
+    // Step 2: 実行フェーズ（simulation_only に留まらない場合のみ）
+    const execResult = await this.workflow.runExecution(userId, {
+      ...simResult,
+      approvedCandidates: safeApproved,
+    });
+
+    const changesApplied = execResult.execution.succeeded;
+    const rollbacks = execResult.execution.rolledBack;
+
+    // ─ 安全条件 6: rollback_failed で即停止 ─
+    const rollbackFailed = execResult.execution.results.filter(
+      (r) => r.status === 'rolled_back' && r.failureReason?.includes('rollback')
+    ).length;
+    if (rollbackFailed > 0) {
+      this.autoStop('rollback_failed detected — immediate stop');
+    }
+
+    // Step 3: 成功した候補を SafeImprovementApplier で実際に適用
+    const succeededCandidateIds = new Set(
+      execResult.execution.results
+        .filter((r) => r.status === 'success')
+        .map((r) => r.candidateId)
+    );
+    const succeededCandidates = execResult.simulation.approvedCandidates.filter(
+      (c) => succeededCandidateIds.has(c.id)
+    );
+
+    let applyResult: ApplyBatchSummary | undefined;
+    if (succeededCandidates.length > 0) {
+      const tasks = this.buildApplyTasks(succeededCandidates);
+      if (tasks.length > 0) {
+        applyResult = await this.applier.applyBatch(userId, tasks);
+
+        // rollback_failed が applyBatch でも発生したら即停止
+        if (applyResult.rollbackFailed > 0) {
+          this.autoStop('SafeImprovementApplier rollback_failed — immediate stop');
+        }
+      }
+    }
+
+    return this.buildResult(
+      runId, userId, startedAt, 'executed',
+      changesApplied, rollbacks,
+      execResult.simulation, execResult,
+      undefined,
+      applyResult
+    );
+  }
+
+  // ── ヘルパー ─────────────────────────────────────────────────────────────
+
+  private buildResult(
+    runId: string,
+    userId: string,
+    startedAt: number,
+    outcome: ScheduledRunResult['outcome'],
+    changesApplied: number,
+    rollbacks: number,
+    simulationResult?: SimulationResult,
+    executionResult?: ExecutionWorkflowResult,
+    error?: string,
+    applyResult?: ApplyBatchSummary
+  ): ScheduledRunResult {
+    return {
+      runId,
+      userId,
+      startedAt,
+      completedAt: Date.now(),
+      outcome,
+      simulationResult,
+      executionResult,
+      applyResult,
+      error,
+      changesApplied,
+      rollbacks,
+    };
+  }
+
+  /**
+   * 成功した ImprovementCandidate を SafeImprovementApplier のタスク形式にマッピングする。
+   *
+   * マッピングポリシー:
+   *   - 候補の description / title に許可リストのキーが含まれる場合はそのキーへ適用
+   *   - 該当なしの場合は 'self_improvement.candidate_score_threshold' に
+   *     estimatedImpact を 0–100 スケールでマッピング（汎用フォールバック）
+   */
+  private buildApplyTasks(
+    candidates: ImprovementCandidate[]
+  ): Array<{
+    candidate: ImprovementCandidate;
+    targetKey: string;
+    newValue: unknown;
+  }> {
+    const allowedKeys = this.applier.getAllowlist().map((t) => t.key);
+    const tasks: Array<{ candidate: ImprovementCandidate; targetKey: string; newValue: unknown }> = [];
+
+    for (const candidate of candidates) {
+      // critical 候補はここでも除外（二重ガード）
+      if (candidate.priority === 'critical') continue;
+
+      const text = `${candidate.title} ${candidate.description}`.toLowerCase();
+
+      // 許可リストのキーが候補テキストに含まれる場合は直接マッピング
+      const matchedKey = allowedKeys.find((k) => text.includes(k.toLowerCase()));
+
+      if (matchedKey) {
+        const target = this.applier.getAllowlist().find((t) => t.key === matchedKey)!;
+        // 数値型の場合は estimatedImpact を値として使用（スケール変換）
+        let newValue: unknown;
+        if (target.allowedType === 'number') {
+          const min = target.minValue ?? 0;
+          const max = target.maxValue ?? 100;
+          newValue = Math.round(min + (candidate.estimatedImpact / 100) * (max - min));
+        } else if (target.allowedType === 'boolean') {
+          newValue = candidate.estimatedImpact >= 50;
+        } else {
+          // string: そのままスキップ（自動変更しない）
+          continue;
+        }
+        tasks.push({ candidate, targetKey: matchedKey, newValue });
+      } else {
+        // フォールバック: スコアしきい値を候補のスコアに基づいて調整
+        const key = 'self_improvement.candidate_score_threshold';
+        const currentVal = this.applier.getCurrentValue(key);
+        if (typeof currentVal === 'number') {
+          // 高 impact な候補が通過した場合はしきい値を緩める（より多くの候補を通す）
+          const newVal = Math.max(0, Math.min(100, currentVal - Math.round(candidate.estimatedImpact * 0.1)));
+          if (newVal !== currentVal) {
+            tasks.push({ candidate, targetKey: key, newValue: newVal });
+          }
+        }
+      }
+    }
+
+    // 同一キーへの重複適用を排除（最初のタスクのみ）
+    const seen = new Set<string>();
+    return tasks.filter((t) => {
+      if (seen.has(t.targetKey)) return false;
+      seen.add(t.targetKey);
+      return true;
+    });
+  }
+
+  /** 自動停止 */
+  private autoStop(reason: string): void {
+    this.clearTimer();
+    this.status = 'auto_stopped';
+    this.memoryEngine.setMemory(
+      'system',
+      `evolution_scheduler_auto_stop_${Date.now()}`,
+      { reason, stoppedAt: Date.now() }
+    );
+  }
+
+  private clearTimer(): void {
+    if (this.timer !== null) {
+      clearInterval(this.timer);
+      this.timer = null;
+    }
+  }
+
+  /** 累積失敗率チェック */
+  private checkFailureRate(userId: string, latestResult: ScheduledRunResult): void {
+    const history = this.runHistory.filter((r) => r.userId === userId || r.userId === 'system');
+    history.push(latestResult);
+    if (history.length < 5) return; // サンプルが少なすぎる場合はスキップ
+
+    const recent = history.slice(-20);
+    const errors = recent.filter((r) => r.outcome === 'error').length;
+    const rate = errors / recent.length;
+
+    if (rate >= this.config.failureRateThreshold) {
+      this.autoStop(`Failure rate ${(rate * 100).toFixed(1)}% exceeds threshold`);
+    }
+  }
+
+  /** 実行結果を MemoryEngine と SelfLearningEngine に保存 */
+  private saveRunResult(userId: string, result: ScheduledRunResult): void {
+    this.memoryEngine.setMemory(
+      userId,
+      `scheduled_run_${result.runId}`,
+      result
+    );
+  }
+
+  // ── 照会 API ─────────────────────────────────────────────────────────────
+
+  /** 実行履歴を取得する */
+  public getRunHistory(limit = 20): ScheduledRunResult[] {
+    return this.runHistory.slice(-limit);
+  }
+
+  /** 統計情報 */
+  public getStats(): {
+    totalRuns: number;
+    executedRuns: number;
+    simulationOnlyRuns: number;
+    skippedRuns: number;
+    errorRuns: number;
+    totalChangesApplied: number;
+    totalRollbacks: number;
+    consecutiveFailures: number;
+    status: SchedulerStatus;
+  } {
+    const h = this.runHistory;
+    return {
+      totalRuns: h.length,
+      executedRuns: h.filter((r) => r.outcome === 'executed').length,
+      simulationOnlyRuns: h.filter((r) => r.outcome === 'simulation_only').length,
+      skippedRuns: h.filter((r) => r.outcome === 'skipped').length,
+      errorRuns: h.filter((r) => r.outcome === 'error').length,
+      totalChangesApplied: h.reduce((s, r) => s + r.changesApplied, 0),
+      totalRollbacks: h.reduce((s, r) => s + r.rollbacks, 0),
+      consecutiveFailures: this.consecutiveFailures,
+      status: this.status,
+    };
+  }
+
+  /** テスト用: 全データクリア・状態リセット */
+  public resetForTest(): void {
+    this.clearTimer();
+    this.status = 'idle';
+    this.cycleRunning = false;
+    this.consecutiveFailures = 0;
+    this.runHistory = [];
+    this.config = {
+      intervalMs: DEFAULT_INTERVAL_MS,
+      maxChangesPerCycle: DEFAULT_MAX_CHANGES_PER_CYCLE,
+      maxConsecutiveFailures: DEFAULT_MAX_CONSECUTIVE_FAILURES,
+      failureRateThreshold: 0.5,
+    };
+  }
+}
+
+
+========== server/core/PoiPoiUnifiedStateStore.ts ==========
+import { promises as fs } from 'node:fs';
+import path from 'node:path';
+import {
+  mergePoiPoiState,
+  deserializePoiPoiState,
+  serializePoiPoiState,
+  type PoiPoiUnifiedState,
+} from './PoiPoiUnifiedState';
+
+const stateFile = path.resolve(
+  process.cwd(),
+  'data',
+  'poipoi-unified-state.json'
+);
+
+const emptyState = (): PoiPoiUnifiedState => ({
+  version: 1,
+  records: [],
+});
+
+let pending: Promise<unknown> = Promise.resolve();
+
+async function readState(): Promise<PoiPoiUnifiedState> {
+  try {
+    return deserializePoiPoiState(
+      await fs.readFile(stateFile, 'utf8')
+    );
+  } catch (error) {
+    if (
+      error instanceof Error &&
+      'code' in error &&
+      error.code === 'ENOENT'
+    ) {
+      return emptyState();
+    }
+    throw error;
+  }
+}
+
+async function writeState(state: PoiPoiUnifiedState): Promise<void> {
+  await fs.mkdir(path.dirname(stateFile), { recursive: true });
+
+  const temporary = `${stateFile}.${process.pid}.tmp`;
+
+  try {
+    await fs.writeFile(
+      temporary,
+      serializePoiPoiState(state),
+      'utf8'
+    );
+    await fs.rename(temporary, stateFile);
+  } finally {
+    await fs.rm(temporary, { force: true }).catch(() => {});
+  }
+}
+
+export async function getPoiPoiUnifiedState(): Promise<PoiPoiUnifiedState> {
+  await pending;
+  return readState();
+}
+
+export function syncPoiPoiUnifiedState(
+  incoming: PoiPoiUnifiedState
+): Promise<PoiPoiUnifiedState> {
+  const operation = pending.then(async () => {
+    const current = await readState();
+    const merged = mergePoiPoiState(current, incoming);
+    await writeState(merged);
+    return merged;
+  });
+
+  pending = operation.then(
+    () => undefined,
+    () => undefined
+  );
+
+  return operation;
+}
+
+========== server/routers/poipoiUnifiedState.ts ==========
+import { z } from 'zod';
+import { publicProcedure, router } from '../_core/trpc';
+import {
+  getPoiPoiUnifiedState,
+  syncPoiPoiUnifiedState,
+} from '../core/PoiPoiUnifiedStateStore';
+
+const recordSchema = z.object({
+  id: z.string().min(1),
+  category: z.enum(['memory', 'learning', 'evolution']),
+  value: z.string(),
+  updatedAt: z.number().finite(),
+  origin: z.enum(['pc', 'android']),
+});
+
+const stateSchema = z.object({
+  version: z.literal(1),
+  records: z.array(recordSchema).max(10000),
+});
+
+export const poipoiUnifiedStateRouter = router({
+  get: publicProcedure.query(async () => {
+    return getPoiPoiUnifiedState();
+  }),
+
+  sync: publicProcedure
+    .input(stateSchema)
+    .mutation(async ({ input }) => {
+      return syncPoiPoiUnifiedState(input);
+    }),
+});
+

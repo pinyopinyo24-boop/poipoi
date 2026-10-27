@@ -1,0 +1,841 @@
+import { spawnSync } from "node:child_process";
+import fs from "fs";
+import path from "path";
+import { execFileSync } from "child_process";
+import { CodeEvolutionEngine, CodeChange } from "./CodeEvolutionEngine";
+import { aiProviderManager } from "../ai/AIProviderManager";
+
+type AIChange = {
+  filePath: string;
+  oldCode: string;
+  newCode: string;
+  reason: string;
+};
+
+const ROOT = process.cwd();
+
+const FORBIDDEN = [
+  ".env",
+  ".env.local",
+  ".env.production",
+  "package-lock.json",
+  "pnpm-lock.yaml",
+  "yarn.lock",
+  ".git"
+];
+
+function safePath(filePath: string): string {
+  const normalized = filePath.replace(/\\/g, "/").replace(/^\.\/+/, "");
+  const absolute = path.resolve(ROOT, normalized);
+
+  if (!absolute.startsWith(ROOT + path.sep) && absolute !== ROOT) {
+    throw new Error(`繝励Ο繧ｸ繧ｧ繧ｯ繝亥､悶・繝輔ぃ繧､繝ｫ縺ｯ遖∵ｭ｢: ${filePath}`);
+  }
+
+  if (!fs.existsSync(absolute)) {
+    throw new Error(`螟画峩蟇ｾ雎｡繝輔ぃ繧､繝ｫ縺悟ｭ伜惠縺励∪縺帙ｓ: ${filePath}`);
+  }
+
+  const realRoot = fs.realpathSync(ROOT);
+  const realAbsolute = fs.realpathSync(absolute);
+
+  if (
+    !realAbsolute.startsWith(realRoot + path.sep) &&
+    realAbsolute !== realRoot
+  ) {
+    throw new Error(`螳滉ｽ薙ヱ繧ｹ縺後・繝ｭ繧ｸ繧ｧ繧ｯ繝亥､悶〒縺・ ${filePath}`);
+  }
+
+  if (
+    FORBIDDEN.some(
+      x =>
+        normalized === x ||
+        normalized.startsWith(x + "/")
+    )
+  ) {
+    throw new Error(`螟画峩遖∵ｭ｢繝輔ぃ繧､繝ｫ縺ｧ縺・ ${filePath}`);
+  }
+
+  return absolute;
+}
+
+function git(args: string[]): string {
+  return execFileSync("git", args, {
+    cwd: ROOT,
+    encoding: "utf8"
+  }).trim();
+}
+
+function commitChanges(changedFiles: string[]): void {
+  const expectedFiles = [...new Set(changedFiles)].sort();
+
+  if (expectedFiles.length === 0) {
+    throw new Error("Git縺ｫ遒ｺ螳壹☆繧句､画峩縺後≠繧翫∪縺帙ｓ");
+  }
+
+  const existingStaged = git(["diff", "--cached", "--name-only"])
+    .split(/\r?\n/)
+    .filter(Boolean);
+
+  if (existingStaged.length > 0) {
+    throw new Error(
+      "譌｢蟄倥・繧ｹ繝・・繧ｸ貂医∩螟画峩縺後≠繧翫∪縺吶りｪ､繧ｳ繝溘ャ繝磯亟豁｢縺ｮ縺溘ａ荳ｭ豁｢縺励∪縺吶・n" +
+      existingStaged.join("\n")
+    );
+  }
+
+  git(['add', ...expectedFiles]);
+
+  const stagedFiles = git(["diff", "--cached", "--name-only"])
+    .split(/\r?\n/)
+    .filter(Boolean);
+
+  const actualFiles = [...new Set(stagedFiles)].sort();
+
+  if (JSON.stringify(actualFiles) !== JSON.stringify(expectedFiles)) {
+    git(["reset", "--", ...expectedFiles]);
+    throw new Error(
+      "繧ｹ繝・・繧ｸ蟇ｾ雎｡縺ｨ螟画峩蟇ｾ雎｡縺御ｸ閾ｴ縺励∪縺帙ｓ縲ゅさ繝溘ャ繝医ｒ荳ｭ豁｢縺励∪縺励◆縲・n" +
+      "莠亥ｮ・ " + expectedFiles.join(", ") + "\n" +
+      "螳滄圀: " + actualFiles.join(", ")
+    );
+  }
+
+  try {
+    git([
+      "commit",
+      "-m",
+      "feat: apply safe poipoi self evolution",
+    ]);
+  } catch (commitError) {
+    const commitMessage =
+      commitError instanceof Error
+        ? commitError.message
+        : String(commitError);
+
+    try {
+      git(["reset", "--", ...expectedFiles]);
+    } catch (unstageError) {
+      const unstageMessage =
+        unstageError instanceof Error
+          ? unstageError.message
+          : String(unstageError);
+
+      throw new Error(
+        "Git繧ｳ繝溘ャ繝医↓螟ｱ謨励＠縺ｾ縺励◆縲ゆｽ懈･ｭ荳ｭ縺ｮ螟画峩縺ｯ菫晄戟縺輔ｌ縺ｦ縺・∪縺吶・n" +
+          "繧ｹ繝・・繧ｸ隗｣髯､縺ｫ繧ょ､ｱ謨励＠縺ｾ縺励◆: " + unstageMessage + "\n" +
+          "繧ｳ繝溘ャ繝医お繝ｩ繝ｼ: " + commitMessage
+      );
+    }
+
+    throw new Error(
+      "Git繧ｳ繝溘ャ繝医↓螟ｱ謨励＠縺ｾ縺励◆縲ゆｽ懈･ｭ荳ｭ縺ｮ螟画峩縺ｯ菫晄戟縺励√せ繝・・繧ｸ縺縺題ｧ｣髯､縺励∪縺励◆縲・n" +
+        commitMessage
+    );
+  }
+}
+
+function assertGitSafe() {
+  const status = git(["status", "--porcelain"]);
+  const unexpectedChanges = status
+    .split(/\r?\n/)
+    .filter(Boolean)
+    .filter(line => line.slice(0, 2) !== "??");
+
+  if (unexpectedChanges.length > 0) {
+    throw new Error(
+      "霑ｽ霍｡蟇ｾ雎｡縺ｫ譛ｪ繧ｳ繝溘ャ繝亥､画峩縺ｾ縺溘・繧ｹ繝・・繧ｸ貂医∩螟画峩縺後≠繧翫∪縺吶ょｮ牙・縺ｮ縺溘ａ荳ｭ豁｢縺励∪縺吶・n" +
+      unexpectedChanges.join("\n")
+    );
+  }
+}
+function validateBeforeCommit(changedFiles: string[]): void {
+  const result = spawnSync(
+    process.platform === "win32" ? "pnpm.cmd" : "pnpm",
+    ["exec", "tsc", "--noEmit", "--pretty", "false"],
+    {
+      cwd: process.cwd(),
+      encoding: "utf8",
+      shell: process.platform === "win32",
+    }
+  );
+
+  if (result.status === 0) return;
+
+  const output = [result.stdout, result.stderr, result.error?.message]
+    .filter(Boolean)
+    .join("\n");
+
+  const diagnostics = output
+    .split(/\r?\n/)
+    .filter(line => /error TS\d+/.test(line));
+
+  const normalize = (value: string) =>
+    value.replace(/\\/g, "/").toLowerCase();
+
+  const targetDiagnostics = diagnostics.filter(line => {
+    const normalizedLine = normalize(line);
+    return changedFiles.some(file =>
+      normalizedLine.includes(normalize(file))
+    );
+  });
+
+  if (targetDiagnostics.length > 0 || diagnostics.length === 0) {
+    git(["restore", "--", ...changedFiles]);
+    throw new Error(
+      "蝙九メ繧ｧ繝・け縺ｫ螟ｱ謨励＠縺溘◆繧√さ繝溘ャ繝医ｒ荳ｭ豁｢縺励∪縺励◆縲・n" +
+      (targetDiagnostics.length > 0
+        ? targetDiagnostics.join("\n")
+        : output)
+    );
+  }
+
+  console.warn("螟画峩蟇ｾ雎｡螟悶・譌｢蟄狼ypeScript繧ｨ繝ｩ繝ｼ繧呈､懷・縺励∪縺励◆縲・);
+}
+function extractTarget(request: string): string {
+  const match = request.match(
+    /((?:server|src)[\/\\][^\s"'`]+?\.(?:ts|tsx|js|jsx))/
+  );
+
+  if (!match) {
+    throw new Error(
+      "蟇ｾ雎｡繝輔ぃ繧､繝ｫ繧堤音螳壹〒縺阪∪縺帙ｓ縲・n" +
+      "萓・ server/core/SelfEvolutionWorkflow.ts 繧呈隼蝟・☆繧・
+    );
+  }
+
+  return match[1].replace(/\\/g, "/");
+}
+
+function extractJson(text: string): AIChange[] {
+    const errors: string[] = [];
+const trimmed = text.trim();
+  const candidates: string[] = [trimmed];
+
+  const unfenced = trimmed
+    .replace(/^```(?:json)?\s*/i, "")
+    .replace(/\s*```$/i, "")
+    .trim();
+
+  if (unfenced !== trimmed) candidates.push(unfenced);
+
+  const firstArray = trimmed.indexOf("[");
+  const lastArray = trimmed.lastIndexOf("]");
+  if (firstArray >= 0 && lastArray > firstArray) {
+    candidates.push(trimmed.slice(firstArray, lastArray + 1));
+  }
+
+  const firstObject = trimmed.indexOf("{");
+  const lastObject = trimmed.lastIndexOf("}");
+  if (firstObject >= 0 && lastObject > firstObject) {
+    candidates.push(trimmed.slice(firstObject, lastObject + 1));
+  }
+
+  const normalize = (value: unknown, index: number): AIChange => {
+    if (!value || typeof value !== "object") {
+      throw new Error(`AI螟画峩 #${index + 1} 縺ｮ蠖｢蠑上′荳肴ｭ｣縺ｧ縺兪);
+    }
+
+    const item = value as Record<string, unknown>;
+    if (
+      typeof item.filePath !== "string" ||
+      typeof item.oldCode !== "string" ||
+      typeof item.newCode !== "string" ||
+      typeof item.reason !== "string"
+    ) {
+      throw new Error(`AI螟画峩 #${index + 1} 縺ｮ蠢・磯・岼縺御ｸ崎ｶｳ縺励※縺・∪縺兪);
+    }
+
+    return {
+      filePath: item.filePath,
+      oldCode: item.oldCode,
+      newCode: item.newCode,
+      reason: item.reason,
+    };
+  };
+
+  const seenCandidates = new Set<string>();
+  for (let candidateIndex = 0; candidateIndex < candidates.length; candidateIndex += 1) {
+    const candidate = candidates[candidateIndex];
+    if (seenCandidates.has(candidate)) continue;
+    seenCandidates.add(candidate);
+
+    try {
+      const parsed: unknown = JSON.parse(candidate);
+
+      if (Array.isArray(parsed)) return parsed.map(normalize);
+
+      if (parsed && typeof parsed === "object") {
+        const value = parsed as Record<string, unknown>;
+        if (Array.isArray(value.changes)) {
+          return value.changes.map(normalize);
+        }
+        if (typeof value.response === "string") {
+          const response = value.response.trim();
+          candidates.push(response);
+
+          const responseUnfenced = response
+            .replace(/^```(?:json)?\s*/i, "")
+            .replace(/\s*```$/i, "")
+            .trim();
+          if (responseUnfenced !== response) candidates.push(responseUnfenced);
+
+          const responseFirstArray = response.indexOf("[");
+          const responseLastArray = response.lastIndexOf("]");
+          if (responseFirstArray >= 0 && responseLastArray > responseFirstArray) {
+            candidates.push(response.slice(responseFirstArray, responseLastArray + 1));
+          }
+
+          const responseFirstObject = response.indexOf("{");
+          const responseLastObject = response.lastIndexOf("}");
+          if (responseFirstObject >= 0 && responseLastObject > responseFirstObject) {
+            candidates.push(response.slice(responseFirstObject, responseLastObject + 1));
+          }
+          continue;
+        }
+        return [normalize(parsed, 0)];
+      }
+    } catch (error) {
+      errors.push(error instanceof Error ? error.message : String(error));
+      continue;
+    }
+  }
+
+  throw new Error("AI蠢懃ｭ斐↓譛牙柑縺ｪJSON螟画峩蜀・ｮｹ縺後≠繧翫∪縺帙ｓ縲りｧ｣譫占ｩｳ邏ｰ: " + (errors.join(" | ") || "JSON蛟呵｣懊ｒ隗｣譫舌〒縺阪∪縺帙ｓ") + "縲ょｿ懃ｭ泌・鬆ｭ: " + text.slice(0, 800));
+}
+async function invokeAI(messages: unknown[]): Promise<string> {
+  const configuredUrl = process.env.LOCAL_AI_URL || "http://localhost:11434";
+  const baseUrl = new URL(configuredUrl);
+
+  if (
+    baseUrl.protocol !== "http:" ||
+    !["localhost", "127.0.0.1", "[::1]"].includes(baseUrl.hostname) ||
+    baseUrl.username ||
+    baseUrl.password ||
+    baseUrl.search ||
+    baseUrl.hash ||
+    baseUrl.pathname !== "/"
+  ) {
+    throw new Error("閾ｪ蟾ｱ騾ｲ蛹泡I縺ｯ繝ｭ繝ｼ繧ｫ繝ｫOllama縺ｮ縺ｿ蛻ｩ逕ｨ縺ｧ縺阪∪縺・);
+  }
+
+  const endpoint = new URL("/v1/chat/completions", baseUrl);
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 120000);
+
+  try {
+    const response = await fetch(endpoint, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        model: "qwen2.5-coder:7b",
+        messages,
+        stream: false,
+        temperature: 0.2,
+        max_tokens: 2048
+      }),
+      signal: controller.signal
+    });
+
+    if (!response.ok) {
+      throw new Error("Ollama API error: HTTP " + response.status);
+    }
+
+    const data: unknown = await response.json();
+
+    if (
+      typeof data !== "object" ||
+      data === null ||
+      !("choices" in data) ||
+      !Array.isArray(data.choices) ||
+      !data.choices[0] ||
+      typeof data.choices[0].message?.content !== "string"
+    ) {
+      throw new Error("Ollama縺九ｉ譛牙柑縺ｪAI蠢懃ｭ斐ｒ蜿門ｾ励〒縺阪∪縺帙ｓ縺ｧ縺励◆");
+    }
+
+    return data.choices[0].message.content;
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+function findRelevantTests(targetPath: string): string[] {
+  const absoluteTarget = safePath(targetPath);
+  const directory = path.dirname(absoluteTarget);
+  const base = path.basename(
+    absoluteTarget,
+    path.extname(absoluteTarget)
+  );
+
+  const candidates = [
+    path.join(directory, `${base}.test.ts`),
+    path.join(directory, `${base}.test.tsx`),
+    path.join(directory, `${base}.spec.ts`),
+    path.join(directory, `${base}.spec.tsx`)
+  ];
+
+  return candidates.filter(file => fs.existsSync(file));
+}
+function validateChanges(
+  changes: AIChange[],
+  targetPath: string
+): CodeChange[] {
+  const seenTargets = new Set<string>();
+
+  // POIPOI_AI_CHANGE_GUARD: reject suspicious generated code patterns
+  for (const change of changes) {
+    // 荳肴ｭ｣縺ｪ蝙九・譌｢蟄倥・ map 蜀・・讀懆ｨｼ縺ｫ蜃ｦ逅・ｒ莉ｻ縺帙ｋ
+    if (
+      change === null ||
+      typeof change !== "object" ||
+      Array.isArray(change) ||
+      typeof change.newCode !== "string"
+    ) {
+      continue;
+    }
+
+    const generated = change.newCode;
+    if (
+      /(^|\n)\s*process\.env\.[A-Z0-9_]+\s*=/.test(generated) ||
+      /\beval\s*\(/.test(generated) ||
+      /\bnew\s+Function\s*\(/.test(generated) ||
+      /\bimport\s+.*from\s+["']child_process["']/.test(generated) ||
+      /\brequire\s*\(\s*["']child_process["']\s*\)/.test(generated)
+    ) {
+      throw new Error(
+        "AI逕滓・繧ｳ繝ｼ繝峨↓險ｱ蜿ｯ縺輔ｌ縺ｦ縺・↑縺・些髯ｺ縺ｪ繝代ち繝ｼ繝ｳ縺後≠繧翫∪縺・ " +
+        change.filePath
+      );
+    }
+  }
+  return changes.map(item => {
+    if (item === null || typeof item !== "object" || Array.isArray(item)) {
+      throw new Error("螟画峩蛟呵｣懊′繧ｪ繝悶ず繧ｧ繧ｯ繝医〒縺ｯ縺ゅｊ縺ｾ縺帙ｓ");
+    }
+    if (
+      typeof item.filePath !== "string" ||
+      typeof item.oldCode !== "string" ||
+      typeof item.newCode !== "string" ||
+      !item.filePath.trim() ||
+      !item.oldCode.trim()
+    ) {
+      throw new Error("螟画峩蛟呵｣懊・蠢・磯・岼縺梧ｬ關ｽ縺励※縺・ｋ縺九∝梛縺御ｸ肴ｭ｣縺ｧ縺・);
+    }
+
+    const filePath = item.filePath.replace(/\\/g, "/");
+    const absolutePath = safePath(filePath);
+
+    if (filePath !== targetPath) {
+      throw new Error(
+        `螟画峩蟇ｾ雎｡螟悶・繝輔ぃ繧､繝ｫ縺ｧ縺・ ${filePath}`
+      );
+    }
+
+    const code = fs.readFileSync(absolutePath, "utf8");
+    const sourceLineEnding = code.includes("\r\n") ? "\r\n" : "\n";
+    const normalizeLineEndings = (value: string): string =>
+      value.replace(/\r\n/g, "\n").replace(/\r/g, "\n");
+    const normalizedOldCode = normalizeLineEndings(item.oldCode);
+    const normalizedNewCode = normalizeLineEndings(item.newCode);
+    const oldCode =
+      sourceLineEnding === "\n"
+        ? normalizedOldCode
+        : normalizedOldCode.replace(/\n/g, "\r\n");
+    const newCode =
+      sourceLineEnding === "\n"
+        ? normalizedNewCode
+        : normalizedNewCode.replace(/\n/g, "\r\n");
+    const targetKey = JSON.stringify([filePath, oldCode]);
+
+    if (seenTargets.has(targetKey)) {
+      throw new Error(`蜷後§鄂ｮ謠帛ｯｾ雎｡縺碁㍾隍・＠縺ｦ縺・∪縺・ ${filePath}`);
+    }
+
+    seenTargets.add(targetKey);
+
+    if (!oldCode) {
+      throw new Error(`鄂ｮ謠帛ｯｾ雎｡繧ｳ繝ｼ繝峨′遨ｺ縺ｧ縺・ ${filePath}`);
+    }
+
+    const occurrences = code.split(oldCode).length - 1;
+
+    if (occurrences !== 1) {
+      throw new Error(
+        `鄂ｮ謠帛ｯｾ雎｡繧ｳ繝ｼ繝峨ｒ荳諢上↓迚ｹ螳壹〒縺阪∪縺帙ｓ: ${filePath} / ${occurrences}莉ｶ`
+      );
+    }
+
+    if (newCode === oldCode) {
+      throw new Error(`AI逕滓・繧ｳ繝ｼ繝峨↓螟画峩縺後≠繧翫∪縺帙ｓ: ${filePath}`);
+    }
+
+    const forbiddenGeneratedPatterns = [
+      "export const export const",
+      "export default export default",
+      "import import ",
+      "class class ",
+      "function function ",
+      "interface interface ",
+      "type type ",
+      "const const ",
+      "let let ",
+      "var var ",
+    ];
+
+    if (forbiddenGeneratedPatterns.some(pattern => newCode.includes(pattern))) {
+      throw new Error(
+        `AI逕滓・繧ｳ繝ｼ繝峨↓荳肴ｭ｣縺ｪ驥崎､・ｧ区枚縺後≠繧翫∪縺・ ${filePath}`
+      );
+    }
+
+
+
+    if (
+      newCode.includes("process.env.") ||
+      newCode.includes("API_KEY") ||
+      newCode.includes("SECRET")
+    ) {
+      throw new Error(
+        `遘伜ｯ・ュ蝣ｱ繧貞性繧蜿ｯ閭ｽ諤ｧ縺後≠繧句､画峩繧呈拠蜷ｦ縺励∪縺励◆: ${filePath}`
+      );
+    }
+
+    return {
+      filePath,
+      oldCode,
+      newCode,
+      reason: item.reason
+    };
+  });
+}
+async function main() {
+  const args = process.argv.slice(2);
+  const logFlag = args.indexOf("--error-log");
+
+  let errorLog = "";
+  let requestArgs = args;
+
+  if (logFlag >= 0) {
+    if (logFlag !== args.length - 2) {
+      throw new Error("菴ｿ縺・婿: 謾ｹ蝟・ｦ∵ｱ・--error-log 繝ｭ繧ｰ繝輔ぃ繧､繝ｫ");
+    }
+
+    const logPath = path.resolve(args[logFlag + 1]);
+    const logStat = fs.lstatSync(logPath);
+
+    if (!logStat.isFile() || logStat.isSymbolicLink()) {
+      throw new Error("繧ｨ繝ｩ繝ｼ繝ｭ繧ｰ縺ｯ騾壼ｸｸ繝輔ぃ繧､繝ｫ縺ｮ縺ｿ謖・ｮ壹〒縺阪∪縺・);
+    }
+
+    if (logStat.size > 65536) {
+      throw new Error("繧ｨ繝ｩ繝ｼ繝ｭ繧ｰ縺ｯ64KB莉･荳九↓縺励※縺上□縺輔＞");
+    }
+
+    errorLog = fs.readFileSync(logPath, "utf8");
+    requestArgs = args.slice(0, logFlag);
+  }
+
+  const request = requestArgs.join(" ").trim();
+
+  if (!request) {
+    console.error(
+      '菴ｿ縺・婿: pnpm poipoi:evolve "謾ｹ蝟・・螳ｹ"'
+    );
+    process.exit(1);
+  }
+
+  assertGitSafe();
+  console.log("誓 繝昴う繝昴う閾ｪ蟾ｱ騾ｲ蛹・);
+  console.log(`隕∵ｱ・ ${request}`);
+
+  // 螟画峩蜑阪・Git迥ｶ諷九ｒ菫晁ｭｷ
+  const targetPath = extractTarget(request);
+  const absoluteTarget = safePath(targetPath);
+
+  console.log(`蟇ｾ雎｡: ${targetPath}`);
+
+  const currentCode = fs.readFileSync(
+    absoluteTarget,
+    "utf8"
+  );
+
+  if (!currentCode.trim()) {
+    throw new Error("蟇ｾ雎｡繝輔ぃ繧､繝ｫ縺檎ｩｺ縺ｧ縺・);
+  }
+  const messages: { role: string; content: string }[] = [
+    {
+      role: "system",
+      content:
+        [
+          "縺ゅ↑縺溘・Poipoi縺ｮ螳牙・縺ｪ繧ｳ繝ｼ繝画隼蝟БI縺ｧ縺吶・,
+          "繧ｳ繝ｼ繝牙､画峩繧定ｦ∵ｱゅ＆繧後◆蝣ｴ蜷医∬ｪｬ譏取枚縺ｧ縺ｯ縺ｪ縺城←逕ｨ蜿ｯ閭ｽ縺ｪ螟画峩繝・・繧ｿ繧定ｿ斐＠縺ｦ縺上□縺輔＞縲・,
+          "蜃ｺ蜉帙・JSON驟榊・縺ｮ縺ｿ縲・arkdown縲√さ繝ｼ繝峨ヵ繧ｧ繝ｳ繧ｹ縲∝燕鄂ｮ縺阪∬ｧ｣隱ｬ縺ｯ遖∵ｭ｢縺ｧ縺吶・,
+          "AI蠢懃ｭ斐′ response 繝輔ぅ繝ｼ繝ｫ繝峨ｒ蜷ｫ繧蠖｢蠑上〒霑斐▲縺溷ｴ蜷医〉esponse蜀・・譁・ｭ怜・繧貞､画峩JSON縺ｨ縺励※隗｣譫舌＠縺ｦ縺上□縺輔＞縲・,
+          "螟画峩繝・・繧ｿ縺ｯ filePath縲｛ldCode縲］ewCode縲〉eason 繧貞性繧JSON驟榊・縺ｫ縺励※縺上□縺輔＞縲・,
+          "蜷・ｦ∫ｴ縺ｯfilePath縲｛ldCode縲］ewCode縲〉eason繧偵☆縺ｹ縺ｦ蜷ｫ繧√※縺上□縺輔＞縲・,
+          "filePath縺ｯ蟇ｾ雎｡繝輔ぃ繧､繝ｫ縺ｮ逶ｸ蟇ｾ繝代せ縺ｨ螳悟・荳閾ｴ縺輔○縺ｦ縺上□縺輔＞縲・,
+          "oldCode縺ｯ迴ｾ蝨ｨ繧ｳ繝ｼ繝峨°繧我ｸ蟄嶺ｸ蜿･縺昴・縺ｾ縺ｾ繧ｳ繝斐・縺励※縺上□縺輔＞縲・,
+          "螳牙・縺ｪ螟画峩繧呈署譯医〒縺阪↑縺・ｴ蜷医・縲∝､画峩繝・・繧ｿ繧呈刻騾縺帙★遨ｺ驟榊・繧定ｿ斐＠縺ｦ縺上□縺輔＞縲・,
+          "蠢・★JSON驟榊・縺縺代ｒ霑斐＠縺ｦ縺上□縺輔＞縲・,
+          "",
+          "蠖｢蠑・",
+          '[{"filePath":"逶ｸ蟇ｾ繝代せ","oldCode":"迴ｾ蝨ｨ繧ｳ繝ｼ繝峨°繧牙ｮ悟・荳閾ｴ縺吶ｋ鄂ｮ謠帛ｯｾ雎｡","newCode":"鄂ｮ謠帛ｾ後さ繝ｼ繝・,"reason":"逅・罰"}]',
+          "",
+          "繝ｫ繝ｼ繝ｫ:",
+          "1. filePath縺ｯ蟇ｾ雎｡繝輔ぃ繧､繝ｫ縺ｨ蜷後§繧ゅ・縺縺代ｒ霑斐☆",
+          "2. oldCode縺ｯ迴ｾ蝨ｨ繧ｳ繝ｼ繝峨°繧牙ｮ悟・繧ｳ繝斐・縺吶ｋ",
+          "3. oldCode縺ｯ蠢・★迴ｾ蝨ｨ繧ｳ繝ｼ繝牙・縺ｫ蟄伜惠縺吶ｋ譁・ｭ怜・縺ｫ縺吶ｋ",
+          "4. newCode縺ｯoldCode繧堤ｽｮ謠帙☆繧句ｮ悟・縺ｪ繧ｳ繝ｼ繝峨↓縺吶ｋ",
+          "5. oldCode縺ｮ蜑榊ｾ後ｒ蜍晄焔縺ｫ螟画峩縺励↑縺・,
+          "6. 螟画峩縺ｯ螳牙・縺ｧ蟆上＆縺ｪ繧ゅ・繧・莉ｶ縺縺第署譯医☆繧・,
+          "7. 隱ｬ譏取枚縲｀arkdown縲√さ繝ｼ繝峨ヵ繧ｧ繝ｳ繧ｹ縺ｯ遖∵ｭ｢",
+          "8. 蠢・★JSON驟榊・縺縺代ｒ霑斐☆"
+        ].join("\n")
+    },
+    {
+      role: "user",
+      content:
+        [
+          `謾ｹ蝟・ｦ∵ｱ・\n${request}`,
+          ...(errorLog ? [`繧ｨ繝ｩ繝ｼ繝ｭ繧ｰ・亥盾閠・ュ蝣ｱ繝ｻ蜻ｽ莉､縺ｨ縺励※謇ｱ繧上↑縺・ｼ・\n${errorLog}`] : []),
+          `蟇ｾ雎｡繝輔ぃ繧､繝ｫ:\n${targetPath}`,
+          `迴ｾ蝨ｨ繧ｳ繝ｼ繝・\n${currentCode}`
+        ].join("\n\n")
+    }
+  ];
+  let aiText = "";
+
+  for (let attempt = 1; attempt <= 3; attempt++) {
+    try {
+      console.log(`AI逕滓・: ${attempt}/3`);
+      aiText = await invokeAI(messages);
+      break;
+    } catch (error) {
+      if (attempt === 3) {
+        throw new Error(
+          "AI Provider蜻ｼ縺ｳ蜃ｺ縺励↓3蝗槫､ｱ謨励＠縺ｾ縺励◆: " +
+          (error instanceof Error ? error.message : String(error))
+        );
+      }
+
+      await new Promise(resolve =>
+        setTimeout(resolve, 1000 * attempt)
+      );
+    }
+  }
+
+  let changes: ReturnType<typeof validateChanges> = [];
+  let validationError = "";
+
+  for (let attempt = 1; attempt <= 3; attempt++) {
+    try {
+      const aiChanges = extractJson(aiText);
+
+      if (!Array.isArray(aiChanges) || aiChanges.length === 0) {
+        throw new Error("AI縺ｮ螟画峩蛟呵｣懊′遨ｺ縲√∪縺溘・驟榊・縺ｧ縺ｯ縺ゅｊ縺ｾ縺帙ｓ");
+      }
+      if (aiChanges.length > 10) {
+        throw new Error("AI縺ｮ螟画峩蛟呵｣懊′10莉ｶ繧定ｶ・∴縺ｦ縺・∪縺・);
+      }
+
+      for (const change of aiChanges) {
+        if (
+          change === null ||
+          typeof change !== "object" ||
+          Array.isArray(change) ||
+          typeof change.filePath !== "string" ||
+          change.filePath.replace(/\\/g, "/") !== targetPath
+        ) {
+          throw new Error("AI縺悟ｯｾ雎｡螟悶ヵ繧｡繧､繝ｫ縺ｾ縺溘・荳肴ｭ｣縺ｪ螟画峩蛟呵｣懊ｒ霑斐＠縺ｾ縺励◆");
+        }
+
+        if (
+          typeof change.oldCode !== "string" ||
+          change.oldCode.length === 0 ||
+          typeof change.newCode !== "string" ||
+          change.newCode.trim().length === 0
+        ) {
+          throw new Error("oldCode縺ｾ縺溘・newCode縺御ｸ肴ｭ｣縺ｧ縺・);
+        }
+
+        const normalizedOldCode = change.oldCode
+          .replace(/\r\n/g, "\n")
+          .replace(/\r/g, "\n");
+        const sourceLineEnding = currentCode.includes("\r\n") ? "\r\n" : "\n";
+        const sourceCompatibleOldCode =
+          sourceLineEnding === "\n"
+            ? normalizedOldCode
+            : normalizedOldCode.replace(/\n/g, "\r\n");
+        const occurrences =
+          normalizedOldCode.length === 0
+            ? 0
+            : currentCode.split(sourceCompatibleOldCode).length - 1;
+        if (occurrences !== 1) {
+          throw new Error(
+            `oldCode縺檎樟蝨ｨ繧ｳ繝ｼ繝牙・縺ｫ荳諢上↓蟄伜惠縺励∪縺帙ｓ・亥・迴ｾ蝗樊焚: ${occurrences}・荏
+          );
+        }
+      }
+
+      changes = validateChanges(aiChanges, targetPath);
+      if (changes.length === 0) {
+        throw new Error("螟画峩蛟呵｣懊′0莉ｶ縺ｧ縺・);
+      }
+
+      validationError = "";
+      break;
+    } catch (error) {
+      validationError =
+        error instanceof Error ? error.message : String(error);
+
+      if (attempt === 3) {
+        throw new Error(
+          "AI逕滓・繧ｳ繝ｼ繝峨・讀懆ｨｼ縺ｫ3蝗槫､ｱ謨励＠縺ｾ縺励◆縲ょ､画峩縺ｯ驕ｩ逕ｨ縺励※縺・∪縺帙ｓ: " +
+          validationError
+        );
+      }
+
+      console.warn(`螟画峩蛟呵｣懊・讀懆ｨｼ螟ｱ謨・ ${attempt}/3縲・I縺ｫ蜀咲函謌舌ｒ隕∵ｱゅ＠縺ｾ縺吶Ａ);
+
+      messages.push(
+        { role: "assistant", content: aiText },
+        {
+          role: "user",
+          content:
+            "逶ｴ蜑阪・螟画峩蛟呵｣懊・讀懆ｨｼ縺ｫ螟ｱ謨励＠縺ｾ縺励◆縲・n" +
+            "螟ｱ謨礼炊逕ｱ: " + validationError + "\n\n" +
+            "蟇ｾ雎｡繝輔ぃ繧､繝ｫ: " + targetPath + "\n\n" +
+            "莉･荳九′蟇ｾ雎｡繝輔ぃ繧､繝ｫ縺ｮ迴ｾ蝨ｨ繧ｳ繝ｼ繝峨〒縺吶・n" +
+            "oldCode縺ｫ縺ｯ縲∵ｬ｡縺ｮ繧ｳ繝ｼ繝峨°繧蛾｣邯壹＠縺滓枚蟄怜・繧剃ｸ蟄嶺ｸ蜿･縺昴・縺ｾ縺ｾ繧ｳ繝斐・縺励※縺上□縺輔＞縲・n" +
+            "遨ｺ逋ｽ縲∵隼陦後√う繝ｳ繝・Φ繝医ｂ荳閾ｴ縺輔○縲∫樟蝨ｨ繧ｳ繝ｼ繝牙・縺ｫ1蝗槭□縺大ｭ伜惠縺吶ｋ遽・峇繧帝∈繧薙〒縺上□縺輔＞縲・n" +
+            "螟画峩縺ｯ螳牙・縺ｪ譛蟆城剞縺ｮ繧ゅ・繧・莉ｶ縺縺第署譯医＠縺ｦ縺上□縺輔＞縲・n" +
+            "filePath縺ｯ蟇ｾ雎｡繝輔ぃ繧､繝ｫ縺ｨ蜷後§蛟､縺ｫ縺励※縺上□縺輔＞縲・n" +
+            "JSON驟榊・縺縺代ｒ霑斐＠縲∬ｪｬ譏取枚繧Мarkdown縺ｯ莉倥￠縺ｪ縺・〒縺上□縺輔＞縲・n\n" +
+            "迴ｾ蝨ｨ繧ｳ繝ｼ繝・\n" + currentCode
+        }
+      );
+
+      aiText = await invokeAI(messages);
+    }
+  }
+  console.log(`螟画峩蛟呵｣・ ${changes.length}莉ｶ`);
+
+  // 閾ｪ蟾ｱ騾ｲ蛹門燕縺ｮ繧ｹ繝・・繧ｸ貂医∩螟画峩繧剃ｿ晁ｭｷ
+const stagedBeforeEvolution = git(["diff", "--cached", "--name-only"]);
+if (stagedBeforeEvolution.trim()) {
+  throw new Error(
+    "閾ｪ蟾ｱ騾ｲ蛹門燕縺ｮ繧ｹ繝・・繧ｸ貂医∩螟画峩繧剃ｿ晁ｭｷ縺吶ｋ縺溘ａ荳ｭ豁｢縺励∪縺励◆縲・n" +
+    stagedBeforeEvolution
+  );
+}
+
+const targetStatusBeforeEvolution = git(["status", "--porcelain", "--", targetPath]);
+if (targetStatusBeforeEvolution.trim()) {
+  throw new Error(
+    "閾ｪ蟾ｱ騾ｲ蛹門ｯｾ雎｡繝輔ぃ繧､繝ｫ縺ｫ譌｢蟄倥・螟画峩縺後≠繧九◆繧∽ｸｭ豁｢縺励∪縺励◆縲・n" +
+    targetStatusBeforeEvolution
+  );
+}
+  // AI逕滓・縺ｮ菫ｮ豁｣譯医ｒ陦ｨ遉ｺ縺励∵・遉ｺ逧・↑謇ｿ隱阪ｒ隕∵ｱ・  console.log("\n=== PoiPoi AI 菫ｮ豁｣謠先｡・===");
+
+  for (const change of changes) {
+    console.log("\n蟇ｾ雎｡: " + change.filePath);
+    console.log("\n--- 螟画峩蜑・---\n" + change.oldCode);
+    console.log("\n+++ 螟画峩蠕・+++\n" + change.newCode);
+  }
+
+  if (!process.stdin.isTTY || !process.stdout.isTTY) {
+    throw new Error("蟇ｾ隧ｱ蜈･蜉帙′縺ｪ縺・◆繧∝､画峩繧剃ｸｭ豁｢縺励∪縺励◆");
+  }
+
+  const readline = await import("node:readline/promises");
+  const rl = readline.createInterface({
+    input: process.stdin,
+    output: process.stdout
+  });
+
+  let approval = "";
+
+  try {
+    approval = await rl.question(
+      "\n螟画峩繧帝←逕ｨ縺励∪縺吶°・・謇ｿ隱阪☆繧句ｴ蜷医・縺ｿ YES 縺ｨ蜈･蜉・ "
+    );
+  } finally {
+    rl.close();
+  }
+
+  if (approval.trim() !== "YES") {
+    throw new Error("繝ｦ繝ｼ繧ｶ繝ｼ縺梧価隱阪＠縺ｪ縺九▲縺溘◆繧∝､画峩繧剃ｸｭ豁｢縺励∪縺励◆");
+  }
+
+  console.log("菫ｮ豁｣譯医・謇ｿ隱阪ｒ遒ｺ隱阪＠縺ｾ縺励◆");
+
+  // Phase 3: 讀懆ｨｼ繝輔Ο繝ｼ縺悟ｮ梧・縺吶ｋ縺ｾ縺ｧ螟画峩驕ｩ逕ｨ繧堤ｦ∵ｭ｢
+  console.log("讀懆ｨｼ繝輔Ο繝ｼ縺梧悴螳梧・縺ｮ縺溘ａ縲∝､画峩驕ｩ逕ｨ縺ｨGit繧ｳ繝溘ャ繝医ｒ荳ｭ豁｢縺励∪縺・);
+  console.log("AI菫ｮ豁｣譯医・陦ｨ遉ｺ縺ｮ縺ｿ縺ｧ縺吶ょｯｾ雎｡繝輔ぃ繧､繝ｫ縺ｯ螟画峩縺励∪縺帙ｓ");
+  return;
+const engine = new CodeEvolutionEngine(ROOT);
+
+  const result = await engine.apply(
+    changes,
+  );
+
+  if (!result.success) {
+    console.error("笶・閾ｪ蟾ｱ騾ｲ蛹門､ｱ謨・);
+    console.error(result.error);
+    console.error(
+      "繝ｭ繝ｼ繝ｫ繝舌ャ繧ｯ:",
+      result.rolledBack ? "螳溯｡梧ｸ医∩" : "螟ｱ謨・縺ｪ縺・
+    );
+    process.exit(1);
+  }
+
+  if (result.changedFiles.length === 0) {
+    throw new Error("閾ｪ蟾ｱ騾ｲ蛹匁・蜉溘→蛻､螳壹＆繧後∪縺励◆縺悟､画峩繝輔ぃ繧､繝ｫ縺後≠繧翫∪縺帙ｓ");
+  }
+
+  const expectedTarget = targetPath.replace(/\\/g, "/");
+  const unexpectedResultFiles = result.changedFiles.filter(
+    filePath => filePath.replace(/\\/g, "/") !== expectedTarget
+  );
+
+  if (unexpectedResultFiles.length > 0) {
+    throw new Error(
+      "閾ｪ蟾ｱ騾ｲ蛹悶お繝ｳ繧ｸ繝ｳ縺悟ｯｾ雎｡螟悶ヵ繧｡繧､繝ｫ繧定ｿ斐＠縺ｾ縺励◆縲ゅさ繝溘ャ繝医ｒ荳ｭ豁｢縺励∪縺吶・n" +
+      unexpectedResultFiles.join("\n")
+    );
+  }
+  const afterStatus = git([
+    "status",
+    "--porcelain",
+    "--",
+    ...result.changedFiles,
+  ]);
+
+  if (!afterStatus) {
+    throw new Error(
+      "閾ｪ蟾ｱ騾ｲ蛹匁・蜉溘→蛻､螳壹＆繧後∪縺励◆縺悟､画峩蟇ｾ雎｡繝輔ぃ繧､繝ｫ縺ｫGit蟾ｮ蛻・′縺ゅｊ縺ｾ縺帙ｓ"
+    );
+  }
+
+  // Git縺ｸ縺ｮ遒ｺ螳壹′謌仙粥縺励※縺九ｉ縲∬・蟾ｱ騾ｲ蛹匁・蜉溘ｒ陦ｨ遉ｺ縺吶ｋ
+  validateBeforeCommit(result.changedFiles);
+  commitChanges(result.changedFiles);
+
+  console.log("================================");
+  console.log("笨・閾ｪ蟾ｱ騾ｲ蛹匁・蜉滂ｼ・it繧ｳ繝溘ャ繝亥ｮ御ｺ・ｼ・);
+  console.log(`螟画峩繝輔ぃ繧､繝ｫ: ${result.changedFiles.join(", ")}`);
+  console.log("================================");
+}
+
+main().catch((error: unknown) => {
+  console.error("笶・CLI繧ｨ繝ｩ繝ｼ");
+  console.error(
+    error instanceof Error
+      ? error.message
+      : String(error)
+  );
+  process.exit(1);
+});
+
+

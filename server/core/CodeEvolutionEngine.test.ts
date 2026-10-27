@@ -1,4 +1,4 @@
-﻿import { describe, expect, it } from "vitest";
+import { describe, expect, it } from "vitest";
 import fs from "fs/promises";
 import os from "os";
 import path from "path";
@@ -17,8 +17,7 @@ describe("CodeEvolutionEngine", () => {
       oldCode: 'export const VALUE = "before";',
       newCode: 'export const VALUE = "after";',
       reason: "test"
-    }], ["node", "-e", "process.exit(0)"]);
-
+    }], [], () => { /* 検証成功 */ });
     expect(result.success).toBe(true);
     expect(await fs.readFile(file, "utf8")).toContain('"after"');
   });
@@ -35,7 +34,7 @@ describe("CodeEvolutionEngine", () => {
       oldCode: 'export const VALUE = "before";',
       newCode: 'export const VALUE = "after";',
       reason: "test"
-    }], ["pnpm", "exec", "tsc", "--noEmit", "--invalid-option"]);
+    }], [], () => { throw new Error("検証失敗テスト"); });
 
     expect(result.success).toBe(false);
     expect(result.rolledBack).toBe(true);
@@ -54,7 +53,7 @@ describe("CodeEvolutionEngine", () => {
       oldCode: '"same"',
       newCode: '"changed"',
       reason: "test"
-    }], ["node", "-e", "process.exit(0)"]);
+    }], [], () => { /* 検証成功 */ });
 
     expect(result.success).toBe(false);
     expect(await fs.readFile(file, "utf8")).toContain('"same"');
@@ -69,7 +68,7 @@ describe("CodeEvolutionEngine", () => {
       oldCode: "a",
       newCode: "b",
       reason: "test"
-    }], ["node", "-e", "process.exit(0)"]);
+    }], [], () => { /* 検証成功 */ });
 
     expect(result.success).toBe(false);
   });

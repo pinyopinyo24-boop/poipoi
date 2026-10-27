@@ -1,4 +1,5 @@
-﻿/**
+import { enrichPromptWithLearning } from "../core/LearningContextIntegration";
+/**
  * LLM Integration - Google Gemini API螳溯｣・
  * Google Gemini API繧剃ｽｿ逕ｨ縺励◆LLM邨ｱ蜷・
  */
@@ -132,7 +133,7 @@ const DEFAULT_MODEL = "gemini-2.0-flash";
  */
 export async function invokeLLM(request: LLMRequest): Promise<LLMResponse> {
   const baseUrl = process.env.LOCAL_AI_URL || "http://localhost:11434";
-  const model = "qwen2.5-coder:7b";
+  const model = request.messages?.[0]?.content?.includes("code generation expert") ? "qwen2.5-coder:7b" : "qwen2.5:7b";
 
   const messages = request.messages || [];
 

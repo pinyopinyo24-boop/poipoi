@@ -1,0 +1,91 @@
+[
+  {
+    "task": "ポイポイの合言葉は？",
+    "solution": "「トイレ」は「ポイポイ」の合言葉です。",
+    "outcome": "failure",
+    "feedback": "たぬき123",
+    "used": 0
+  },
+  {
+    "task": "ポイポイの合言葉は？",
+    "solution": "たぬき123",
+    "outcome": "success",
+    "feedback": "たぬき123",
+    "used": 0
+  },
+  {
+    "task": "ポイポイの合言葉は？",
+    "solution": "答えは「たぬき123」です。",
+    "outcome": "failure",
+    "feedback": "たぬき456",
+    "used": 0
+  },
+  {
+    "task": "ポイポイの合言葉は？",
+    "solution": "たぬき456",
+    "outcome": "success",
+    "used": 0
+  },
+  {
+    "task": "ポイポイの合言葉は",
+    "solution": "たぬき789",
+    "outcome": "success",
+    "feedback": "たぬき789",
+    "used": 0
+  },
+  {
+    "task": "ポイポイの合言葉は",
+    "solution": "申し訳ありませんが、私はリアルタイムの情報を提供することができません。過去の合言葉の例を提供しましたが、現在の最新の合言葉について私には情報がないです。ご了承ください。",
+    "outcome": "failure",
+    "feedback": "たぬき999",
+    "used": 0
+  },
+  {
+    "task": "ポイポイの合言葉は",
+    "solution": "たぬき999",
+    "outcome": "success",
+    "feedback": "たぬき999",
+    "used": 0
+  },
+  {
+    "task": "ポイポイの合言葉は？",
+    "solution": "たぬき654",
+    "outcome": "failure",
+    "feedback": "たぬき999",
+    "used": 0
+  },
+  {
+    "task": "ポイポイの合言葉は？",
+    "solution": "たぬき999",
+    "outcome": "success",
+    "feedback": "たぬき999",
+    "used": 0
+  },
+  {
+    "task": "ポイポイの合言葉は",
+    "solution": "ポイポイの合言葉は「ポイポイ」と言います。これは明るく楽観的な印象を与えるフレーズで、日常的な出来事に対してもポジティブな視点で捉えることを促します。",
+    "outcome": "failure",
+    "feedback": "たぬき456",
+    "used": 0
+  },
+  {
+    "task": "ポイポイの合言葉は",
+    "solution": "たぬき456",
+    "outcome": "success",
+    "feedback": "たぬき456",
+    "used": 0
+  },
+  {
+    "task": "ポイポイの合言葉は",
+    "solution": "ポイポイの合言葉はたぬき123です。",
+    "outcome": "failure",
+    "feedback": "たぬき456",
+    "used": 0
+  },
+  {
+    "task": "1. ポイポイの合言葉は",
+    "solution": "たぬき123です。",
+    "outcome": "success",
+    "used": 0
+  }
+]

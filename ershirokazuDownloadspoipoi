@@ -1,0 +1,86 @@
+[33mcommit 5387461222e6eb874fcbd3d9c5c579593a5ea905[m[33m ([m[1;36mHEAD[m[33m -> [m[1;32mpoipoi-self-evolution-v2[m[33m, [m[1;31morigin/poipoi-self-evolution-v2[m[33m)[m
+Author:     piropiron <pinyopinyo24@gmail.com>
+AuthorDate: Sun Oct 25 13:09:46 2026 +0900
+Commit:     piropiron <pinyopinyo24@gmail.com>
+CommitDate: Sun Oct 25 13:09:46 2026 +0900
+
+    Preserve existing mobile PC session on connection failure
+
+[1mdiff --git a/mobile/src/screens/ChatScreen.tsx b/mobile/src/screens/ChatScreen.tsx[m
+[1mindex 4d20bf3..b2d50a6 100644[m
+[1m--- a/mobile/src/screens/ChatScreen.tsx[m
+[1m+++ b/mobile/src/screens/ChatScreen.tsx[m
+[36m@@ -244,8 +244,6 @@[m [mexport default function ChatScreen() {[m
+         // app.config.js から apiBaseUrl を取得[m
+         const apiBaseUrl = (await AsyncStorage.getItem('POIPOI_PC_URL')) || Constants.expoConfig?.extra?.apiBaseUrl;[m
+         if (typeof apiBaseUrl !== "string" || !apiBaseUrl.trim()) {[m
+[31m-          setIsConnected(false);[m
+[31m-          setApiConnector(null);[m
+           return;[m
+         }[m
+         if (__DEV__) console.log("[ChatScreen] API Base URL:", apiBaseUrl);[m
+[36m@@ -284,7 +282,6 @@[m [mexport default function ChatScreen() {[m
+             }[m
+       [m
+           } else {[m
+[31m-            setSessionId(undefined);[m
+             // 端末内の会話履歴を保持[m
+           }[m
+         }[m
+[36m@@ -296,7 +293,6 @@[m [mexport default function ChatScreen() {[m
+         }[m
+       } catch (error) {[m
+         console.error("[ChatScreen] API initialization error:", error);[m
+[31m-        setIsConnected(false);[m
+         console.info("[PoiPoi] ローカルAIに切り替えました");[m
+       }[m
+     };[m
+[36m@@ -381,10 +377,6 @@[m [mexport default function ChatScreen() {[m
+           const connected = await connector.checkConnectivity();[m
+ [m
+           if (!connected) {[m
+[31m-            setApiConnector(null);[m
+[31m-            setIsConnected(false);[m
+[31m-            setIsAuthenticated(false);[m
+[31m-            setSessionId(undefined);[m
+             throw new Error([m
+               'PCに再接続できません。スマホ単独動作は継続できます。'[m
+             );[m
+[36m@@ -393,7 +385,6 @@[m [mexport default function ChatScreen() {[m
+           await AsyncStorage.setItem('POIPOI_PC_URL', reconnectURL);[m
+           setApiConnector(connector);[m
+           setIsConnected(true);[m
+[31m-          setIsAuthenticated(false);[m
+           setSessionId(connector.getSessionId() || undefined);[m
+           setInput('');[m
+ [m
+[36m@@ -402,10 +393,6 @@[m [mexport default function ChatScreen() {[m
+         }[m
+         if (command === '/PC切断') {[m
+           await AsyncStorage.removeItem('POIPOI_PC_URL');[m
+[31m-          setApiConnector(null);[m
+[31m-          setIsConnected(false);[m
+[31m-          setIsAuthenticated(false);[m
+[31m-          setSessionId(undefined);[m
+           setInput('');[m
+ [m
+           Alert.alert([m
+[36m@@ -482,7 +469,6 @@[m [mexport default function ChatScreen() {[m
+ [m
+         setApiConnector(connector);[m
+         setIsConnected(true);[m
+[31m-        setIsAuthenticated(false);[m
+         setSessionId(connector.getSessionId() || undefined);[m
+         setInput('');[m
+ [m
+[36m@@ -491,10 +477,6 @@[m [mexport default function ChatScreen() {[m
+           'PCに接続しました。\n' + url[m
+         );[m
+       } catch (error) {[m
+[31m-        setApiConnector(null);[m
+[31m-        setIsConnected(false);[m
+[31m-        setIsAuthenticated(false);[m
+[31m-        setSessionId(undefined);[m
+ [m
+         if (command === '/PC再接続') {[m
+           setInput(command);[m
