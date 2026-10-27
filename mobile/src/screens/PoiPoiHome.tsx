@@ -194,7 +194,7 @@ export default function PoiPoiHome() {
                 value={pcUrl}
                 onChangeText={setPcUrl}
                 autoCapitalize="none"
-                placeholder="http://192.168.1.12:3000"
+                placeholder="http://192.168.1.6:3000"
               />
               <TouchableOpacity style={extraStyles.button} onPress={savePcUrl}>
                 <Text style={extraStyles.buttonText}>設定を保存</Text>
