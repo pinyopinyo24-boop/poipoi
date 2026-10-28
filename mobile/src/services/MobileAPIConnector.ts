@@ -216,7 +216,11 @@ export class MobileAPIConnector {
       this.setCache(cacheKey, data);
 
       if (serverData.length > 0) {
-        await LocalCacheService.saveChatHistory(id, data);
+        try {
+          await LocalCacheService.saveChatHistory(id, data);
+        } catch (cacheError) {
+          console.warn('[PoiPoi] Unable to cache PC chat history:', cacheError);
+        }
       }
 
       return {
