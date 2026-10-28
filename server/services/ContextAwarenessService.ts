@@ -42,7 +42,7 @@ export class ContextAwarenessService {
     const userPreferences = await this.getUserPreferences(userId);
 
     // 会話履歴を取得
-    const conversationHistory = await this.getConversationHistory(userId);
+    const conversationHistory = await this.getConversationHistory(userId).catch(() => [] as string[]);
 
     // 関連データを取得
     const relevantData = await this.getRelevantData(message);
