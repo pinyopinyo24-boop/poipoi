@@ -251,7 +251,7 @@ export class ChatCoreManager {
       }
 
       // 鬨ｾ螢ｼ・ｸ・ｸ邵ｺ・ｮ陟｢諛・ｽｭ繝ｻ
-      return this.formatStandardResponse(userMessage, processedResult, context);
+      throw new Error("AI Core response failed; mobile local AI fallback required");
     }
   }
 
