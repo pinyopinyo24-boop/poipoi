@@ -293,16 +293,8 @@ export class ChatCoreManager {
       ? await this.chatRepository.getMessages(sessionId, 50)
       : [];
 
-    return {
-      ...(session || {
-        id: sessionId,
-        userId,
-        title: '繝√Ε繝・ヨ繧ｻ繝・す繝ｧ繝ｳ',
-        createdAt: new Date(),
-        messageCount: 0,
-      }),
-      messages,
-    };
+    if (!session || session.userId !== userId) return null;
+    return { ...session, messages };
   }
   async getMessages(userId: string, sessionId: string): Promise<any[]> {
     const session = await this.chatRepository.getSession(sessionId);
