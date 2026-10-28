@@ -140,8 +140,8 @@ export const chatRouter = router({
           return reply;
         }
         if (rename) {
-          const newName = PoiPoiIdentity.setName(rename[1].trim());
           await repository.saveMessage({ id: `rename_user_${Date.now()}`, userId, role: 'user', content: originalMessage, timestamp: Date.now() }, input.sessionId);
+          const newName = PoiPoiIdentity.setName(rename[1].trim());
           const reply = {
             message: {
               id: `rename_${Date.now()}`,
