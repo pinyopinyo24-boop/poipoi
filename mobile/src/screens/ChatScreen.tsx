@@ -73,7 +73,8 @@ export default function ChatScreen() {
     const sync = async () => {
       if (!active) return;
       try {
-        await synchronizeMobilePoiPoiState('http://192.168.1.6:3000');
+        const savedPcUrl = await AsyncStorage.getItem('POIPOI_PC_URL');
+        if (savedPcUrl) await synchronizeMobilePoiPoiState(savedPcUrl);
         await MobileSelfEvolution.restoreEvolutionFromUnifiedState();
         await MobileSelfEvolution.applyPcEvolutionResults();
       } catch (error) {
