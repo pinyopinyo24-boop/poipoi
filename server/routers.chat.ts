@@ -118,13 +118,6 @@ export const chatRouter = router({
         const { PoiPoiIdentity } = await import("./core/PoiPoiIdentity");
 
           const originalMessage = input.message;
-          const rename = originalMessage.trim().match(
-            /^(?:あなたの)?名前(?:を|は)\s*[「『"]?(.{1,40}?)[」』"]?\s*(?:にして|に変更して|に変えて|です|だよ)[。！!]*$/
-          );
-
-          if (rename) {
-            PoiPoiIdentity.setName(rename[1].trim());
-          }
 
           const mobileHistory = (input.context?.poipoiConversation ?? [])
             .map(turn => `${turn.role === 'user' ? 'ユーザー' : 'PoiPoi'}: ${turn.content}`)
