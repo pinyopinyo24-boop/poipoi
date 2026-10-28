@@ -151,16 +151,6 @@ export const chatRouter = router({
           };
         }
 
-        // The local provider supplies the identity system prompt. Store the real
-        // user message, not a fabricated transcript embedded inside it.
-        // Mobile history is incorporated only when the session has no stored turns.
-        const priorTurns = await manager.getMessages(userId, input.sessionId);
-        const mobileTurns = (input.context?.poipoiConversation ?? [])
-          .filter(turn => turn.content.trim())
-          .slice(-12);
-        const mobilePrefix = priorTurns.length === 0 && mobileTurns.length
-          ? mobileTurns.map(turn => `${turn.role === 'user' ? 'ユーザー' : 'PoiPoi'}: ${turn.content}`).join('\n') + '\n\n'
-          : '';
         const response = await manager.processMessage(
           userId,
           input.sessionId,
