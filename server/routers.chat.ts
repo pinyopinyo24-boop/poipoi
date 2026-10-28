@@ -121,6 +121,20 @@ export const chatRouter = router({
         const rename = originalMessage.match(
           /^(?:(?:これからは|今後は|あなたの)[ \t]*)?(?:名前|呼び名)(?:を|は)[ \t]*[「『"]?(.{1,40}?)[」』"]?[ \t]*(?:にして|に変更して|に変えて|です|だよ|と呼んで|にしてください)[。！!]*$/u
         );
+        if (originalMessage === '名前は？' || originalMessage === 'あなたの名前は？') {
+          return {
+            message: {
+              id: 'identity_' + Date.now(),
+              userId,
+              role: 'assistant' as const,
+              content: '私の名前は「' + PoiPoiIdentity.getName() + '」です。',
+              timestamp: Date.now(),
+            },
+            session: existingSession,
+            relatedMemories: [],
+            reasoning: 'Identity lookup',
+          };
+        }
         if (rename) {
           const newName = PoiPoiIdentity.setName(rename[1].trim());
           return {
