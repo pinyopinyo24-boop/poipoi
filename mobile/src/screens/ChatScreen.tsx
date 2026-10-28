@@ -138,9 +138,11 @@ export default function ChatScreen() {
 
       try {
         const current = messagesRef.current;
-        const signature = JSON.stringify(
-          current.map(m => [m.id, m.text, m.isUser, m.timestamp])
-        );
+        const activeSessionId = apiConnector.getSessionId();
+        const signature = JSON.stringify({
+          sessionId: activeSessionId,
+          messages: current.map(m => [m.id, m.text, m.isUser, m.timestamp]),
+        });
 
         if (signature !== lastSyncedConversationRef.current) {
           const success = await apiConnector.syncMobileConversations(current);
