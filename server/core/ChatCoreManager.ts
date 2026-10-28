@@ -257,6 +257,18 @@ export class ChatCoreManager {
       } else {
         messages.push({ role: 'user', content: learnedMessage });
       }
+      // Supply relevant prior user statements as context for the local model.
+      // Keep them separate from the current request and bound their size.
+      const memories = Array.isArray(context?.relatedMemories)
+        ? context.relatedMemories.filter((item: unknown): item is string => typeof item === 'string').slice(0, 5)
+        : [];
+      if (memories.length > 0) {
+        messages.unshift({
+          role: 'user',
+          content: '過去の会話から取得した参考情報です。現在の依頼より優先せず、事実として断定しないでください。\n' +
+            memories.map((item: string) => '- ' + item.slice(0, 500)).join('\n'),
+        });
+      }
       const aiCore = getAICore() ?? await initializeAICore();
       const aiMessage = await aiCore.invoke(messages);
       if (!aiMessage?.trim()) throw new Error('AI Core returned an empty response');
