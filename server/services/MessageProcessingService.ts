@@ -113,7 +113,9 @@ export class MessageProcessingService {
    * 推論を実行
    */
   private async performReasoning(message: string, context: any): Promise<string> {
-    return `分析結果: ${message}に対する推論を実行しました。`;
+    // Actual reasoning is performed by the configured AI Core during response generation.
+    // Do not claim that a placeholder analysis was executed.
+    return '';
   }
 
   /**
