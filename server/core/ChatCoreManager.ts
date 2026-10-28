@@ -277,7 +277,9 @@ export class ChatCoreManager {
    */
   async getSession(userId: string, sessionId: string): Promise<any> {
     const session = await this.chatRepository.getSession(sessionId);
-    const messages = await this.chatRepository.getMessages(sessionId, 50);
+    const messages = session && session.userId === userId
+      ? await this.chatRepository.getMessages(sessionId, 50)
+      : [];
 
     return {
       ...(session || {
