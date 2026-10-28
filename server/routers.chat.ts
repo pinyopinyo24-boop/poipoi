@@ -229,7 +229,7 @@ export const chatRouter = router({
           messageCount: previous.length,
         });
         for (const message of conversation.messages) {
-          if (!message.id.trim() || known.has(message.id)) continue;
+          if (!message.id.trim() || !message.content.trim() || known.has(message.id)) continue;
           await repository.saveMessage({
             id: message.id,
             userId,
