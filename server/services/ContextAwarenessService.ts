@@ -24,14 +24,14 @@ export class ContextAwarenessService {
       relatedMemories = Array.isArray(found) ? found.filter((entry: unknown): entry is string => typeof entry === 'string' && entry.trim().length > 0).slice(0, 5) : [];
       if (relatedMemories.length === 0) {
         const history = await this.getConversationHistory(userId);
-        const words = message.toLowerCase().split(/[\s、。,.!?！？]+/).filter(word => word.length >= 2);
+        const words = message.toLowerCase().split(/[\s、。,.!?！？]+/).filter(word => word.length >= 2).slice(0, 20);
         relatedMemories = history.filter(entry => entry !== message && words.some(word => entry.toLowerCase().includes(word))).slice(-5);
       }
     } catch (error) {
       console.warn('[PoiPoi] Related memory search unavailable:', error);
       try {
         const history = await this.getConversationHistory(userId);
-        const words = message.toLowerCase().split(/[\s、。,.!?！？]+/).filter(word => word.length >= 2);
+        const words = message.toLowerCase().split(/[\s、。,.!?！？]+/).filter(word => word.length >= 2).slice(0, 20);
         relatedMemories = history.filter(entry => entry !== message && words.some(word => entry.toLowerCase().includes(word))).slice(-5);
       } catch (historyError) {
         console.warn('[PoiPoi] Conversation history unavailable:', historyError);
