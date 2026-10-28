@@ -145,7 +145,8 @@ export class ChatCoreManager {
     const responseContent = await this.generateResponse(
       userMessage,
       processedResult,
-      context
+      context,
+      sessionId
     );
 
     // 5. 陟｢諛・ｽｭ譁石鍋ｹ昴・縺晉ｹ晢ｽｼ郢ｧ・ｸ郢ｧ蜑・ｽｽ諛医・
@@ -207,7 +208,8 @@ export class ChatCoreManager {
   private async generateResponse(
     userMessage: string,
     processedResult: any,
-    context: any
+    context: any,
+    sessionId: string
   ): Promise<string> {
     try {
       // LLM API郢ｧ雋樔ｻ也ｸｺ・ｳ陷・ｽｺ邵ｺ繝ｻ
@@ -220,15 +222,21 @@ export class ChatCoreManager {
         process.cwd(),
         userMessage
       );
+      // Include recent real turns so follow-up questions and corrections retain context.
+      const previous = await this.chatRepository.getMessages(sessionId, 24);
+      const messages = previous
+        .filter((m) => m.role === 'user' || m.role === 'assistant')
+        .slice(-24)
+        .map((m) => ({ role: m.role, content: m.content }));
+      if (messages.length && messages[messages.length - 1].role === 'user') {
+        messages[messages.length - 1].content = learnedMessage;
+      } else {
+        messages.push({ role: 'user', content: learnedMessage });
+      }
       const aiCore = getAICore() ?? await initializeAICore();
-      const aiMessage = await aiCore.invoke([
-        {
-          role: "user",
-          content: learnedMessage
-        }
-      ]);
-
-      return aiMessage || "LLM応答なし";
+      const aiMessage = await aiCore.invoke(messages);
+      if (!aiMessage?.trim()) throw new Error('AI Core returned an empty response');
+      return aiMessage;
     } catch (error) {
       console.error("[ChatCoreManager][LLM ERROR]", error);
       
@@ -245,13 +253,8 @@ export class ChatCoreManager {
         );
       }
 
-      // 隰暦ｽｨ髫ｲ謔ｶ窶ｲ陟｢繝ｻ・ｦ竏壺・陜｣・ｴ陷ｷ繝ｻ
-      if (processedResult.requiresReasoning) {
-        return processedResult.reasoning;
-      }
-
-      // 鬨ｾ螢ｼ・ｸ・ｸ邵ｺ・ｮ陟｢諛・ｽｭ繝ｻ
-      return this.formatStandardResponse(userMessage, processedResult, context);
+      // Do not disguise model failures as canned, unrelated answers.
+      throw new Error('AI Core response failed; check the configured model and Ollama connection');
     }
   }
 
