@@ -246,16 +246,7 @@ export class ChatCoreManager {
       
       // 郢晁ｼ斐°郢晢ｽｼ郢晢ｽｫ郢晁・繝｣郢ｧ・ｯ: 陟墓瑳謫らｸｺ・ｮ陟｢諛・ｽｭ逧ｮ蜃ｽ隰後・
       // 髯ｬ・ｽ鬨ｾ・ｰ隶鯉ｽｭ鬮｢・｢鬨ｾ・｣邵ｺ・ｮ髮会ｽｪ陜荳翫・陜｣・ｴ陷ｷ繝ｻ
-      if (processedResult.isManufacturingRelated) {
-        const manufacturingAnalysis =
-          await this.manufacturingManager.analyzeProduction(
-            processedResult.manufacturingData || {}
-          );
-        return this.formatManufacturingResponse(
-          userMessage,
-          manufacturingAnalysis
-        );
-      }
+
 
       // Do not disguise model failures as canned, unrelated answers.
       throw new Error('AI Core response failed; check the configured model and Ollama connection');
