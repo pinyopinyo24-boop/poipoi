@@ -230,7 +230,7 @@ export class MobileAPIConnector {
     } catch (error) {
       const id = sessionId || this.sessionId;
       if (id) {
-        const offlineData = await LocalCacheService.getChatHistory(id) as ChatMessage[] | null;
+        const offlineData = await LocalCacheService.getChatHistory(id).catch(() => null) as ChatMessage[] | null;
         if (offlineData) return { success: true, data: offlineData };
       }
       return this.handleError(error, 'Failed to get chat history');
