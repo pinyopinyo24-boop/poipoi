@@ -164,7 +164,7 @@ export const chatRouter = router({
         const response = await manager.processMessage(
           userId,
           input.sessionId,
-          mobilePrefix + originalMessage
+          originalMessage
         );
 
         return {
