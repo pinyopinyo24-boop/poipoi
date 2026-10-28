@@ -194,15 +194,10 @@ export class ChatCoreManager {
     }
 
     // 8. 郢ｧ・ｻ郢昴・縺咏ｹ晢ｽｧ郢晢ｽｳ隲繝ｻ・ｰ・ｱ郢ｧ雋槫徐陟輔・
-    const sessionData = await this.chatRepository.getSession(sessionId);
-    const session = sessionData || {
-      id: sessionId,
-      userId,
-      title: 'Chat Session',
-      createdAt: Date.now(),
-      updatedAt: Date.now(),
-      messageCount: 1,
-    };
+    const session = await this.chatRepository.getSession(sessionId);
+    if (!session || session.userId !== userId) {
+      throw new Error('Chat session disappeared while processing message');
+    }
 
     return {
       message: assistantMsg,
