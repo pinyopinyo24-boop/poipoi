@@ -213,7 +213,11 @@ export class ChatCoreManager {
   ): Promise<string> {
     try {
       // LLM API郢ｧ雋樔ｻ也ｸｺ・ｳ陷・ｽｺ邵ｺ繝ｻ
-      if (processedResult.isManufacturingRelated) {
+      // A manufacturing topic alone is not a request to run a production analysis.
+      // Route ordinary questions about costs, processes and quality through the LLM.
+      if (processedResult.isManufacturingRelated &&
+          /(?:生産分析を実行|製造分析を実行|工程分析を実行)/.test(userMessage) &&
+          typeof this.manufacturingManager?.analyzeProduction === 'function') {
         const manufacturingAnalysis = await this.manufacturingManager.analyzeProduction(processedResult.manufacturingData || {});
         return this.formatManufacturingResponse(userMessage, manufacturingAnalysis);
       }
