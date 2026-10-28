@@ -75,11 +75,13 @@ export class LocalAIProvider extends BaseAIProvider {
         data = JSON.parse(last);
       }
 
+      const content = data.message?.content || data.choices?.[0]?.message?.content || '';
+      if (!content.trim()) throw new Error('Local AI returned an empty response');
       return {
         id: requestId,
         provider: 'local',
         model,
-        content: data.message?.content || data.choices?.[0]?.message?.content || '',
+        content,
         usage: {
           promptTokens: data.usage?.prompt_tokens || 0,
           completionTokens: data.usage?.completion_tokens || 0,
