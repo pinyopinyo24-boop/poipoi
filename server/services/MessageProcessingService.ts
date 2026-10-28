@@ -125,6 +125,7 @@ export class MessageProcessingService {
     if (reasoning) {
       return reasoning;
     }
-    return `ご質問ありがとうございます。${message}についてお答えします。`;
+    // The LLM, not this classifier, generates user-visible answers.
+    return '';
   }
 }
