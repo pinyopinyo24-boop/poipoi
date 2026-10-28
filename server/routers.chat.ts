@@ -119,6 +119,27 @@ export const chatRouter = router({
 
           const originalMessage = input.message;
 
+// POIPOI_NAME_CHANGE_V2
+const renameMatch = originalMessage.trim().match(
+  /^(?:これからは|今後は|あなたの)?(?:名前は|名前を|名前|呼び名は|呼び名を)\s*[「『"]?(.{1,40}?)[」』"]?\s*(?:にして|に変更して|に変えて|です|だよ|と呼んで|にしてください)[。！!]*$/
+);
+
+if (renameMatch) {
+  const newName = PoiPoiIdentity.setName(renameMatch[1].trim());
+  return {
+    message: {
+      id: `rename_${Date.now()}`,
+      userId: input.userId,
+      role: "assistant" as const,
+      content: `名前を「${newName}」に変更しました。`,
+      timestamp: Date.now(),
+    },
+    session: { id: input.sessionId, userId: input.userId },
+    relatedMemories: [],
+    reasoning: "Name updated",
+  };
+}
+
           const mobileHistory = (input.context?.poipoiConversation ?? [])
             .map(turn => `${turn.role === 'user' ? 'ユーザー' : 'PoiPoi'}: ${turn.content}`)
             .join('\n');
