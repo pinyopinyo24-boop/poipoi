@@ -229,10 +229,12 @@ export class ChatCoreManager {
         return this.formatManufacturingResponse(userMessage, manufacturingAnalysis);
       }
 
-      const learnedMessage = await enrichPromptWithLearning(
-        process.cwd(),
-        userMessage
-      );
+      let learnedMessage = userMessage;
+      try {
+        learnedMessage = await enrichPromptWithLearning(process.cwd(), userMessage);
+      } catch (error) {
+        console.warn('[PoiPoi] Learning context unavailable:', error);
+      }
       // Include recent real turns so follow-up questions and corrections retain context.
       const previous = await this.chatRepository.getMessages(sessionId, 24);
       const messages = previous
