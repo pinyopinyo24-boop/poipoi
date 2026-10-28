@@ -74,13 +74,16 @@ export class ContextAwarenessService {
     const { getSharedChatRepository } = await import('../repositories/ChatRepository');
     const repository = getSharedChatRepository();
     const sessions = (await repository.getUserSessions(userId)).slice(0, 5);
-    const result: string[] = [];
+    const result: Array<{ content: string; timestamp: number }> = [];
     for (const session of sessions) {
       for (const message of await repository.getMessages(session.id, 20)) {
-        if (message.userId === userId) result.push(message.content);
+        if (message.userId === userId && message.content.trim()) {
+          result.push({ content: message.content, timestamp: message.timestamp });
+        }
       }
     }
-    return result.slice(-50);
+    return result.sort((a, b) => a.timestamp - b.timestamp)
+      .slice(-50).map(entry => entry.content);
   }
 
   /**
