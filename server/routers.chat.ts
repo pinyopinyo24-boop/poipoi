@@ -117,26 +117,41 @@ export const chatRouter = router({
 
         const { PoiPoiIdentity } = await import("./core/PoiPoiIdentity");
 
-          const originalMessage = input.message;
-          const rename = originalMessage.trim().match(
-            /^(?:あなたの)?名前(?:を|は)\s*[「『"]?(.{1,40}?)[」』"]?\s*(?:にして|に変更して|に変えて|です|だよ)[。！!]*$/
-          );
+        const originalMessage = input.message.trim();
+        const rename = originalMessage.match(
+          /^(?:(?:これからは|今後は|あなたの)\\s*)?(?:名前|呼び名)(?:を|は)\\s*[「『"]?(.{1,40}?)[」』"]?\\s*(?:にして|に変更して|に変えて|です|だよ|と呼んで|にしてください)[。！!]*$/u
+        );
+        if (rename) {
+          const newName = PoiPoiIdentity.setName(rename[1].trim());
+          return {
+            message: {
+              id: `rename_${Date.now()}`,
+              userId,
+              role: 'assistant' as const,
+              content: `名前を「${newName}」に変更しました。`,
+              timestamp: Date.now(),
+            },
+            session: existingSession,
+            relatedMemories: [],
+            reasoning: 'Identity updated',
+          };
+        }
 
-          if (rename) {
-            PoiPoiIdentity.setName(rename[1].trim());
-          }
-
-          const mobileHistory = (input.context?.poipoiConversation ?? [])
-            .map(turn => `${turn.role === 'user' ? 'ユーザー' : 'PoiPoi'}: ${turn.content}`)
-            .join('\n');
-          const mobileHistoryPrefix = mobileHistory
-            ? `スマホ側の直前の会話:\n${mobileHistory}\n\n現在の質問:\n`
-            : '';
-          const response = await manager.processMessage(
-            userId,
-            input.sessionId,
-            `${PoiPoiIdentity.getSystemPrompt()}\n\n${mobileHistoryPrefix}${originalMessage}`
-          );
+        // The local provider supplies the identity system prompt. Store the real
+        // user message, not a fabricated transcript embedded inside it.
+        // Mobile history is incorporated only when the session has no stored turns.
+        const priorTurns = await manager.getMessages(userId, input.sessionId);
+        const mobileTurns = (input.context?.poipoiConversation ?? [])
+          .filter(turn => turn.content.trim())
+          .slice(-12);
+        const mobilePrefix = priorTurns.length === 0 && mobileTurns.length
+          ? mobileTurns.map(turn => `${turn.role === 'user' ? 'ユーザー' : 'PoiPoi'}: ${turn.content}`).join('\n') + '\n\n'
+          : '';
+        const response = await manager.processMessage(
+          userId,
+          input.sessionId,
+          mobilePrefix + originalMessage
+        );
 
         return {
           message: response.message,
