@@ -151,7 +151,7 @@ export default function ChatScreen() {
           lastSyncedConversationRef.current = signature;
         }
 
-        const sessionId = await AsyncStorage.getItem('chatSessionId');
+        const sessionId = apiConnector.getSessionId();
         if (!sessionId || cancelled) return;
 
         const result = await apiConnector.getChatHistory(sessionId);
