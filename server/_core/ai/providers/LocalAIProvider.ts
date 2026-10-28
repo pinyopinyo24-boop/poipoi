@@ -50,11 +50,9 @@ export class LocalAIProvider extends BaseAIProvider {
               },
               ...messages,
             ],
-            temperature: options?.temperature ?? 0.7,
-            num_predict: options?.maxTokens ?? 2048,
+            options: { temperature: options?.temperature ?? 0.5, num_predict: options?.maxTokens ?? 2048, top_p: options?.topP ?? 0.9 },
             ...(messages.some(m => m.role === "system" && /JSON形式|JSON format|valid JSON|JSON object/i.test(m.content)) ? { format: "json" } : {}),
             stream: false,
-            top_p: options?.topP ?? 0.9,
           }),
         }
       );
