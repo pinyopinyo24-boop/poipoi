@@ -71,9 +71,8 @@ export const chatRouter = router({
     )
     .mutation(async ({ ctx, input }) => {
       try {
-        const codeRequest =
-          /(?:\u5B9F\u88C5|\u8FFD\u52A0|\u4FEE\u6B63|\u5909\u66F4|\u4F5C\u6210|\u958B\u767A|\u76F4\u3057\u3066|\u6539\u4FEE|\u6A5F\u80FD)/.test(input.message) &&
-          /(?:\u30D5\u30A1\u30A4\u30EB|\u30B3\u30FC\u30C9|\u6A5F\u80FD|\u5B9A\u6570|\u95A2\u6570|\u5B9F\u88C5)/.test(input.message);
+        // Only explicit agent commands may modify code; ordinary feature questions stay in chat.
+        const codeRequest = /^(?:PoiPoiコードエージェント|コードエージェント)[：:\s]+(?:実装|修正|変更|作成|追加|改修)/u.test(input.message.trim());
         if (codeRequest) {
           if (ctx.user?.role !== 'admin') {
             throw new TRPCError({
