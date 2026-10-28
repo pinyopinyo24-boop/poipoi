@@ -57,6 +57,7 @@ export class ChatRepository {
   async saveMessage(message: ChatMessage, sessionId?: string): Promise<void> {
     const key = sessionId || message.userId;
     const sessionMessages = this.messages.get(key) || [];
+    if (sessionMessages.some(existing => existing.id === message.id)) return;
     sessionMessages.push(message);
     this.messages.set(key, sessionMessages);
     const session = this.sessions.get(key);
