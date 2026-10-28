@@ -312,6 +312,11 @@ export const chatRouter = router({
     )
     .mutation(async ({ ctx, input }) => {
       const userId = String(ctx.user?.id ?? "mobile");
+      const repository = (await import('./repositories/ChatRepository')).getSharedChatRepository();
+      const session = await repository.getSession(input.sessionId);
+      if (!session || session.userId !== userId) {
+        throw new TRPCError({ code: 'NOT_FOUND', message: 'チャットセッションが見つかりません' });
+      }
       const messages = await getChatCoreManager().getMessages(userId, input.sessionId);
       const message = messages.find((item) => item.id === input.messageId);
 
