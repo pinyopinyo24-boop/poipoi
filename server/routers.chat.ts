@@ -119,7 +119,7 @@ export const chatRouter = router({
 
         const originalMessage = input.message.trim();
         const rename = originalMessage.match(
-          /^(?:(?:これからは|今後は|あなたの)\\s*)?(?:名前|呼び名)(?:を|は)\\s*[「『"]?(.{1,40}?)[」』"]?\\s*(?:にして|に変更して|に変えて|です|だよ|と呼んで|にしてください)[。！!]*$/u
+          /^(?:(?:これからは|今後は|あなたの)[ \t]*)?(?:名前|呼び名)(?:を|は)[ \t]*[「『"]?(.{1,40}?)[」』"]?[ \t]*(?:にして|に変更して|に変えて|です|だよ|と呼んで|にしてください)[。！!]*$/u
         );
         if (rename) {
           const newName = PoiPoiIdentity.setName(rename[1].trim());
