@@ -123,7 +123,8 @@ export const chatRouter = router({
           /^(?:(?:これからは|今後は|あなたの)[ \t]*)?(?:名前|呼び名)(?:を|は)[ \t]*[「『"]?(.{1,40}?)[」』"]?[ \t]*(?:にして|に変更して|に変えて|です|だよ|と呼んで|にしてください)[。！!]*$/u
         );
         if (originalMessage === '名前は？' || originalMessage === 'あなたの名前は？') {
-          return {
+          await repository.saveMessage({ id: `identity_user_${Date.now()}`, userId, role: 'user', content: originalMessage, timestamp: Date.now() }, input.sessionId);
+          const reply = {
             message: {
               id: 'identity_' + Date.now(),
               userId,
@@ -135,6 +136,8 @@ export const chatRouter = router({
             relatedMemories: [],
             reasoning: 'Identity lookup',
           };
+          await repository.saveMessage(reply.message, input.sessionId);
+          return reply;
         }
         if (rename) {
           const newName = PoiPoiIdentity.setName(rename[1].trim());
