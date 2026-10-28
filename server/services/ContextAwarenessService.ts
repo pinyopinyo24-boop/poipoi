@@ -22,6 +22,11 @@ export class ContextAwarenessService {
     try {
       const found = await this.memoryManager.searchMemories(userId, message);
       relatedMemories = Array.isArray(found) ? found : [];
+      if (relatedMemories.length === 0) {
+        const history = await this.getConversationHistory(userId);
+        const words = message.toLowerCase().split(/[\s、。,.!?！？]+/).filter(word => word.length >= 2);
+        relatedMemories = history.filter(entry => entry !== message && words.some(word => entry.toLowerCase().includes(word))).slice(-5);
+      }
     } catch (error) {
       console.warn('[PoiPoi] Related memory search unavailable:', error);
     }
