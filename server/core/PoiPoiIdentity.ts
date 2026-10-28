@@ -14,10 +14,10 @@ export class PoiPoiIdentity {
       return {
         name: typeof data.name === "string" && data.name.trim()
           ? data.name.trim()
-          : "ポイ",
+          : "PoiPoi",
       };
     } catch {
-      return { name: "ポイ" };
+      return { name: "PoiPoi" };
     }
   }
 
@@ -42,7 +42,7 @@ export class PoiPoiIdentity {
   }
 
   static resetName(): string {
-    return this.setName("ポイ");
+    return this.setName("PoiPoi");
   }
 
   static getSystemPrompt(): string {
