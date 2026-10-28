@@ -103,20 +103,36 @@ export class LocalAIProvider extends BaseAIProvider {
 
   async getStatus(): Promise<AIProviderStatus> {
     let isConfigured = false;
+    let isAvailable = false;
+    let modelsAvailable = 0;
+    let errorMessage: string | undefined;
     try {
       const url = new URL(this.apiUrl);
       isConfigured = url.protocol === 'http:' || url.protocol === 'https:';
-    } catch {
-      isConfigured = false;
+      if (isConfigured) {
+        const response = await globalThis.fetch(`${this.apiUrl}/api/tags`, {
+          signal: AbortSignal.timeout(5000),
+        });
+        if (!response.ok) throw new Error(`Ollama status ${response.status}`);
+        const data = await response.json() as { models?: Array<{ name?: string }> };
+        const models = Array.isArray(data.models) ? data.models : [];
+        modelsAvailable = models.length;
+        isAvailable = models.some(model => model.name === 'qwen2.5-coder:7b');
+        if (!isAvailable) errorMessage = 'qwen2.5-coder:7b がインストールされていません';
+      } else {
+        errorMessage = 'ローカル推論サーバーのURL設定を確認してください';
+      }
+    } catch (error) {
+      errorMessage = error instanceof Error ? error.message : String(error);
     }
     return {
       provider: 'local',
-      isAvailable: false,
+      isAvailable,
       isConfigured,
-      connectionVerified: false,
+      connectionVerified: isAvailable,
       lastChecked: new Date(),
-      modelsAvailable: 0,
-      errorMessage: isConfigured ? 'URL設定済み。ローカル推論サーバーへの疎通は未確認です' : 'ローカル推論サーバーのURL設定を確認してください',
+      modelsAvailable,
+      errorMessage,
     };
   }
 
