@@ -1091,7 +1091,9 @@ export default function ChatScreen() {
         }
       }
 
-      if (!response?.success) {
+      // POIPOI_CHAT_SOURCE_V1
+const usedLocalAI = !response?.success;
+      if (usedLocalAI) {
         response = {
           success: true,
           data: {
@@ -1150,7 +1152,7 @@ export default function ChatScreen() {
           : response.data.message?.content || "応答がありません";
         const assistantMessage: Message = {
           id: (Date.now() + 1).toString(),
-          text: extractAIMessage(messageContent),
+          text: `${usedLocalAI ? "[スマホAI]" : "[PC AI]"} ${extractAIMessage(messageContent)}`,
           isUser: false,
           timestamp: Date.now()
         };
