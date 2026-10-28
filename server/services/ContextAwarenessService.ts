@@ -77,7 +77,7 @@ export class ContextAwarenessService {
     const result: Array<{ content: string; timestamp: number }> = [];
     for (const session of sessions) {
       for (const message of await repository.getMessages(session.id, 20)) {
-        if (message.userId === userId && message.content.trim()) {
+        if (message.userId === userId && message.role === 'user' && message.content.trim()) {
           result.push({ content: message.content, timestamp: message.timestamp });
         }
       }
