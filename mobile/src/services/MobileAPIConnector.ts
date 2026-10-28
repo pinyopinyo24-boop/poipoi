@@ -128,7 +128,7 @@ export class MobileAPIConnector {
         return true;
       }
       
-      return false;
+      return !!sessionId;
     } catch (error) {
       console.error('Failed to initialize API connector:', error);
       return false;
