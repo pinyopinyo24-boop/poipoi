@@ -26,6 +26,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { MobileSelfEvolution } from '../services/MobileSelfEvolution';
 import { AndroidAIModelManager } from '../services/AndroidAIModelManager';
 import { AndroidLocalAI } from '../services/AndroidLocalAI';
+import { replyWithLocalIdentity } from '../services/PoiPoiLocalIdentity';
 import { Keyboard, 
   View,
   Text,
@@ -1137,7 +1138,7 @@ export default function ChatScreen() {
   const match = args.match(/^(\d+)\s+([\s\S]+)$/);
   if (!match) return Promise.reject(new Error('使い方: /進化実行 1 内容'));
   return MobileSelfEvolution.executeFeature(Number(match[1]) - 1, match[2]);
-})() : input.startsWith('/進化状態 ') ? MobileSelfEvolution.getFeatureStatus(Number(input.slice('/進化状態 '.length).trim()) - 1) : input.startsWith('/進化無効 ') ? MobileSelfEvolution.deactivateFeatureExclusive(Number(input.slice('/進化無効 '.length).trim()) - 1) : input.trim() === '/進化登録一覧' ? MobileSelfEvolution.getActiveFeatures() : input.startsWith('/進化登録 ') ? MobileSelfEvolution.activateFeatureExclusive(Number(input.slice('/進化登録 '.length).trim()) - 1) : input.startsWith('/進化設計確認 ') ? MobileSelfEvolution.getFeatureDesign(Number(input.slice('/進化設計確認 '.length).trim()) - 1) : input.startsWith('/進化設計 ') ? MobileSelfEvolution.generateFeatureDesignExclusive(Number(input.slice('/進化設計 '.length).trim()) - 1) : input.startsWith('/進化承認 ') ? MobileSelfEvolution.approveAndSaveExclusive(Number(input.slice(6).trim()) - 1).then(f => '承認しました: ' + f.request) : input.trim() === '/進化一覧' ? MobileSelfEvolution.getProposals().then(list => list.length ? list.map((f,i) => (i+1) + '. [' + f.status + '] ' + f.request).join('\n') : '提案はありません') : input.startsWith('/進化 ') ? MobileSelfEvolution.proposeExclusive(input.slice(4)).then(r => r.proposal) : AndroidLocalAI.sendMessage(input)),
+})() : input.startsWith('/進化状態 ') ? MobileSelfEvolution.getFeatureStatus(Number(input.slice('/進化状態 '.length).trim()) - 1) : input.startsWith('/進化無効 ') ? MobileSelfEvolution.deactivateFeatureExclusive(Number(input.slice('/進化無効 '.length).trim()) - 1) : input.trim() === '/進化登録一覧' ? MobileSelfEvolution.getActiveFeatures() : input.startsWith('/進化登録 ') ? MobileSelfEvolution.activateFeatureExclusive(Number(input.slice('/進化登録 '.length).trim()) - 1) : input.startsWith('/進化設計確認 ') ? MobileSelfEvolution.getFeatureDesign(Number(input.slice('/進化設計確認 '.length).trim()) - 1) : input.startsWith('/進化設計 ') ? MobileSelfEvolution.generateFeatureDesignExclusive(Number(input.slice('/進化設計 '.length).trim()) - 1) : input.startsWith('/進化承認 ') ? MobileSelfEvolution.approveAndSaveExclusive(Number(input.slice(6).trim()) - 1).then(f => '承認しました: ' + f.request) : input.trim() === '/進化一覧' ? MobileSelfEvolution.getProposals().then(list => list.length ? list.map((f,i) => (i+1) + '. [' + f.status + '] ' + f.request).join('\n') : '提案はありません') : input.startsWith('/進化 ') ? MobileSelfEvolution.proposeExclusive(input.slice(4)).then(r => r.proposal) : replyWithLocalIdentity(input, () => AndroidLocalAI.sendMessage(input))),
           },
         };
       }
@@ -1166,7 +1167,7 @@ export default function ChatScreen() {
     } catch (error) {
       if (apiConnector && isConnected) {
         try {
-          const localAnswer = await AndroidLocalAI.sendMessage(input);
+          const localAnswer = await replyWithLocalIdentity(input, () => AndroidLocalAI.sendMessage(input));
           setIsConnected(false);
           setMessages(prev => [...prev, {
             id: (Date.now() + 1).toString(),
