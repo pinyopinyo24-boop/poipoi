@@ -93,7 +93,7 @@ export class MobileAPIConnector {
     this.baseURL = baseURL;
     this.apiClient = axios.create({
       baseURL,
-      timeout: 30000,
+      timeout: 190000,
       headers: {
         'Content-Type': 'application/json',
         'User-Agent': 'PoiPoi-Mobile/1.0',
