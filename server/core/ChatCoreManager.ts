@@ -293,6 +293,8 @@ export class ChatCoreManager {
     };
   }
   async getMessages(userId: string, sessionId: string): Promise<any[]> {
+    const session = await this.chatRepository.getSession(sessionId);
+    if (!session || session.userId !== userId) return [];
     return this.chatRepository.getMessages(sessionId);
   }
 
