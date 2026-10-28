@@ -73,7 +73,7 @@ export class ContextAwarenessService {
   private async getConversationHistory(userId: string): Promise<string[]> {
     const { getSharedChatRepository } = await import('../repositories/ChatRepository');
     const repository = getSharedChatRepository();
-    const sessions = (await repository.getUserSessions(userId)).slice(0, 5);
+    const sessions = (await repository.getUserSessions(userId)).slice(0, 10);
     const result: Array<{ content: string; timestamp: number }> = [];
     for (const session of sessions) {
       for (const message of await repository.getMessages(session.id, 20)) {
