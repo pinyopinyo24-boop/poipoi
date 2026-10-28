@@ -91,6 +91,10 @@ export class ChatRepository {
    * セッションを保存
    */
   async saveSession(session: ChatSession): Promise<void> {
+    const existing = this.sessions.get(session.id);
+    if (existing && existing.userId !== session.userId) {
+      throw new Error('Chat session owner mismatch');
+    }
     this.sessions.set(session.id, session);
     this.persist();
   }
