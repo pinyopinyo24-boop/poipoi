@@ -17,7 +17,8 @@ export class ContextAwarenessService {
    * コンテキストを取得
    */
   async getContext(userId: string, message: string): Promise<Context> {
-    // メモリから関連情報を取得
+    // Reuse the same history snapshot for memory search and context.
+    const history = await this.getConversationHistory(userId).catch(() => [] as string[]);
     let relatedMemories: string[] = [];
     try {
       const found = await this.memoryManager.searchMemories(userId, message);
