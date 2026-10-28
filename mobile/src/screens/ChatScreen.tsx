@@ -220,6 +220,8 @@ export default function ChatScreen() {
       return;
     }
     await apiConnector.selectChatSession(id);
+    // A new history selection must not inherit the previous session's sync signature.
+    lastSyncedConversationRef.current = '';
     setSessionId(id);
     setMessages(result.data.map(message => ({
       id: message.id,
