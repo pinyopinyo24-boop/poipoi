@@ -112,6 +112,7 @@ export class ChatRepository {
    */
   async deleteSession(sessionId: string): Promise<void> {
     this.sessions.delete(sessionId);
+    this.messages.delete(sessionId);
     this.persist();
   }
 
@@ -120,8 +121,8 @@ export class ChatRepository {
    */
   async getUserStatistics(userId: string): Promise<any> {
     const userSessions = await this.getUserSessions(userId);
-    const totalMessages = Array.from(this.messages.values()).reduce(
-      (sum, msgs) => sum + msgs.length,
+    const totalMessages = userSessions.reduce(
+      (sum, session) => sum + (this.messages.get(session.id)?.length ?? 0),
       0
     );
 
@@ -140,6 +141,7 @@ export class ChatRepository {
    */
   async clearAllMessages(): Promise<void> {
     this.messages.clear();
+    this.persist();
   }
 
   /**
@@ -147,6 +149,7 @@ export class ChatRepository {
    */
   async clearAllSessions(): Promise<void> {
     this.sessions.clear();
+    this.persist();
   }
 }
 
