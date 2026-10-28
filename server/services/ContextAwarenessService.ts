@@ -21,7 +21,7 @@ export class ContextAwarenessService {
     let relatedMemories: string[] = [];
     try {
       const found = await this.memoryManager.searchMemories(userId, message);
-      relatedMemories = Array.isArray(found) ? found : [];
+      relatedMemories = Array.isArray(found) ? found.filter((entry: unknown): entry is string => typeof entry === 'string' && entry.trim().length > 0).slice(0, 5) : [];
       if (relatedMemories.length === 0) {
         const history = await this.getConversationHistory(userId);
         const words = message.toLowerCase().split(/[\s、。,.!?！？]+/).filter(word => word.length >= 2);
