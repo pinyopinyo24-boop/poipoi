@@ -219,6 +219,7 @@ export const chatRouter = router({
         if (existing && existing.userId !== userId) continue;
         const previous = await repository.getMessages(conversation.id, 100000);
         const known = new Set(previous.map(m => m.id));
+        const existingTurns = previous.map(m => ({ role: m.role, content: m.content, timestamp: m.timestamp }));
         await repository.saveSession({
           id: conversation.id,
           userId,
@@ -229,14 +230,17 @@ export const chatRouter = router({
         });
         for (const message of conversation.messages) {
           if (!message.id.trim() || !message.content.trim() || known.has(message.id)) continue;
+          const timestamp = Date.parse(message.timestamp) || Date.now();
+          if (existingTurns.some(turn => turn.role === message.role && turn.content === message.content && Math.abs(turn.timestamp - timestamp) < 120000)) continue;
           await repository.saveMessage({
             id: message.id,
             userId,
             role: message.role,
             content: message.content,
-            timestamp: Date.parse(message.timestamp) || Date.now(),
+            timestamp,
           }, conversation.id);
           known.add(message.id);
+          existingTurns.push({ role: message.role, content: message.content, timestamp });
         }
       }
       return { success: true };
