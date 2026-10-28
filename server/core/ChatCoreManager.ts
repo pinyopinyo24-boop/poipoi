@@ -140,10 +140,21 @@ export class ChatCoreManager {
       }
     }
 
-    const processedResult = await this.messageProcessingService.processMessage(
-      userMessage,
-      context
-    );
+    let processedResult;
+    try {
+      processedResult = await this.messageProcessingService.processMessage(userMessage, context);
+    } catch (error) {
+      console.warn('[PoiPoi] Message classification unavailable:', error);
+      processedResult = {
+        response: '',
+        managersUsed: [],
+        reasoning: '',
+        confidence: 0,
+        requiresReasoning: false,
+        isManufacturingRelated: false,
+        manufacturingData: null,
+      };
+    }
 
     // 4. 陟｢諛・ｽｭ逧ｮ蜃ｽ隰後・
     const responseContent = await this.generateResponse(
