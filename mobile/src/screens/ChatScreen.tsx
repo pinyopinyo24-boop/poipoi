@@ -1,4 +1,5 @@
 import * as React from 'react';
+import { useState, useEffect } from 'react';
 import { synchronizeMobilePoiPoiState } from '../services/PoiPoiUnifiedStateSync';
 import * as Linking from 'expo-linking';
 function extractAIMessage(value: unknown): string {
@@ -1141,7 +1142,7 @@ export default function ChatScreen() {
         };
       }
 
-      if (response.success && response.data) {
+      if (response?.success && response?.data) {
         // Extract message content from ChatMessage object
         // response.data structure: { message: ChatMessage, session: ChatSession, ... }
         const messageContent = typeof response.data.message === 'string'
@@ -1160,7 +1161,7 @@ export default function ChatScreen() {
           setSessionId(response.data.session?.id || apiConnector?.getSessionId() || undefined);
         }
       } else {
-        throw new Error(response.error || "API エラー");
+        throw new Error(response?.error || "API エラー");
       }
     } catch (error) {
       if (apiConnector && isConnected) {
