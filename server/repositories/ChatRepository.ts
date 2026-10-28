@@ -30,9 +30,13 @@ export class ChatRepository {
   constructor() {
     
     if (fs.existsSync(this.storagePath)) {
-      const data = JSON.parse(fs.readFileSync(this.storagePath, "utf8"));
-      this.sessions = new Map(data.sessions || []);
-      this.messages = new Map(data.messages || []);
+      try {
+        const data = JSON.parse(fs.readFileSync(this.storagePath, "utf8"));
+        this.sessions = new Map(data.sessions || []);
+        this.messages = new Map(data.messages || []);
+      } catch (error) {
+        console.error("[PoiPoi] Unable to read saved chat history:", error);
+      }
     }
   }
 
