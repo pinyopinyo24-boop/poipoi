@@ -171,7 +171,11 @@ export class ChatCoreManager {
 
     // 6. 郢晢ｽ｡郢晢ｽ｢郢晢ｽｪ邵ｺ・ｫ闔ｨ螟奇ｽｩ・ｱ郢ｧ蜑・ｽｿ譎擾ｽｭ繝ｻ
     if (this.memoryManager && typeof (this.memoryManager as any).saveConversation === 'function') {
-      await (this.memoryManager as any).saveConversation(userId, [userMsg, assistantMsg]);
+      try {
+        await (this.memoryManager as any).saveConversation(userId, [userMsg, assistantMsg]);
+      } catch (error) {
+        console.warn('[PoiPoi] Conversation memory save failed:', error);
+      }
     }
 
     // 7. 騾ｶ・｣隴滂ｽｻ郢晢ｽｭ郢ｧ・ｰ
