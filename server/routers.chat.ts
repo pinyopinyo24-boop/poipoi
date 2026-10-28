@@ -230,7 +230,8 @@ export const chatRouter = router({
         });
         for (const message of conversation.messages) {
           if (!message.id.trim() || !message.content.trim() || known.has(message.id)) continue;
-          const timestamp = Math.min(Date.parse(message.timestamp) || Date.now(), Date.now());
+          const parsedTime = Date.parse(message.timestamp);
+          const timestamp = Number.isFinite(parsedTime) ? Math.min(parsedTime, Date.now()) : Date.now();
           if (existingTurns.some(turn => turn.role === message.role && turn.content === message.content && Math.abs(turn.timestamp - timestamp) < 120000)) {
             known.add(message.id);
             continue;
