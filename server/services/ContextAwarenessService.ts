@@ -59,7 +59,16 @@ export class ContextAwarenessService {
    * 会話履歴を取得
    */
   private async getConversationHistory(userId: string): Promise<string[]> {
-    return [];
+    const { getSharedChatRepository } = await import('../repositories/ChatRepository');
+    const repository = getSharedChatRepository();
+    const sessions = (await repository.getUserSessions(userId)).slice(0, 5);
+    const result: string[] = [];
+    for (const session of sessions) {
+      for (const message of await repository.getMessages(session.id, 20)) {
+        if (message.userId === userId) result.push(message.content);
+      }
+    }
+    return result.slice(-50);
   }
 
   /**
