@@ -179,15 +179,19 @@ export class ChatCoreManager {
     }
 
     // 7. 騾ｶ・｣隴滂ｽｻ郢晢ｽｭ郢ｧ・ｰ
-    await this.auditManager.log({
-      action: 'chat_message_processed',
-      userId,
-      sessionId,
-      details: {
-        messageLength: userMessage.length,
-        managersUsed: processedResult.managersUsed,
-      },
-    });
+    try {
+      await this.auditManager.log({
+        action: 'chat_message_processed',
+        userId,
+        sessionId,
+        details: {
+          messageLength: userMessage.length,
+          managersUsed: processedResult.managersUsed,
+        },
+      });
+    } catch (error) {
+      console.warn('[PoiPoi] Chat audit log failed:', error);
+    }
 
     // 8. 郢ｧ・ｻ郢昴・縺咏ｹ晢ｽｧ郢晢ｽｳ隲繝ｻ・ｰ・ｱ郢ｧ雋槫徐陟輔・
     const sessionData = await this.chatRepository.getSession(sessionId);
