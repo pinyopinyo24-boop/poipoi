@@ -225,7 +225,7 @@ export const chatRouter = router({
           userId,
           title: conversation.title,
           createdAt: existing?.createdAt ?? Date.now(),
-          updatedAt: Math.max(existing?.updatedAt ?? 0, Date.parse(conversation.updatedAt) || Date.now()),
+          updatedAt: Math.max(existing?.updatedAt ?? 0, Math.min(Date.parse(conversation.updatedAt) || Date.now(), Date.now())),
           messageCount: previous.length,
         });
         for (const message of conversation.messages) {
