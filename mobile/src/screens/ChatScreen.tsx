@@ -134,7 +134,7 @@ export default function ChatScreen() {
     let retryTimer: ReturnType<typeof setTimeout> | null = null;
 
     const sync = async () => {
-      if (cancelled) return;
+      if (cancelled || isLoading) return;
 
       try {
         const current = messagesRef.current;
