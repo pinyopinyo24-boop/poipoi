@@ -509,7 +509,7 @@ export class MobileAPIConnector {
   }>): Promise<boolean> {
     try {
       const history = messages
-        .filter(m => m.id !== '0' && typeof m.text === 'string')
+        .filter(m => m.id !== '0' && typeof m.text === 'string' && m.text.trim() && Number.isFinite(m.timestamp))
         .slice(-200);
 
       if (history.length === 0) return true;
