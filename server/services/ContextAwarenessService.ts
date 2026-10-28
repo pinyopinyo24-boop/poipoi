@@ -42,7 +42,10 @@ export class ContextAwarenessService {
     const userPreferences = await this.getUserPreferences(userId);
 
     // 会話履歴を取得
-    const conversationHistory = await this.getConversationHistory(userId).catch(() => [] as string[]);
+    const conversationHistory = await this.getConversationHistory(userId).catch(error => {
+      console.warn('[PoiPoi] Chat context history unavailable:', error);
+      return [] as string[];
+    });
 
     // 関連データを取得
     const relevantData = await this.getRelevantData(message);
