@@ -223,7 +223,7 @@ export const chatRouter = router({
         await repository.saveSession({
           id: conversation.id,
           userId,
-          title: conversation.title,
+          title: existing?.title ?? conversation.title,
           createdAt: existing?.createdAt ?? Date.now(),
           updatedAt: Math.max(existing?.updatedAt ?? 0, Math.min(Date.parse(conversation.updatedAt) || Date.now(), Date.now())),
           messageCount: previous.length,
