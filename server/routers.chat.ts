@@ -110,8 +110,9 @@ export const chatRouter = router({
 
         const userId = String(ctx.user?.id ?? "mobile");
         const manager = getChatCoreManager();
-        const existingSession = await manager.getSession(userId, input.sessionId);
-        if (existingSession.userId !== userId) {
+        const repository = (await import("./repositories/ChatRepository")).getSharedChatRepository();
+        const existingSession = await repository.getSession(input.sessionId);
+        if (!existingSession || existingSession.userId !== userId) {
           throw new TRPCError({ code: 'NOT_FOUND', message: 'チャットセッションが見つかりません' });
         }
 
