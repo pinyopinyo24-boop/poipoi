@@ -231,7 +231,10 @@ export const chatRouter = router({
         for (const message of conversation.messages) {
           if (!message.id.trim() || !message.content.trim() || known.has(message.id)) continue;
           const timestamp = Math.min(Date.parse(message.timestamp) || Date.now(), Date.now());
-          if (existingTurns.some(turn => turn.role === message.role && turn.content === message.content && Math.abs(turn.timestamp - timestamp) < 120000)) continue;
+          if (existingTurns.some(turn => turn.role === message.role && turn.content === message.content && Math.abs(turn.timestamp - timestamp) < 120000)) {
+            known.add(message.id);
+            continue;
+          }
           await repository.saveMessage({
             id: message.id,
             userId,
