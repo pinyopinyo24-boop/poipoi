@@ -199,16 +199,16 @@ export const chatRouter = router({
   syncHistory: publicProcedure
     .input(z.object({
       conversations: z.array(z.object({
-        id: z.string(),
-        title: z.string(),
-        updatedAt: z.string(),
+        id: z.string().trim().min(1).max(200),
+        title: z.string().max(200),
+        updatedAt: z.string().max(50),
         messages: z.array(z.object({
-          id: z.string(),
+          id: z.string().trim().min(1).max(200),
           role: z.enum(["user", "assistant"]),
-          content: z.string(),
-          timestamp: z.string(),
-        })),
-      })),
+          content: z.string().max(100000),
+          timestamp: z.string().max(50),
+        })).max(200),
+      })).max(10),
     }))
     .mutation(async ({ ctx, input }) => {
       const userId = String(ctx.user?.id ?? "mobile");
