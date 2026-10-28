@@ -169,7 +169,15 @@ export default function ChatScreen() {
 
         setMessages(prev => {
           const known = new Set(prev.map(m => m.id));
-          const additions = incoming.filter(m => !known.has(m.id));
+          const additions = incoming.filter(m => {
+            if (known.has(m.id)) return false;
+            // PC replies have different IDs from the optimistic mobile turns.
+            return !prev.some(existing =>
+              existing.isUser === m.isUser &&
+              existing.text === m.text &&
+              Math.abs(existing.timestamp - m.timestamp) < 120000
+            );
+          });
           return additions.length
             ? [...prev, ...additions].sort((a, b) => a.timestamp - b.timestamp)
             : prev;
