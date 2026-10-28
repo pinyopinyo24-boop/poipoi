@@ -379,11 +379,15 @@ export class ChatCoreManager {
 
     await this.chatRepository.deleteSession(sessionId);
 
-    await this.auditManager.log({
+    try {
+      await this.auditManager.log({
       action: 'chat_session_deleted',
       userId,
       details: { sessionId },
-    });
+      });
+    } catch (error) {
+      console.warn('[PoiPoi] Session deletion audit failed:', error);
+    }
 
     return { success: true };
   }
