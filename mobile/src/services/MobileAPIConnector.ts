@@ -161,13 +161,18 @@ export class MobileAPIConnector {
       const data = this.getTrpcData(response.data);
       if (!data?.message) throw new Error('チャット応答がありません');
       const assistantText = typeof data.message === 'string' ? data.message : data.message.content;
-      const prior = await LocalCacheService.getChatHistory(sessionId) as ChatMessage[] | null;
-      const now = Date.now();
-      await LocalCacheService.saveChatHistory(sessionId, [
-        ...(prior || []),
-        { id: `mobile-user-${now}`, role: 'user', content: request.message, timestamp: now },
-        { id: data.message.id || `mobile-assistant-${now}`, role: 'assistant', content: assistantText, timestamp: data.message.timestamp || now },
-      ].slice(-200));
+      // A cache write failure must not turn a successful PC AI answer into a local fallback.
+      try {
+        const prior = await LocalCacheService.getChatHistory(sessionId) as ChatMessage[] | null;
+        const now = Date.now();
+        await LocalCacheService.saveChatHistory(sessionId, [
+          ...(prior || []),
+          { id: `mobile-user-${now}`, role: 'user', content: request.message, timestamp: now },
+          { id: typeof data.message === 'string' ? `mobile-assistant-${now}` : data.message.id || `mobile-assistant-${now}`, role: 'assistant', content: assistantText, timestamp: typeof data.message === 'string' ? now : data.message.timestamp || now },
+        ].slice(-200));
+      } catch (cacheError) {
+        console.warn('[PoiPoi] Chat cache unavailable:', cacheError);
+      }
 
       return {
         success: true,
@@ -505,7 +510,7 @@ export class MobileAPIConnector {
 
       const sessionId = this.sessionId || await this.createChatSession();
 
-      await this.apiClient.post('/api/trpc/chat.syncConversations', {
+      await this.apiClient.post('/api/trpc/chat.syncHistory', {
         json: {
           conversations: [{
             id: sessionId,
