@@ -347,6 +347,10 @@ export class ChatCoreManager {
    * 郢ｧ・ｻ郢昴・縺咏ｹ晢ｽｧ郢晢ｽｳ郢ｧ雋樒ｎ鬮ｯ・､
    */
   async deleteSession(userId: string, sessionId: string): Promise<{ success: boolean }> {
+    const storedSession = await this.chatRepository.getSession(sessionId);
+    if (!storedSession || storedSession.userId !== userId) {
+      throw new Error('Chat session not found');
+    }
     const approval = await this.approvalManager.requestApproval({
       action: 'delete_chat_session',
       userId,
