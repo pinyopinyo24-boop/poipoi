@@ -331,6 +331,8 @@ export class ChatCoreManager {
     sessionId: string,
     limit: number = 50
   ): Promise<ChatMessage[]> {
+    const session = await this.chatRepository.getSession(sessionId);
+    if (!session || session.userId !== userId) return [];
     return await this.chatRepository.getMessages(sessionId, limit);
   }
 
