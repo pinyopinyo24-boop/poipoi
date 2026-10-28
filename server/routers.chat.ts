@@ -216,7 +216,10 @@ export const chatRouter = router({
       for (const conversation of input.conversations) {
         if (!conversation.id.trim() || conversation.messages.length === 0) continue;
         const existing = await repository.getSession(conversation.id);
-        if (existing && existing.userId !== userId) continue;
+        if (existing && existing.userId !== userId) {
+          console.warn('[PoiPoi] Ignored mobile history sync for a session owned by another user');
+          continue;
+        }
         const previous = existing ? await repository.getMessages(conversation.id, 100000) : [];
         const known = new Set(previous.map(m => m.id));
         const existingTurns = previous.map(m => ({ role: m.role, content: m.content, timestamp: m.timestamp }));
