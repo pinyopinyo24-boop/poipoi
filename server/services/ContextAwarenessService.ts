@@ -83,7 +83,7 @@ export class ContextAwarenessService {
       }
     }
     return result.sort((a, b) => a.timestamp - b.timestamp)
-      .slice(-50).map(entry => entry.content);
+      .slice(-50).map(entry => entry.content.slice(0, 2000));
   }
 
   /**
