@@ -179,6 +179,11 @@ export const chatRouter = router({
     )
     .query(async ({ ctx, input }) => {
       const userId = String(ctx.user?.id ?? "mobile");
+      const repository = (await import("./repositories/ChatRepository")).getSharedChatRepository();
+      const stored = await repository.getSession(input.sessionId);
+      if (!stored || stored.userId !== userId) {
+        throw new TRPCError({ code: 'NOT_FOUND', message: 'チャットセッションが見つかりません' });
+      }
       const session = await getChatCoreManager().getSession(userId, input.sessionId);
       if (session.userId !== userId) {
         throw new TRPCError({ code: 'NOT_FOUND', message: 'チャットセッションが見つかりません' });
