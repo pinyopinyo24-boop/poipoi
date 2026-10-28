@@ -209,18 +209,31 @@ export class MobileAPIConnector {
       const savedData = await LocalCacheService.getChatHistory(id)
         .catch(() => null) as ChatMessage[] | null;
 
-      const data = serverData.length > 0
-        ? serverData
-        : Array.isArray(savedData) ? savedData : [];
-
-      this.setCache(cacheKey, data);
-
-      if (serverData.length > 0) {
-        try {
-          await LocalCacheService.saveChatHistory(id, data);
-        } catch (cacheError) {
-          console.warn('[PoiPoi] Unable to cache PC chat history:', cacheError);
+      // Preserve offline turns when the PC has only part of the conversation.
+      // Compare by both ID and nearby matching content because the PC assigns
+      // different IDs to messages it has already processed.
+      const data: ChatMessage[] = [...serverData];
+      const knownIds = new Set(data.map(m => m.id));
+      if (Array.isArray(savedData)) {
+        for (const local of savedData) {
+          if (!local || !local.id || !local.content || knownIds.has(local.id)) continue;
+          const alreadyOnPC = serverData.some(remote =>
+            remote.role === local.role &&
+            remote.content === local.content &&
+            Math.abs(new Date(remote.timestamp).getTime() - new Date(local.timestamp).getTime()) < 120000
+          );
+          if (!alreadyOnPC) {
+            data.push(local);
+            knownIds.add(local.id);
+          }
         }
+      }
+      data.sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime());
+      this.setCache(cacheKey, data);
+      try {
+        await LocalCacheService.saveChatHistory(id, data.slice(-200));
+      } catch (cacheError) {
+        console.warn('[PoiPoi] Unable to cache merged chat history:', cacheError);
       }
 
       return {
