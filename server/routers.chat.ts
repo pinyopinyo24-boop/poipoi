@@ -215,7 +215,7 @@ export const chatRouter = router({
       const userId = String(ctx.user?.id ?? "mobile");
       const repository = (await import("./repositories/ChatRepository")).getSharedChatRepository();
       for (const conversation of input.conversations) {
-        if (!conversation.id.trim()) continue;
+        if (!conversation.id.trim() || conversation.messages.length === 0) continue;
         const existing = await repository.getSession(conversation.id);
         if (existing && existing.userId !== userId) continue;
         const previous = await repository.getMessages(conversation.id, 100000);
