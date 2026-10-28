@@ -162,6 +162,7 @@ export class ChatRepository {
    */
   async clearAllSessions(): Promise<void> {
     this.sessions.clear();
+    this.messages.clear();
     this.persist();
   }
 }
