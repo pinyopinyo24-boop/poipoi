@@ -61,6 +61,9 @@ export class ChatRepository {
     sessionMessages.push(message);
     this.messages.set(key, sessionMessages);
     const session = this.sessions.get(key);
+    if (session && session.userId !== message.userId) {
+      throw new Error('Chat session owner mismatch');
+    }
     if (session) {
       session.updatedAt = message.timestamp;
       session.messageCount = sessionMessages.length;
