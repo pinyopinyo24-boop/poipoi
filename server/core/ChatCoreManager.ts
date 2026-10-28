@@ -259,8 +259,9 @@ export class ChatCoreManager {
       }
       // Supply relevant prior user statements as context for the local model.
       // Keep them separate from the current request and bound their size.
-      const memories = Array.isArray(context?.relatedMemories)
-        ? context.relatedMemories.filter((item: unknown): item is string => typeof item === 'string').slice(0, 5)
+      const memories: string[] = Array.isArray(context?.relatedMemories)
+        ? [...new Set<string>(context.relatedMemories.filter((item: unknown): item is string =>
+            typeof item === 'string' && item.trim().length > 0))].slice(0, 5)
         : [];
       if (memories.length > 0) {
         messages.unshift({
