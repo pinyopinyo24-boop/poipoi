@@ -82,7 +82,8 @@ export class ChatRepository {
   ): Promise<ChatMessage[]> {
     const messages = this.messages.get(sessionId) || [];
     const safeLimit = Number.isFinite(limit) ? Math.max(0, Math.floor(limit)) : 50;
-    return messages.slice(-safeLimit || messages.length).map((msg) => ({
+    if (safeLimit === 0) return [];
+    return messages.slice(-safeLimit).map((msg) => ({
       ...msg,
       content: msg.content || '',
     }));
