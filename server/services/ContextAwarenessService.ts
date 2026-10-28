@@ -18,10 +18,13 @@ export class ContextAwarenessService {
    */
   async getContext(userId: string, message: string): Promise<Context> {
     // メモリから関連情報を取得
-    const relatedMemories = await this.memoryManager.searchMemories(
-      userId,
-      message
-    );
+    let relatedMemories: string[] = [];
+    try {
+      const found = await this.memoryManager.searchMemories(userId, message);
+      relatedMemories = Array.isArray(found) ? found : [];
+    } catch (error) {
+      console.warn('[PoiPoi] Related memory search unavailable:', error);
+    }
 
     // ユーザー設定を取得
     const userPreferences = await this.getUserPreferences(userId);
