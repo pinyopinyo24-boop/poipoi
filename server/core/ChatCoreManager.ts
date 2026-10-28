@@ -112,7 +112,7 @@ export class ChatCoreManager {
       userMessage
     );
     const history = await this.chatRepository.getMessages(sessionId, 25);
-    (context as any).messages = history.slice(0, -1);
+    (context as any).messages = history.filter(m => m.id !== userMsg.id);
 
     // 3. 郢晢ｽ｡郢昴・縺晉ｹ晢ｽｼ郢ｧ・ｸ陷・ｽｦ騾・・・ｼ蝓溯ｳ髫ｲ謔ｶ繝ｻ郢ｧ・ｨ郢晢ｽｼ郢ｧ・ｸ郢ｧ・ｧ郢晢ｽｳ郢晏沺・ｴ・ｻ騾包ｽｨ繝ｻ繝ｻ
     /* STEP8_FEEDBACK */
