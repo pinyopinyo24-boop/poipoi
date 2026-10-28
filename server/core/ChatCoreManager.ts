@@ -326,11 +326,15 @@ export class ChatCoreManager {
     await this.chatRepository.saveSession(session);
 
     // 騾ｶ・｣隴滂ｽｻ郢晢ｽｭ郢ｧ・ｰ
-    await this.auditManager.log({
+    try {
+      await this.auditManager.log({
       action: 'chat_session_created',
       userId,
       details: { sessionId: session.id, title },
-    });
+      });
+    } catch (error) {
+      console.warn('[PoiPoi] Session creation audit failed:', error);
+    }
 
     return session;
   }
