@@ -66,7 +66,7 @@ export class ChatRepository {
     sessionMessages.push(message);
     this.messages.set(key, sessionMessages);
     if (session) {
-      session.updatedAt = message.timestamp;
+      session.updatedAt = Math.max(session.updatedAt || 0, message.timestamp);
       session.messageCount = sessionMessages.length;
       this.sessions.set(key, session);
     }
