@@ -162,6 +162,7 @@ export class MobileAPIConnector {
       const data = this.getTrpcData(response.data);
       if (!data?.message) throw new Error('チャット応答がありません');
       const assistantText = typeof data.message === 'string' ? data.message : data.message.content;
+      if (!assistantText || !assistantText.trim()) throw new Error('AIの回答が空です');
       // A cache write failure must not turn a successful PC AI answer into a local fallback.
       try {
         const prior = await LocalCacheService.getChatHistory(sessionId) as ChatMessage[] | null;
