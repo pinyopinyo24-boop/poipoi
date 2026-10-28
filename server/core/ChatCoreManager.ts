@@ -91,6 +91,10 @@ export class ChatCoreManager {
     sessionId: string,
     userMessage: string
   ): Promise<ChatResponse> {
+    const storedSession = await this.chatRepository.getSession(sessionId);
+    if (!storedSession || storedSession.userId !== userId) {
+      throw new Error('Chat session not found');
+    }
     // 1. 郢晢ｽｦ郢晢ｽｼ郢ｧ・ｶ郢晢ｽｼ郢晢ｽ｡郢昴・縺晉ｹ晢ｽｼ郢ｧ・ｸ郢ｧ蜑・ｽｿ譎擾ｽｭ繝ｻ
     const userMsg: ChatMessage = {
       id: `msg_${Date.now()}_${Math.random().toString(36).substr(2, 9)}_user`,
