@@ -512,7 +512,7 @@ export class MobileAPIConnector {
 
       const sessionId = this.sessionId || await this.createChatSession();
 
-      await this.apiClient.post('/api/trpc/chat.syncHistory', {
+      const syncResponse = await this.apiClient.post('/api/trpc/chat.syncHistory', {
         json: {
           conversations: [{
             id: sessionId,
@@ -527,6 +527,7 @@ export class MobileAPIConnector {
           }],
         },
       });
+      if (this.getTrpcData<{ success: boolean }>(syncResponse.data)?.success !== true) return false;
 
       return true;
     } catch (error) {
