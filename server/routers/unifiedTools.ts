@@ -21,23 +21,26 @@ async function resolveUpload(file: string, extension: string): Promise<string> {
 }
 
 const presentationManager = new PresentationAIManager(getPresentationRepository());
+const presentationOwners = new Map<string, string>();
 
 export const unifiedToolsRouter = router({
   presentation: protectedProcedure.input(z.object({
     title: z.string().min(1).max(255),
     description: z.string().max(1000).default(''),
     slides: z.array(z.object({ title: z.string().min(1).max(255), content: z.string().max(10000) })).min(1).max(30),
-  })).mutation(({ input }) => {
+  })).mutation(({ input, ctx }) => {
     const manager = presentationManager;
     const created = manager.createPresentation(input.title, input.description);
     for (const slide of input.slides) {
       manager.addSlide(created.id, { title: slide.title, content: slide.content, layout: 'content', elements: [] });
     }
+    presentationOwners.set(created.id, String(ctx.user.id));
     return { id: created.id, slideCount: input.slides.length, generated: true };
   }),
   exportPresentation: protectedProcedure
     .input(z.object({ id: z.string().min(1) }))
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
+      if (presentationOwners.get(input.id) !== String(ctx.user.id)) throw new Error('Presentation not found');
       const bytes = await presentationManager.exportPowerPoint(input.id);
       if (!bytes) throw new Error('Presentation not found');
       return { format: 'pptx', base64: bytes.toString('base64') };
