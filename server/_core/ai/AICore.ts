@@ -76,7 +76,7 @@ export class AICore {
         this.providers.set('local', localProvider);
         this.connectionMonitor.registerProvider('Local', 'real', true);
       }
-      let primaryProvider = this.providers.get(this.config.primaryProvider);
+      let primaryProvider = this.providers.get('local');
       if (!primaryProvider && this.providers.size > 0) {
         console.warn(`[AICore] Primary provider '${this.config.primaryProvider}' not available, using first available`);
         primaryProvider = Array.from(this.providers.values())[0];
@@ -96,9 +96,7 @@ export class AICore {
         throw new Error('[AICore] Local provider unavailable');
       }
 
-      const fallbackProviders = Array.from(this.providers.values()).filter(
-        (provider) => provider.getProviderType() !== primaryProvider!.getProviderType(),
-      );
+      const fallbackProviders: IAIProvider[] = [];
       const resilientProvider = new ResilientAIProvider(primaryProvider, fallbackProviders);
       this.runtimeProvider = resilientProvider;
 
