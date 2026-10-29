@@ -264,6 +264,21 @@ export class SelfImprovementManager {
       ));
     }
 
+    // Favor candidates with demonstrated successful execution, not just simulation scores.
+    for (const candidate of candidates) {
+      const priorIds = previous.flatMap(cycle =>
+        cycle.candidates.filter(item =>
+          item.source === candidate.source && item.description === candidate.description
+        ).map(item => item.id)
+      );
+      const outcomes = executionHistory.filter(result => priorIds.includes(result.candidateId));
+      if (outcomes.length === 0) continue;
+      const successRate = outcomes.filter(result => result.status === 'success').length / outcomes.length;
+      candidate.estimatedImpact = Math.max(0, Math.min(100,
+        Math.round(candidate.estimatedImpact * (0.5 + successRate / 2))
+      ));
+    }
+
     // 影響度の高い順に並べ替え
     candidates.sort((a, b) => b.estimatedImpact - a.estimatedImpact);
 
