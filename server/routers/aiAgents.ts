@@ -7,7 +7,7 @@ import { router, publicProcedure, protectedProcedure } from '../_core/trpc';
 import { z } from 'zod';
 import { invokeLLM } from '../_core/llm';
 import { evaluateLocalCapabilities } from '../core/PoiPoiCapabilityEvaluation';
-import { getUserPoiPoiUnifiedState, syncUserPoiPoiUnifiedState } from '../core/PoiPoiUnifiedStateStore';
+import { searchUserPoiPoiMemories, syncUserPoiPoiUnifiedState } from '../core/PoiPoiUnifiedStateStore';
 import { getAICore, initializeAICore } from '../_core/ai/AICore';
 import { AgentType } from '../_core/ai/agents/BaseAgent';
 
@@ -23,8 +23,8 @@ export const aiAgentsRouter = router({
     .mutation(async ({ input, ctx }) => {
       const core = getAICore() ?? await initializeAICore();
       const userId = String(ctx.user.id);
-      const savedState = await getUserPoiPoiUnifiedState(userId);
-      const savedContext = savedState.records.filter(record => record.category === 'memory' || record.category === 'learning').slice(-8).map(record => record.value.slice(0, 350)).join('\n').slice(0, 3000);
+      const relevantMemories = await searchUserPoiPoiMemories(userId, input.request);
+      const savedContext = relevantMemories.map(record => record.value.slice(0, 350)).join('\n').slice(0, 3000);
       const response = await invokeLLM({
         messages: [
           { role: 'system', content: 'Return JSON only: {"steps":[{"agentType":"task","description":"step","input":{}}]}. Allowed agentType: design, implementation, review, task. Maximum five steps. Use review as the final step to verify the preceding output; do not claim work is complete without evidence.' },
