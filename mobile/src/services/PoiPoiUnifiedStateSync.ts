@@ -77,7 +77,7 @@ export function synchronizeMobilePoiPoiState(
           'Content-Type': 'application/json',
           ...headers,
         },
-        body: JSON.stringify(local),
+        body: JSON.stringify({ json: local }),
         signal: controller.signal,
       }
     );
@@ -164,7 +164,7 @@ export function synchronizeMobilePoiPoiState(
               'Content-Type': 'application/json',
               ...headers,
             },
-            body: JSON.stringify(merged),
+            body: JSON.stringify({ json: merged }),
             signal: confirmationController.signal,
           }
         );
