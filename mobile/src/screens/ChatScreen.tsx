@@ -1162,7 +1162,9 @@ export default function ChatScreen() {
           ? response.data.message
           : response.data.message?.content || "応答がありません";
         const assistantMessage: Message = {
-          id: (Date.now() + 1).toString(),
+          id: typeof response.data.message === 'object' && response.data.message?.id
+            ? response.data.message.id
+            : (Date.now() + 1).toString(),
           text: extractAIMessage(messageContent),
           isUser: false,
           timestamp: Date.now()
