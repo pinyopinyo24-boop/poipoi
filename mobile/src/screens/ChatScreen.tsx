@@ -645,6 +645,26 @@ export default function ChatScreen() {
 
   const pcConnectionBusyRef = React.useRef(false);
 
+  const rateAssistantAnswer = (message: Message) => {
+    if (!apiConnector || !isConnected || !sessionId) {
+      Alert.alert('学習評価', 'PC接続時に評価できます');
+      return;
+    }
+    const submit = async (accepted: boolean) => {
+      const result = await apiConnector.submitLearningFeedback({
+        sessionId,
+        messageId: message.id,
+        accepted,
+      });
+      Alert.alert('学習評価', result.success ? '評価を学習に反映しました' : (result.error || '送信できませんでした'));
+    };
+    Alert.alert('この回答を評価', '回答を長押しして学習に反映できます', [
+      { text: 'キャンセル', style: 'cancel' },
+      { text: '正しい', onPress: () => { void submit(true); } },
+      { text: '間違い', onPress: () => { void submit(false); } },
+    ]);
+  };
+
   const handleSend = async () => {
     const command = input.trim();
     // POIPOI_PC_EVOLUTION_INTEGRATION_V1
@@ -1249,14 +1269,18 @@ export default function ChatScreen() {
         data={messages}
         keyExtractor={item => item.id}
         renderItem={({ item }) => (
-          <View style={[styles.messageContainer, item.isUser && styles.userMessage]}>
+          <TouchableOpacity
+            activeOpacity={1}
+            disabled={item.isUser}
+            onLongPress={() => rateAssistantAnswer(item)}
+            style={[styles.messageContainer, item.isUser && styles.userMessage]}>
             <Text style={[styles.messageText, item.isUser && styles.userMessageText]}>
               {item.text}
             </Text>
             <Text style={styles.timestamp}>
               {new Date(item.timestamp).toLocaleTimeString()}
             </Text>
-          </View>
+          </TouchableOpacity>
         )}
         contentContainerStyle={styles.messagesList}
       />
