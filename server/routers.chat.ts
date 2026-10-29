@@ -444,6 +444,23 @@ export const chatRouter = router({
       }
       const { recordLearningFeedback } = await import('./core/LearningContextIntegration');
       await recordLearningFeedback(question.content, answer.content, input.accepted, input.correction);
+      if (!input.accepted && input.correction) {
+        const { syncUserPoiPoiUnifiedState } = await import('./core/PoiPoiUnifiedStateStore');
+        await syncUserPoiPoiUnifiedState(userId, {
+          version: 1,
+          records: [{
+            id: 'correction-' + input.messageId,
+            category: 'learning',
+            origin: 'pc',
+            updatedAt: Date.now(),
+            value: JSON.stringify({
+              question: question.content.slice(0, 1200),
+              correction: input.correction.slice(0, 2000),
+              priority: 'explicit_user_correction',
+            }),
+          }],
+        });
+      }
       return { success: true, learned: true };
     }),
 
