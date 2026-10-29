@@ -13,6 +13,41 @@ import { AgentType } from '../_core/ai/agents/BaseAgent';
  * AI Agents Router
  */
 export const aiAgentsRouter = router({
+  planAndExecute: protectedProcedure
+    .input(z.object({ request: z.string().min(1).max(4000) }))
+    .mutation(async ({ input }) => {
+      const core = getAICore();
+      if (!core) throw new Error('AI Core not initialized');
+      const response = await invokeLLM({
+        messages: [
+          { role: 'system', content: 'Return JSON only: {"steps":[{"agentType":"task","description":"step","input":{}}]}. Allowed agentType: design, implementation, review, task, coordinator. Maximum five steps.' },
+          { role: 'user', content: input.request },
+        ],
+        response_format: { type: 'json_object' },
+      });
+      const raw = response.choices[0]?.message?.content;
+      if (!raw) throw new Error('No plan returned');
+      const plan = z.object({
+        steps: z.array(z.object({
+          agentType: z.enum(['design', 'implementation', 'review', 'task', 'coordinator']),
+          description: z.string().min(1).max(2000),
+          input: z.record(z.string(), z.any()),
+        })).min(1).max(5),
+      }).parse(JSON.parse(raw));
+      const workflowId = 'planned-' + Date.now() + '-' + Math.random().toString(36).slice(2);
+      const result = await core.executeWorkflow(workflowId, plan.steps as any);
+      return {
+        workflowId,
+        plan: plan.steps,
+        status: result.status,
+        stepCount: result.steps.length,
+        executionTime: result.executionTime,
+        totalTokensUsed: result.totalTokensUsed,
+        aggregatedResults: result.aggregatedResults,
+        error: result.error,
+      };
+    }),
+
   /**
    * Initialize AI Core
    */
