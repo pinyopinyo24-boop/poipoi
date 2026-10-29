@@ -313,6 +313,19 @@ export const chatRouter = router({
       getChatCoreManager().getChatStatistics(String(ctx.user?.id ?? "mobile"))
     ),
 
+  // Deterministic offline retrieval benchmark; no model calls or training are triggered.
+  evaluateLearning: publicProcedure
+    .input(z.object({
+      examples: z.array(z.object({
+        question: z.string().min(1).max(1000),
+        expectedAnswer: z.string().min(1).max(3000),
+      })).min(1).max(100),
+    }))
+    .mutation(async ({ input }) => {
+      const { LearningContextIntegration } = await import('./core/LearningContextIntegration');
+      return new LearningContextIntegration(process.cwd()).evaluateKnowledge(input.examples);
+    }),
+
   // Shared feedback endpoint for desktop and Android chat clients.
   submitLearningFeedback: publicProcedure
     .input(z.object({
