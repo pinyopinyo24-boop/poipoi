@@ -1,5 +1,6 @@
 import { promises as fs } from 'node:fs';
 import path from 'node:path';
+import { createHash } from 'node:crypto';
 import {
   mergePoiPoiState,
   deserializePoiPoiState,
@@ -74,5 +75,48 @@ export function syncPoiPoiUnifiedState(
     () => undefined
   );
 
+  return operation;
+}
+const scopedQueues = new Map<string, Promise<unknown>>();
+
+function scopedFile(userId: string): string {
+  const hash = createHash('sha256').update(userId).digest('hex');
+  return path.resolve(process.cwd(), 'data', 'unified-users', hash + '.json');
+}
+
+async function readScoped(file: string): Promise<PoiPoiUnifiedState> {
+  try {
+    return deserializePoiPoiState(await fs.readFile(file, 'utf8'));
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return emptyState();
+    throw error;
+  }
+}
+
+export async function getUserPoiPoiUnifiedState(userId: string): Promise<PoiPoiUnifiedState> {
+  const file = scopedFile(userId);
+  await (scopedQueues.get(file) ?? Promise.resolve());
+  return readScoped(file);
+}
+
+export function syncUserPoiPoiUnifiedState(userId: string, incoming: PoiPoiUnifiedState): Promise<PoiPoiUnifiedState> {
+  const file = scopedFile(userId);
+  const previous = scopedQueues.get(file) ?? Promise.resolve();
+  const operation = previous.then(async () => {
+    const merged = mergePoiPoiState(await readScoped(file), incoming);
+    if (merged.records.length > 10000) throw new Error('PoiPoi state exceeds sync limit');
+    await fs.mkdir(path.dirname(file), { recursive: true });
+    const temporary = file + '.' + process.pid + '.' + Date.now() + '.tmp';
+    try {
+      await fs.writeFile(temporary, serializePoiPoiState(merged), 'utf8');
+      await fs.rename(temporary, file);
+    } finally {
+      await fs.rm(temporary, { force: true }).catch(() => {});
+    }
+    return merged;
+  });
+  const settled = operation.then(() => undefined, () => undefined);
+  scopedQueues.set(file, settled);
+  void settled.then(() => { if (scopedQueues.get(file) === settled) scopedQueues.delete(file); });
   return operation;
 }
