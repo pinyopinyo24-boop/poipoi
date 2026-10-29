@@ -115,27 +115,27 @@ export class ChatCoreManager {
     (context as any).messages = history.filter(m => m.id !== userMsg.id);
 
     // 3. 郢晢ｽ｡郢昴・縺晉ｹ晢ｽｼ郢ｧ・ｸ陷・ｽｦ騾・・・ｼ蝓溯ｳ髫ｲ謔ｶ繝ｻ郢ｧ・ｨ郢晢ｽｼ郢ｧ・ｸ郢ｧ・ｧ郢晢ｽｳ郢晏沺・ｴ・ｻ騾包ｽｨ繝ｻ繝ｻ
-    /* STEP8_FEEDBACK */
-    const correction = userMessage.match(/正しくは[、,：:\s]*([\s\S]+)/u);
-    if (correction?.[1]?.trim()) {
-      const previousAssistant = [...(context?.messages ?? [])]
-        .reverse()
-        .find((m: any) => m.role === "assistant");
-
-      const previousUser = [...(context?.messages ?? [])]
-        .reverse()
-        .find((m: any) => m.role === "user");
-
+    /* Explicit corrections are linked to the immediately preceding assistant turn. */
+    const correctionMatch = userMessage.trim().match(
+      /^(?:正しくは|正解は|訂正[：:]?|違います[。\s]*正しくは|それは違います[。\s]*正しくは)[、,：:\s]*([\s\S]{1,3000})$/u
+    );
+    if (correctionMatch?.[1]?.trim()) {
+      const turns = (context?.messages ?? []) as ChatMessage[];
+      const lastAssistantIndex = turns.findLastIndex(m => m.role === 'assistant');
+      const previousAssistant = turns[lastAssistantIndex];
+      const previousUser = lastAssistantIndex > 0
+        ? [...turns.slice(0, lastAssistantIndex)].reverse().find(m => m.role === 'user')
+        : undefined;
       if (previousAssistant && previousUser) {
         try {
           await recordLearningFeedback(
             previousUser.content,
             previousAssistant.content,
             false,
-            correction[1].trim()
+            correctionMatch[1].trim()
           );
         } catch (error) {
-          console.warn("[PoiPoi Learning] Feedback skipped:", error);
+          console.warn('[PoiPoi Learning] Feedback skipped:', error);
         }
       }
     }
