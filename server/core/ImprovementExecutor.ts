@@ -153,10 +153,37 @@ export class ImprovementExecutor {
     candidates: ImprovementCandidate[]
   ): Promise<ExecutionBatchSummary> {
     const results: ExecutionResult[] = [];
+    let learningCycleId: string | undefined;
+    try {
+      learningCycleId = (await this.learningEngine.startLearningCycle(userId)).id;
+    } catch (error) {
+      console.warn('[PoiPoi] Improvement learning cycle unavailable:', error);
+    }
 
     for (const candidate of candidates) {
       const result = await this.execute(userId, candidate);
       results.push(result);
+      if (learningCycleId) {
+        try {
+          await this.learningEngine.recordDataPoint(
+            userId, learningCycleId,
+            { source: 'improvement', candidateId: candidate.id, title: candidate.title },
+            { status: result.status, rolledBack: result.rolledBack },
+            result.status === 'success' ? 'success' : 'failure',
+            result.durationMs,
+            { priority: candidate.priority, estimatedImpact: candidate.estimatedImpact }
+          );
+        } catch (error) {
+          console.warn('[PoiPoi] Improvement learning data unavailable:', error);
+        }
+      }
+    }
+    if (learningCycleId) {
+      try {
+        await this.learningEngine.completeLearningCycle(userId, learningCycleId);
+      } catch (error) {
+        console.warn('[PoiPoi] Improvement learning completion unavailable:', error);
+      }
     }
 
     const summary: ExecutionBatchSummary = {
