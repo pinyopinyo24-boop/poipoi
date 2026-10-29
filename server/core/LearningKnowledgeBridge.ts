@@ -38,15 +38,16 @@ export class LearningKnowledgeBridge {
 
   async recall(query: string, limit = 5): Promise<Entry[]> {
     const data = await this.load();
-    const normalize = (v: string) => v.toLowerCase().replace(/[？?！!。、,\s]/g, "").trim();
-    const q = normalize(query);
+    const normalize = (v: string) => v.toLowerCase().normalize("NFKC").trim();
+    const compact = (v: string) => normalize(v).replace(/[\\s、。,.!?！？・]+/g, "");
+    const q = compact(query);
     if (!q) return [];
-    const words = q.split(/[\s、。,.!?！？]+/).filter(Boolean);
+    const words = normalize(query).split(/[\\s、。,.!?！？・]+/).filter(w => w.length >= 2);
     return data.filter(x => x.outcome === "success")
       .map((entry, index) => {
-        const task = normalize(entry.task);
+        const task = compact(entry.task);
         let score = task === q ? 100 : task.includes(q) ? 50 : 0;
-        for (const w of words) if (task.includes(w)) score += 10;
+        for (const w of words) if (task.includes(compact(w))) score += 10;
         if (score > 0 && entry.feedback?.trim()) score += 20;
         return { entry, score, index };
       })
