@@ -35,6 +35,13 @@ export const unifiedToolsRouter = router({
     }
     return { id: created.id, slideCount: input.slides.length, generated: true };
   }),
+  exportPresentation: protectedProcedure
+    .input(z.object({ id: z.string().min(1) }))
+    .mutation(async ({ input }) => {
+      const bytes = await presentationManager.exportPowerPoint(input.id);
+      if (!bytes) throw new Error('Presentation not found');
+      return { format: 'pptx', base64: bytes.toString('base64') };
+    }),
   excel: protectedProcedure.input(z.object({ file: z.string().min(1).max(500) }))
     .mutation(async ({ input }) => {
       const file = await resolveUpload(input.file, '.xlsx');
