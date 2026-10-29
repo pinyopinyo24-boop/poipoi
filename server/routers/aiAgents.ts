@@ -23,7 +23,32 @@ export const aiAgentsRouter = router({
           { role: 'system', content: 'Return JSON only: {"steps":[{"agentType":"task","description":"step","input":{}}]}. Allowed agentType: design, implementation, review, task, coordinator. Maximum five steps.' },
           { role: 'user', content: input.request },
         ],
-        response_format: { type: 'json_object' },
+        model: process.env.LOCAL_CODER_MODEL || 'qwen2.5-coder:7b',
+        temperature: 0.1,
+        response_format: {
+          type: 'json_schema',
+          json_schema: {
+            name: 'agent_workflow',
+            schema: {
+              type: 'object',
+              properties: {
+                steps: {
+                  type: 'array',
+                  items: {
+                    type: 'object',
+                    properties: {
+                      agentType: { type: 'string' },
+                      description: { type: 'string' },
+                      input: { type: 'object' },
+                    },
+                    required: ['agentType', 'description', 'input'],
+                  },
+                },
+              },
+              required: ['steps'],
+            },
+          },
+        },
       });
       const raw = response.choices[0]?.message?.content;
       if (!raw) throw new Error('No plan returned');
