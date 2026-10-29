@@ -178,6 +178,21 @@ export class PoipoiCodeAgent {
         // Never disclose protected or inaccessible paths.
       }
     }
+    if (!context.length) {
+      throw new Error("Specify existing source file paths to enable grounded code evolution");
+    }
+    const planResponse = await invokeLLM({
+      model: process.env.LOCAL_CODER_MODEL || "qwen2.5-coder:7b",
+      temperature: 0.1,
+      messages: [
+        { role: "system", content: "Plan a minimal, dependency-aware code change. Do not write code. Keep the plan concise." },
+        { role: "user", content: "Task:\n" + task + "\nAvailable files:\n" +
+          [...sourceHashes.keys()].join("\n") +
+          "\nExplain implementation steps, compatibility risks, and how to validate." },
+      ],
+    });
+    const plan = planResponse.choices?.[0]?.message?.content?.trim();
+    if (!plan) throw new Error("Unable to plan code evolution");
     const prompt = [
       "You are Poipoi's code implementation agent.",
       "Modify the existing TypeScript project according to the user's request.",
@@ -186,6 +201,8 @@ export class PoipoiCodeAgent {
       "First reason about dependencies and preserve all existing exports.",
       "Do not fabricate unknown existing file contents; return an empty changes array if necessary.",
       "Only modify files whose existing contents are supplied below.",
+      "Implementation plan (check against the actual source):",
+      plan.slice(0, 6000),
       "Existing project files:",
       context.join("\n\n") || "(none)",
       "Return JSON only.",
