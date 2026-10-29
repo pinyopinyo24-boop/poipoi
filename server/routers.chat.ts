@@ -151,7 +151,10 @@ export const chatRouter = router({
           await repository.saveMessage({ id: toolUserId, userId, role: 'user', content: command, timestamp }, input.sessionId);
           const message = {
             id: uuidv4(), userId, role: 'assistant' as const,
-            content: toolRequest?.[1] === 'PPT出力' ? 'PowerPointを生成しました。ファイル本体は出力APIから取得してください。' : JSON.stringify(result, null, 2).slice(0, 20000), timestamp: Date.now(),
+            content: toolRequest?.[1] === 'PPT出力'
+              ? JSON.stringify({ status: 'generated', format: 'pptx', note: 'Retrieve the file via unifiedTools.exportPresentation; binary data is not stored in chat.' })
+              : JSON.stringify(result, null, 2).slice(0, 20000),
+            timestamp: Date.now(),
           };
           await repository.saveMessage(message, input.sessionId);
           // Store a bounded, user-scoped tool outcome for subsequent AI reasoning.
