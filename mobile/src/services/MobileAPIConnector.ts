@@ -153,6 +153,15 @@ export class MobileAPIConnector {
   /**
    * チャットメッセージ送信
    */
+  async planAndExecute(request: string): Promise<APIResponse> {
+    try {
+      const response = await this.apiClient.post('/api/trpc/aiAgents.planAndExecute', { json: { request } });
+      return { success: true, data: this.getTrpcData(response.data) };
+    } catch (error) {
+      return this.handleError(error, 'AI workflow failed');
+    }
+  }
+
   async executeUnifiedTool(name: 'reason' | 'analyzeCost' | 'memory' | 'excel' | 'pdf' | 'presentation' | 'exportPresentation' | 'codePreview', input: Record<string, unknown>): Promise<APIResponse> {
     try {
       const response = await this.apiClient.post('/api/trpc/unifiedTools.' + name, { json: input });
