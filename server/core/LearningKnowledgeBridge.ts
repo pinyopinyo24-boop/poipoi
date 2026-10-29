@@ -27,7 +27,7 @@ export class LearningKnowledgeBridge {
   async learn(input: Omit<Entry, "used">): Promise<void> {
     const data = await this.load();
     const taskKey = (text: string) =>
-      text.normalize("NFKC").toLowerCase().replace(/[\\s、。,.!?！？・]+/g, "");
+      text.normalize("NFKC").toLowerCase().replace(/[\s、。,.!?！？・]+/g, "");
     const index = data.findIndex(x =>
       taskKey(x.task) === taskKey(input.task) && x.solution === input.solution
     );
