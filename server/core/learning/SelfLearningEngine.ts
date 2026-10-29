@@ -327,7 +327,7 @@ export class SelfLearningEngine {
       recommendations.push(`High failure rate (${Math.round(failureRate * 100)}% across ${cycle.dataPoints.length} operations) - review error patterns`);
     }
 
-    if (successRate > 0.8) {
+    if (successRate > 0.8 && cycle.dataPoints.length >= 5) {
       recommendations.push('Strong success pattern - continue current approach');
     }
 
