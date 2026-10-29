@@ -129,8 +129,10 @@ export class SelfImprovementManager {
     );
     const learningResult = await this.learningEngine.completeLearningCycle(userId, learningCycle.id);
 
-    // Step 3: 改善候補を生成
-    const candidates = this.generateCandidates(userId, diagnosticReport, learningResult);
+    // Step 3: 改善候補を生成（過去の実行結果も参照）
+    const { ImprovementExecutor } = await import('./ImprovementExecutor');
+    const executionHistory = ImprovementExecutor.getInstance().getExecutionHistory(userId, 200);
+    const candidates = this.generateCandidates(userId, diagnosticReport, learningResult, executionHistory);
 
     // Step 4: 安全シミュレーションでテスト
     const testResults = this.testCandidates(candidates, diagnosticReport);
