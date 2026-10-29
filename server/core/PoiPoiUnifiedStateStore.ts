@@ -40,7 +40,7 @@ async function readState(): Promise<PoiPoiUnifiedState> {
 async function writeState(state: PoiPoiUnifiedState): Promise<void> {
   await fs.mkdir(path.dirname(stateFile), { recursive: true });
 
-  const temporary = `${stateFile}.${process.pid}.tmp`;
+  const temporary = `${stateFile}.${process.pid}.${Date.now()}.${Math.random().toString(36).slice(2)}.tmp`;
 
   try {
     await fs.writeFile(
