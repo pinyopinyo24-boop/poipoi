@@ -45,7 +45,7 @@ export class AgentManager {
   private executionHistory: AgentExecutionResult[] = [];
   private activeWorkflows: Map<string, WorkflowResult> = new Map();
   private executionLogger = getExecutionLogger();
-  private mode: 'demo' | 'real' = 'demo';
+  private mode: 'demo' | 'real' = process.env.DEMO_MODE === 'true' ? 'demo' : 'real';
 
   constructor(config: AgentManagerConfig) {
     this.config = config;
