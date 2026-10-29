@@ -137,7 +137,11 @@ export class ImprovementExecutor {
 
     // Store the outcome before forwarding it to learning storage.
     this.executionHistory.push(result);
-    await this.saveResult(userId, candidate, result);
+    try {
+      await this.saveResult(userId, candidate, result);
+    } catch (storageError) {
+      console.warn('[PoiPoi] Improvement result persistence failed:', storageError);
+    }
     return result;
   }
 
