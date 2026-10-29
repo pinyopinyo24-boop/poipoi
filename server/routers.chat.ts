@@ -202,7 +202,12 @@ export const chatRouter = router({
           return { message, session, relatedMemories: [], reasoning: 'Unified tools execution' };
         }
 
-        const userId = String(ctx.user?.id ?? "mobile");
+        // Never use a shared anonymous identity for persisted conversations.
+        // The session owner is always derived from the authenticated context.
+        if (!ctx.user) {
+          throw new TRPCError({ code: 'UNAUTHORIZED', message: 'チャット履歴の利用にはログインが必要です' });
+        }
+        const userId = String(ctx.user.id);
         const manager = getChatCoreManager();
         const repository = (await import("./repositories/ChatRepository")).getSharedChatRepository();
         const existingSession = await repository.getSession(input.sessionId);
