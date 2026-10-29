@@ -71,7 +71,7 @@ export const chatRouter = router({
     )
     .mutation(async ({ ctx, input }) => {
       try {
-        // Only explicit agent commands may modify code; ordinary feature questions stay in chat.
+        // Code changes are always previewed first; chat cannot silently apply them.
         const codeRequest = /^(?:PoiPoiコードエージェント|コードエージェント)[：:\s]+(?:実装|修正|変更|作成|追加|改修)/u.test(input.message.trim());
         if (codeRequest) {
           if (ctx.user?.role !== 'admin') {
@@ -80,30 +80,20 @@ export const chatRouter = router({
               message: 'コード変更機能は管理者のみ利用できます',
             });
           }
-
-          const result = await PoipoiCodeAgent.getInstance().execute(
-            input.message
-          );
-
-          let message = "Code implementation failed.";
-
-          if (result.success) {
-            if (result.changes && result.changes.length > 0) {
-              message = result.changes
-                .map((change) => "Implementation complete: " + change.path)
-                .join("\\n");
-            } else {
-              message = "Code implementation completed.";
-            }
-          } else if (result.error) {
-            message = "Code implementation failed: " + result.error;
-          }
-
+          const changes = await PoipoiCodeAgent.getInstance().generate(input.message);
           return {
-            message,
+            message: {
+              id: 'code-preview-' + Date.now(),
+              userId: String(ctx.user.id),
+              role: 'assistant' as const,
+              content: changes.length
+                ? '変更案を生成しました。適用前に unifiedTools.codePreview と applyCodePreview の明示承認を使用してください。対象: ' + changes.map(change => change.path).join(', ')
+                : '変更案は生成されませんでした。既存ファイルのパスを指定してください。',
+              timestamp: Date.now(),
+            },
             session: null,
             relatedMemories: [],
-            reasoning: null,
+            reasoning: 'Code preview only; no files modified',
           };
         }
 
