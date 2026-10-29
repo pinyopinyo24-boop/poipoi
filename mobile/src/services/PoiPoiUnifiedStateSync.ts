@@ -51,8 +51,6 @@ export function updateMobilePoiPoiState(
       records: [record],
     });
     await saveLocal(merged);
-    // Commit locally only after the PC confirms all merged records.
-    await saveLocal(merged);
     return merged;
   });
 }
@@ -201,6 +199,7 @@ export function synchronizeMobilePoiPoiState(
       if (missing) throw new Error('PoiPoi state confirmation did not persist all records');
     }
 
+    await saveLocal(merged);
     return merged;
   });
 }
