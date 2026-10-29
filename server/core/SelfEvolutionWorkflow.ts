@@ -147,7 +147,7 @@ export class SelfEvolutionWorkflow {
     }
     const simulationResult = approvedSimulation ?? await this.runSimulation(userId);
     // simulation 縺ｮ workflowId 縺ｯ繝ｯ繝ｼ繧ｯ繝輔Ο繝ｼID縺ｨ縺ｯ蛻･縺ｫ謖√◆縺帙ｋ
-    const simulation: SimulationResult = { ...simulationResult, workflowId };
+    const simulation: SimulationResult = simulationResult;
 
     // Step 2: 謇ｿ隱肴ｸ医∩蛟呵｣懊・縺ｿ螳滄圀縺ｫ螳溯｡・
     const execution = await this.executor.executeBatch(
