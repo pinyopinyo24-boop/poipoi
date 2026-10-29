@@ -19,7 +19,7 @@ export const aiAgentsRouter = router({
       const core = getAICore() ?? await initializeAICore();
       const response = await invokeLLM({
         messages: [
-          { role: 'system', content: 'Return JSON only: {"steps":[{"agentType":"task","description":"step","input":{}}]}. Allowed agentType: design, implementation, review, task, coordinator. Maximum five steps.' },
+          { role: 'system', content: 'Return JSON only: {"steps":[{"agentType":"task","description":"step","input":{}}]}. Allowed agentType: design, implementation, review, task. Maximum five steps. Use review as the final step to verify the preceding output; do not claim work is complete without evidence.' },
           { role: 'user', content: input.request },
         ],
         model: process.env.LOCAL_CODER_MODEL || 'qwen2.5-coder:7b',
@@ -53,13 +53,18 @@ export const aiAgentsRouter = router({
       if (!raw) throw new Error('No plan returned');
       const plan = z.object({
         steps: z.array(z.object({
-          agentType: z.enum(['design', 'implementation', 'review', 'task', 'coordinator']),
+          agentType: z.enum(['design', 'implementation', 'review', 'task']),
           description: z.string().min(1).max(2000),
           input: z.record(z.string(), z.any()),
         })).min(1).max(5),
       }).parse(JSON.parse(raw));
       const workflowId = 'planned-' + Date.now() + '-' + Math.random().toString(36).slice(2);
-      const result = await core.executeWorkflow(workflowId, plan.steps as any);
+      const steps = plan.steps.map((step, index) => ({
+        ...step,
+        input: { ...step.input, originalRequest: input.request },
+        dependsOn: index > 0 ? [plan.steps[index - 1].agentType] : [],
+      }));
+      const result = await core.executeWorkflow(workflowId, steps);
       return {
         workflowId,
         plan: plan.steps,
