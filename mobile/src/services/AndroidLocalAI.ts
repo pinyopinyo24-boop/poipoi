@@ -136,7 +136,7 @@ export class AndroidLocalAI {
     let recalled = '';
     try {
       const state = await getMobilePoiPoiState();
-      const normalized = (s: string) => s.normalize('NFKC').toLowerCase().replace(/[\\s、。,.!?！？・]+/g, '');
+      const normalized = (s: string) => s.normalize('NFKC').toLowerCase().replace(/[\s、。,.!?！？・]+/g, '');
       const query = normalized(message);
       const relevant = state.records.filter(record => {
         if (record.category !== 'learning' && record.category !== 'memory') return false;
@@ -152,7 +152,7 @@ export class AndroidLocalAI {
         if (record.category === 'memory') return record.value.slice(0, 400);
         const item = JSON.parse(record.value);
         return `質問: ${String(item.task).slice(0, 250)} 回答: ${String(item.solution).slice(0, 500)}`;
-      }).join('\\n');
+      }).join('\n');
     } catch (error) {
       console.warn('[PoiPoi] Synced learning unavailable:', error);
     }
@@ -160,7 +160,7 @@ export class AndroidLocalAI {
     const messages: ChatTurn[] = [
       {
         role: 'system',
-        content: 'あなたはPoiPoi AIです。日本語で正確かつ簡潔に回答してください。' + (recalled ? '\\n過去に確認済みの学習・記憶:\\n' + recalled : ''),
+        content: 'あなたはPoiPoi AIです。日本語で正確かつ簡潔に回答してください。' + (recalled ? '\n過去に確認済みの学習・記憶:\n' + recalled : ''),
       },
       ...this.history.slice(-10),
       { role: 'user', content: message },
