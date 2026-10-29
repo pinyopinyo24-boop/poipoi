@@ -130,7 +130,7 @@ export class SelfImprovementManager {
     const learningResult = await this.learningEngine.completeLearningCycle(userId, learningCycle.id);
 
     // Step 3: 改善候補を生成
-    const candidates = this.generateCandidates(diagnosticReport, learningResult);
+    const candidates = this.generateCandidates(userId, diagnosticReport, learningResult);
 
     // Step 4: 安全シミュレーションでテスト
     const testResults = this.testCandidates(candidates, diagnosticReport);
@@ -161,6 +161,7 @@ export class SelfImprovementManager {
    * 診断レポート + 学習結果から改善候補を生成
    */
   private generateCandidates(
+    userId: string,
     report: DiagnosticReport,
     learningResult: LearningResult
   ): ImprovementCandidate[] {
