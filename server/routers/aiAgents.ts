@@ -16,8 +16,7 @@ export const aiAgentsRouter = router({
   planAndExecute: protectedProcedure
     .input(z.object({ request: z.string().min(1).max(4000) }))
     .mutation(async ({ input }) => {
-      const core = getAICore();
-      if (!core) throw new Error('AI Core not initialized');
+      const core = getAICore() ?? await initializeAICore();
       const response = await invokeLLM({
         messages: [
           { role: 'system', content: 'Return JSON only: {"steps":[{"agentType":"task","description":"step","input":{}}]}. Allowed agentType: design, implementation, review, task, coordinator. Maximum five steps.' },
