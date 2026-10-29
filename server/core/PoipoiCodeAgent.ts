@@ -238,7 +238,14 @@ export class PoipoiCodeAgent {
       throw new Error("LLM returned empty response");
     }
 
-    return this.extractJson(content).changes;
+    const generated = this.extractJson(content).changes;
+    const allowed = new Set(context.map(item => item.slice("Existing source: ".length).split("\n", 1)[0]));
+    for (const change of generated) {
+      if (!allowed.has(change.path.replace(/\\/g, "/"))) {
+        throw new Error("Generated change targets an unreviewed file: " + change.path);
+      }
+    }
+    return generated;
   }
 
   async applyAndTest(changes: CodeChange[]): Promise<CodeTaskResult> {
