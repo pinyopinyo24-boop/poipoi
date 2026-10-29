@@ -225,6 +225,9 @@ export class AgentManager {
             result.tokensUsed || 0
           );
 
+          if (!result.success || (result.output && typeof result.output === 'object' && result.output.simulated === true)) {
+            throw new Error('Agent step did not complete real work: ' + step.agentType);
+          }
           results.push(result);
           aggregatedResults[step.agentType] = result.output;
           totalTokensUsed += result.tokensUsed || 0;
