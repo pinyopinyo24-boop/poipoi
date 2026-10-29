@@ -114,8 +114,11 @@ export function updateMobilePoiPoiState(
       version: 1,
       records: [record],
     });
-    await saveLocal(merged);
-    return merged;
+    const finalState = confirmedStateForSave
+      ? mergePoiPoiState(merged, confirmedStateForSave)
+      : merged;
+    await saveLocal(finalState);
+    return finalState;
   });
 }
 
@@ -205,6 +208,7 @@ export function synchronizeMobilePoiPoiState(
     // The queue serializes local writes and synchronization.
     const merged = mergePoiPoiState(local, remote);
 
+    let confirmedStateForSave: PoiPoiUnifiedState | undefined;
     if (merged.records.some(record =>
       !remote.records.some(existing =>
         existing.id === record.id &&
@@ -256,6 +260,7 @@ export function synchronizeMobilePoiPoiState(
           ? confirmedResult.json
           : confirmedResult
       ));
+      confirmedStateForSave = confirmedState;
       const missing = merged.records.some(record =>
         !confirmedState.records.some(saved =>
           saved.category === record.category && saved.id === record.id &&
