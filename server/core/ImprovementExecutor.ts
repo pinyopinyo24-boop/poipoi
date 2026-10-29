@@ -115,9 +115,14 @@ export class ImprovementExecutor {
     } catch (err) {
       // Step 3: 失敗時はロールバック
       failureReason = err instanceof Error ? err.message : String(err);
-      await this.rollback(userId, candidate, snapshot);
-      rolledBack = true;
-      status = 'rolled_back';
+      try {
+        await this.rollback(userId, candidate, snapshot);
+        rolledBack = true;
+        status = 'rolled_back';
+      } catch (rollbackError) {
+        status = 'failure';
+        failureReason = `${failureReason}; rollback failed: ${String(rollbackError)}`;
+      }
     }
 
     const result: ExecutionResult = {
