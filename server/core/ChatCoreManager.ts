@@ -295,6 +295,14 @@ export class ChatCoreManager {
           });
         }
       }
+      // For multi-step requests, have the model organize its answer around an
+      // actionable plan and observable checks, without inventing completed work.
+      if (/(?:分析して改善|原因.*対策|計画.*実行|比較.*判断|一括.*実装|まとめて実装|手順.*検証)/u.test(userMessage)) {
+        messages.unshift({
+          role: 'system',
+          content: '複雑な依頼は、目的と制約を整理し、必要な作業を順序立て、結果を検証可能な根拠とともに回答してください。未実行の操作を完了と断定せず、検証できない点は明示してください。',
+        });
+      }
       const aiCore = getAICore() ?? await initializeAICore();
       const aiMessage = await aiCore.invoke(messages);
       if (!aiMessage?.trim()) throw new Error('AI Core returned an empty response');
