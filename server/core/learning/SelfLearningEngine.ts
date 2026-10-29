@@ -323,8 +323,8 @@ export class SelfLearningEngine {
     const successRate = this.calculateSuccessRate(cycle);
     const failureRate = this.calculateFailureRate(cycle);
 
-    if (failureRate > 0.3) {
-      recommendations.push('High failure rate detected - review error patterns');
+    if (failureRate > 0.3 && cycle.dataPoints.length >= 5) {
+      recommendations.push(`High failure rate (${Math.round(failureRate * 100)}% across ${cycle.dataPoints.length} operations) - review error patterns`);
     }
 
     if (successRate > 0.8) {
