@@ -1,4 +1,5 @@
 import { poipoiUnifiedStateRouter } from './routers/poipoiUnifiedState';
+import { unifiedToolsRouter } from './routers/unifiedTools';
 import { router } from "./_core/trpc";
 import { systemRouter } from "./_core/systemRouter";
 import { publicProcedure, protectedProcedure } from "./_core/trpc";
@@ -43,6 +44,7 @@ import { driveTransferRouter } from './routers.drive-transfer';
 
 export const appRouter = router({
   poipoiUnifiedState: poipoiUnifiedStateRouter,
+  unifiedTools: unifiedToolsRouter,
   executionLogs: executionLogsRouter,
   system: systemRouter,
   os: osRouter,
