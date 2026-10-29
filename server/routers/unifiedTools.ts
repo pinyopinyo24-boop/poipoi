@@ -72,10 +72,10 @@ export const unifiedToolsRouter = router({
       return { count: state.records.length };
     }),
   codePreview: protectedProcedure.input(z.object({ request: z.string().min(1).max(4000) }))
-    .mutation(async ({ input }) => ({
-      changes: await PoipoiCodeAgent.getInstance().generate(input.request),
-      applied: false, tested: false,
-    })),
+    .mutation(async ({ input, ctx }) => {
+      if (ctx.user.role !== 'admin') throw new Error('Administrator permission required for code previews');
+      return { changes: await PoipoiCodeAgent.getInstance().generate(input.request), applied: false, tested: false };
+    }),
 
   analyzeCost: protectedProcedure.input(z.object({
     estimated: z.number().finite(),
