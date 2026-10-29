@@ -1,18 +1,19 @@
-import { router, publicProcedure, protectedProcedure } from "../_core/trpc";
+import { router, protectedProcedure, protectedProcedure } from "../_core/trpc";
 import { z } from "zod";
 import { invokeLLM } from "../_core/llm";
+import { getUserPoiPoiUnifiedState, syncUserPoiPoiUnifiedState } from "../core/PoiPoiUnifiedStateStore";
 
 // Self-evolution system that learns from user interactions
 export const selfEvolutionRouter = router({
   // Analyze user feedback and suggest improvements
-  analyzeFeedback: publicProcedure
+  analyzeFeedback: protectedProcedure
     .input(
       z.object({
         feedback: z.string().describe("ユーザーからのフィードバック"),
         context: z.string().optional().describe("現在のコンテキスト"),
       })
     )
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
       try {
         // Use LLM to analyze feedback and generate improvements
         const response = await invokeLLM({
@@ -156,7 +157,7 @@ Respond in JSON format with: { "improvements": "...", "code": "...", "explanatio
     }),
 
   // Learn from user interactions and adapt
-  learnFromInteraction: publicProcedure
+  learnFromInteraction: protectedProcedure
     .input(
       z.object({
         interaction: z.string().describe("ユーザーとの相互作用"),
@@ -173,6 +174,16 @@ Respond in JSON format with: { "improvements": "...", "code": "...", "explanatio
           outcome: input.outcome,
           satisfaction: input.satisfaction,
         };
+        await syncUserPoiPoiUnifiedState(String(ctx.user.id), {
+          version: 1,
+          records: [{
+            id: 'interaction-' + Date.now() + '-' + Math.random().toString(36).slice(2),
+            category: 'learning',
+            origin: 'pc',
+            updatedAt: Date.now(),
+            value: JSON.stringify(learningData).slice(0, 3000),
+          }],
+        });
 
         // Use LLM to extract insights
         const response = await invokeLLM({
@@ -235,22 +246,21 @@ Respond in JSON format with: { "insights": ["...", "..."], "recommendations": ["
       }
     }),
 
-  // Get system status and evolution metrics
-  getEvolutionStatus: publicProcedure.query(async () => {
+  // Report actual stored learning events, not fabricated activity counters.
+  getEvolutionStatus: protectedProcedure.query(async ({ ctx }) => {
+    const state = await getUserPoiPoiUnifiedState(String(ctx.user.id));
+    const learned = state.records.filter(record => record.category === 'learning');
     return {
-      status: "active",
-      evolutionPhase: "continuous_learning",
+      status: 'available',
+      evolutionPhase: 'approval_required',
       metrics: {
-        feedbackProcessed: 0,
+        interactionsAnalyzed: learned.filter(record => record.id.startsWith('interaction-')).length,
+        learningRecords: learned.length,
+        feedbackProcessed: learned.filter(record => record.id.startsWith('correction-')).length,
         improvementsGenerated: 0,
-        interactionsAnalyzed: 0,
-        systemOptimization: "ongoing",
+        systemOptimization: 'not_verified',
       },
-      nextActions: [
-        "Monitor user feedback patterns",
-        "Generate code improvements",
-        "Adapt to user preferences",
-      ],
+      nextActions: ['Review proposed changes', 'Approve code preview explicitly'],
     };
   }),
 });
