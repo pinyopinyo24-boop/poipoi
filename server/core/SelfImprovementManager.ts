@@ -165,7 +165,8 @@ export class SelfImprovementManager {
   private generateCandidates(
     userId: string,
     report: DiagnosticReport,
-    learningResult: LearningResult
+    learningResult: LearningResult,
+    executionHistory: Array<{ candidateId: string; status: string }>
   ): ImprovementCandidate[] {
     const candidates: ImprovementCandidate[] = [];
     const now = Date.now();
