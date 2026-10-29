@@ -454,9 +454,22 @@ export class MobileSelfEvolution {
     const key = 'poipoi:evolution:pc-applied';
     const saved = await AsyncStorage.getItem(key);
 
-    const applied: Record<string, number> = saved
-      ? JSON.parse(saved)
-      : {};
+    let applied: Record<string, number> = {};
+    if (saved) {
+      try {
+        const parsed: unknown = JSON.parse(saved);
+        if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+          applied = Object.fromEntries(
+            Object.entries(parsed).filter(([id, time]) =>
+              (id.startsWith('evolution_run_') || id.startsWith('evolution-')) &&
+              typeof time === 'number' && Number.isFinite(time)
+            )
+          );
+        }
+      } catch {
+        // Damaged import markers must not prevent recovering verified PC history.
+      }
+    }
 
     let imported = 0;
     let skipped = 0;
