@@ -1,8 +1,8 @@
 import { z } from 'zod';
 import { protectedProcedure, router } from '../_core/trpc';
 import {
-  getPoiPoiUnifiedState,
-  syncPoiPoiUnifiedState,
+  getUserPoiPoiUnifiedState,
+  syncUserPoiPoiUnifiedState,
 } from '../core/PoiPoiUnifiedStateStore';
 
 const recordSchema = z.object({
@@ -19,13 +19,13 @@ const stateSchema = z.object({
 });
 
 export const poipoiUnifiedStateRouter = router({
-  get: protectedProcedure.query(async () => {
-    return getPoiPoiUnifiedState();
+  get: protectedProcedure.query(async ({ ctx }) => {
+    return getUserPoiPoiUnifiedState(String(ctx.user.id));
   }),
 
   sync: protectedProcedure
     .input(stateSchema)
-    .mutation(async ({ input }) => {
-      return syncPoiPoiUnifiedState(input);
+    .mutation(async ({ ctx, input }) => {
+      return syncUserPoiPoiUnifiedState(String(ctx.user.id), input);
     }),
 });
