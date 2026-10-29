@@ -183,6 +183,11 @@ export class ExcelAnalysisManager {
     return { sum, average, median, max, min, stdDev };
   }
 
+  calculateDeviationScores(numbers: number[]): number[] {
+    const stats = this.calculateStatistics(numbers);
+    return numbers.map(value => stats.stdDev === 0 ? 50 : 50 + 10 * (value - stats.average) / stats.stdDev);
+  }
+
   /**
    * JSON に変換
    */
