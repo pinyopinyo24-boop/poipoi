@@ -18,7 +18,7 @@ function getChatCoreManager(): ChatCoreManager {
     };
 
     const mockApprovalManager = {
-      requestApproval: async (data: any) => ({ approved: true }),
+      requestApproval: async (data: any) => ({ approved: false }),
     };
 
     const memoryManager = {
