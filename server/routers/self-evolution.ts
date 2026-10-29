@@ -257,7 +257,7 @@ Respond in JSON format with: { "insights": ["...", "..."], "recommendations": ["
         interactionsAnalyzed: learned.filter(record => record.id.startsWith('interaction-')).length,
         learningRecords: learned.length,
         feedbackProcessed: learned.filter(record => record.id.startsWith('correction-')).length,
-        improvementsGenerated: 0,
+        improvementsGenerated: state.records.filter(record => record.category === 'evolution').length,
         systemOptimization: 'not_verified',
       },
       nextActions: ['Review proposed changes', 'Approve code preview explicitly'],
