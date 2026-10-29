@@ -1114,6 +1114,12 @@ export default function ChatScreen() {
       ) {
         if (!isConnected) setIsConnected(true);
         try {
+          if (input.trim().startsWith('/計画 ')) {
+            const planned = await apiConnector.planAndExecute(input.trim().slice('/計画 '.length));
+            response = planned.success
+              ? { success: true, data: { message: JSON.stringify(planned.data, null, 2) } }
+              : planned;
+          } else {
           response = await apiConnector.sendChatMessage({
             message: input,
             sessionId: sessionId,
@@ -1128,6 +1134,7 @@ export default function ChatScreen() {
               source: 'poipoi-mobile',
             },
           });
+          }
 
           if (!response.success) {
             throw new Error(response.error || 'API エラー');
