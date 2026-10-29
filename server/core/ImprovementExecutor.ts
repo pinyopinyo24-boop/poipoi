@@ -246,7 +246,7 @@ export class ImprovementExecutor {
       },
     };
 
-    this.snapshots.set(candidate.id, snapshot);
+    this.snapshots.set(`${userId}:${candidate.id}`, snapshot);
     this.memoryEngine.setMemory(userId, `snapshot_${candidate.id}`, snapshot);
 
     return snapshot;
