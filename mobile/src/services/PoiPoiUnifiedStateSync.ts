@@ -114,11 +114,8 @@ export function updateMobilePoiPoiState(
       version: 1,
       records: [record],
     });
-    const finalState = confirmedStateForSave
-      ? mergePoiPoiState(merged, confirmedStateForSave)
-      : merged;
-    await saveLocal(finalState);
-    return finalState;
+    await saveLocal(merged);
+    return merged;
   });
 }
 
@@ -271,7 +268,8 @@ export function synchronizeMobilePoiPoiState(
       if (missing) throw new Error('PoiPoi state confirmation did not persist all records');
     }
 
-    await saveLocal(merged);
-    return merged;
+    const finalState = confirmedStateForSave ? mergePoiPoiState(merged, confirmedStateForSave) : merged;
+    await saveLocal(finalState);
+    return finalState;
   });
 }
