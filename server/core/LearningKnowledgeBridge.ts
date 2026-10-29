@@ -29,6 +29,15 @@ export class LearningKnowledgeBridge {
     const index = data.findIndex(x =>
       x.task === input.task && x.solution === input.solution
     );
+    // A user correction supersedes earlier answers for the same task.
+    // Keep rejected answers as failures so recall cannot reuse them.
+    if (input.outcome === "success" && input.feedback?.trim()) {
+      for (const previous of data) {
+        if (previous.task === input.task && previous.solution !== input.solution) {
+          previous.outcome = "failure";
+        }
+      }
+    }
     const entry = { ...input, used: index < 0 ? 0 : data[index].used };
     if (index < 0) data.push(entry);
     else data[index] = entry;
