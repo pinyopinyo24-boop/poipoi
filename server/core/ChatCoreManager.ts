@@ -290,7 +290,7 @@ export class ChatCoreManager {
         if (relevant.length) {
           messages.unshift({
             role: 'system',
-            content: '過去の会話でユーザーが述べた参考情報（現在の依頼を優先）：\\n' +
+            content: '過去の会話でユーザーが述べた参考情報（現在の依頼を優先）：\n' +
               [...new Set(relevant)].slice(-5).join('\n'),
           });
         }
