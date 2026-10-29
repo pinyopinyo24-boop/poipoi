@@ -153,13 +153,24 @@ export const chatRouter = router({
             id: uuidv4(), userId, role: 'assistant' as const,
             content: toolRequest?.[1] === 'PPT出力'
               ? JSON.stringify({ status: 'generated', format: 'pptx', note: 'Retrieve the file via unifiedTools.exportPresentation; binary data is not stored in chat.' })
-              : toolRequest?.[1] === 'コード適用'
+              : (codeRequest || toolRequest?.[1] === 'コード確認')
                 ? JSON.stringify({
-                    success: (result as { success?: boolean }).success === true,
-                    tested: (result as { tested?: boolean }).tested === true,
-                    error: (result as { error?: string }).error,
+                    previewId: (result as { previewId?: string }).previewId,
+                    expiresInSeconds: (result as { expiresInSeconds?: number }).expiresInSeconds,
+                    changes: (result as { changes?: Array<{ path: string; baseHash?: string; proposedHash?: string }> }).changes?.map(
+                      change => ({ path: change.path, baseHash: change.baseHash, proposedHash: change.proposedHash })
+                    ),
+                    applied: false,
+                    tested: false,
+                    note: 'Review the full preview via unifiedTools.codePreview before approval.',
                   })
-                : JSON.stringify(result, null, 2).slice(0, 20000),
+                : toolRequest?.[1] === 'コード適用'
+                  ? JSON.stringify({
+                      success: (result as { success?: boolean }).success === true,
+                      tested: (result as { tested?: boolean }).tested === true,
+                      error: (result as { error?: string }).error,
+                    })
+                  : JSON.stringify(result, null, 2).slice(0, 20000),
             timestamp: Date.now(),
           };
           await repository.saveMessage(message, input.sessionId);
@@ -177,6 +188,8 @@ export const chatRouter = router({
                   command: command.slice(0, 800),
                   outcome: codeRequest || toolRequest?.[1] === 'コード確認'
                     ? 'Code preview generated; not applied'
+                    : toolRequest?.[1] === 'コード適用'
+                      ? message.content.slice(0, 1500)
                     : toolRequest?.[1] === 'PPT出力'
                       ? 'PowerPoint export generated'
                       : message.content.slice(0, 1500),
