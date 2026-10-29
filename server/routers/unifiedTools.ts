@@ -29,7 +29,7 @@ export const unifiedToolsRouter = router({
     const manager = new PresentationAIManager(getPresentationRepository());
     const created = manager.createPresentation(input.title, input.description);
     for (const slide of input.slides) {
-      manager.addSlide(created.id, slide.title, slide.content, 'content');
+      manager.addSlide(created.id, { title: slide.title, content: slide.content, layout: 'content', elements: [] });
     }
     return { id: created.id, slideCount: input.slides.length, generated: true };
   }),
