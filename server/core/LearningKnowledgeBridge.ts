@@ -26,18 +26,22 @@ export class LearningKnowledgeBridge {
 
   async learn(input: Omit<Entry, "used">): Promise<void> {
     const data = await this.load();
+    const taskKey = (text: string) =>
+      text.normalize("NFKC").toLowerCase().replace(/[\\s、。,.!?！？・]+/g, "");
     const index = data.findIndex(x =>
-      x.task === input.task && x.solution === input.solution
+      taskKey(x.task) === taskKey(input.task) && x.solution === input.solution
     );
-    // A user correction supersedes earlier answers for the same task.
-    // Keep rejected answers as failures so recall cannot reuse them.
+    // Explicit corrections take precedence over earlier answers to equivalent questions.
     if (input.outcome === "success" && input.feedback?.trim()) {
       for (const previous of data) {
-        if (previous.task === input.task && previous.solution !== input.solution) {
+        if (taskKey(previous.task) === taskKey(input.task) && previous.solution !== input.solution) {
           previous.outcome = "failure";
         }
       }
     }
+    // Do not re-approve an answer that a user previously rejected without a correction.
+    if (input.outcome === "success" && !input.feedback?.trim() &&
+        index >= 0 && data[index].outcome === "failure") return;
     const entry = { ...input, used: index < 0 ? 0 : data[index].used };
     if (index < 0) data.push(entry);
     else data[index] = entry;
