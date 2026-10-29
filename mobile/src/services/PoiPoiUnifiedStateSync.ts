@@ -62,6 +62,9 @@ export function synchronizeMobilePoiPoiState(
   return locked(async () => {
     const local = await readLocal();
     const base = serverUrl.replace(/\/+$/, '');
+    const token = await AsyncStorage.getItem('sessionToken');
+    if (!token) throw new Error('PoiPoi sync requires login');
+    const authorizedHeaders = { ...headers, Authorization: `Bearer ${token}` };
 
     // POIPOI_SYNC_TIMEOUT_V1
     const controller = new AbortController();
@@ -75,7 +78,7 @@ export function synchronizeMobilePoiPoiState(
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          ...headers,
+          ...authorizedHeaders,
         },
         body: JSON.stringify({ json: local }),
         signal: controller.signal,
@@ -161,7 +164,7 @@ export function synchronizeMobilePoiPoiState(
             method: 'POST',
             headers: {
               'Content-Type': 'application/json',
-              ...headers,
+              ...authorizedHeaders,
             },
             body: JSON.stringify({ json: merged }),
             signal: confirmationController.signal,
