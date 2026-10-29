@@ -78,6 +78,12 @@ export const chatRouter = router({
           if (!ctx.user) {
             throw new TRPCError({ code: 'UNAUTHORIZED', message: 'ツール利用にはログインが必要です' });
           }
+          const userId = String(ctx.user.id);
+          const repository = (await import('./repositories/ChatRepository')).getSharedChatRepository();
+          const session = await repository.getSession(input.sessionId);
+          if (!session || session.userId !== userId) {
+            throw new TRPCError({ code: 'NOT_FOUND', message: 'チャットセッションが見つかりません' });
+          }
           const { unifiedToolsRouter } = await import('./routers/unifiedTools');
           const caller = unifiedToolsRouter.createCaller(ctx);
           let result: unknown;
@@ -131,17 +137,11 @@ export const chatRouter = router({
           } else {
             throw new TRPCError({ code: 'BAD_REQUEST', message: '未対応のツールです' });
           }
-          const userId = String(ctx.user.id);
-          const repository = (await import('./repositories/ChatRepository')).getSharedChatRepository();
-          const session = await repository.getSession(input.sessionId);
-          if (!session || session.userId !== userId) {
-            throw new TRPCError({ code: 'NOT_FOUND', message: 'チャットセッションが見つかりません' });
-          }
           const timestamp = Date.now();
           await repository.saveMessage({ id: 'tool-user-' + timestamp, userId, role: 'user', content: command, timestamp }, input.sessionId);
           const message = {
             id: 'tool-assistant-' + timestamp, userId, role: 'assistant' as const,
-            content: JSON.stringify(result, null, 2), timestamp: Date.now(),
+            content: JSON.stringify(result, null, 2).slice(0, 20000), timestamp: Date.now(),
           };
           await repository.saveMessage(message, input.sessionId);
           return { message, session, relatedMemories: [], reasoning: 'Unified tools execution' };
