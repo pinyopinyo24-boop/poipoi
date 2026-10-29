@@ -197,6 +197,7 @@ export const unifiedToolsRouter = router({
     cleanExpiredPreviews();
     const preview = evolutionPreviews.get(input.previewId);
     if (!preview || preview.userId !== String(ctx.user.id)) throw new Error('Preview expired or unavailable');
+    // Keep the preview reserved while verification is running; reject concurrent apply.
     evolutionPreviews.delete(input.previewId);
     // Explicit approval only. applyAndTest performs typecheck, exact-path commit and rollback.
     const outcome = await PoipoiCodeAgent.getInstance().applyAndTest(preview.changes);
@@ -209,6 +210,8 @@ export const unifiedToolsRouter = router({
           origin: 'pc',
           updatedAt: Date.now(),
           value: JSON.stringify({
+            previewId: input.previewId,
+            approved: true,
             success: outcome.success,
             tested: outcome.tested,
             paths: preview.changes.map(item => item.path),
