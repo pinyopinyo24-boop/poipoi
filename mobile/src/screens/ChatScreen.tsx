@@ -1110,6 +1110,7 @@ export default function ChatScreen() {
       if (
         apiConnector &&
         !input.trim().startsWith('/進化') &&
+        isAuthenticated &&
         (isConnected || await apiConnector.checkConnectivity())
       ) {
         if (!isConnected) setIsConnected(true);
