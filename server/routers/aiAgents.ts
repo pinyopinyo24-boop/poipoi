@@ -109,12 +109,38 @@ export const aiAgentsRouter = router({
         }).parse(JSON.parse(assessment));
       }
       let revision = null;
-      if (result.status === 'completed' && !verification.passed &&
-          plan.steps.every(step => step.agentType === 'design' || step.agentType === 'review')) {
+      if (result.status === 'completed' && !verification.passed) {
         const retryId = workflowId + '-retry';
-        const retrySteps = steps.map(step => ({
+        const replan = await invokeLLM({
+          model: process.env.LOCAL_CODER_MODEL || 'qwen2.5-coder:7b',
+          temperature: 0.1,
+          response_format: {
+            type: 'json_schema', json_schema: {
+              name: 'revised_workflow', schema: {
+                type: 'object', properties: { steps: { type: 'array', items: {
+                  type: 'object', properties: {
+                    agentType: { type: 'string' }, description: { type: 'string' },
+                  }, required: ['agentType', 'description'],
+                } } }, required: ['steps'],
+              },
+            },
+          },
+          messages: [
+            { role: 'system', content: 'Replan up to five text-only agent steps (design, implementation, task, review). Include review last. No external actions, file writes, or tool execution. Return JSON only.' },
+            { role: 'user', content: JSON.stringify({
+              request: input.request, priorPlan: plan.steps,
+              previousOutputs: result.aggregatedResults, verificationFailure: verification.reason,
+            }).slice(0, 14000) },
+          ],
+        });
+        const revisedPlan = z.object({ steps: z.array(z.object({
+          agentType: z.enum(['design', 'implementation', 'review', 'task']),
+          description: z.string().min(1).max(2000),
+        })).min(1).max(5) }).parse(JSON.parse(replan.choices[0]?.message?.content || '{}'));
+        const retrySteps = revisedPlan.steps.map((step, index) => ({
           ...step,
-          description: step.description + '\nReviewer feedback: ' + verification.reason,
+          input: { originalRequest: input.request, savedContext, previousFeedback: verification.reason },
+          dependsOn: index > 0 ? [revisedPlan.steps[index - 1].agentType] : [],
         }));
         const retry = await core.executeWorkflow(retryId, retrySteps);
         let retryVerification: { passed: boolean; reason: string } = {
