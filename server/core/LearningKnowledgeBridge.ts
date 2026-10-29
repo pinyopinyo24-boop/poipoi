@@ -149,6 +149,22 @@ export class LearningKnowledgeBridge {
     await fs.writeFile(this.file, JSON.stringify(data, null, 2));
     });
   }
+  async evaluateRecall(queries: Array<{ question: string; expectedAnswer: string }>) {
+    const results = await Promise.all(queries.map(async ({ question, expectedAnswer }) => {
+      const recalled = await this.recall(question, 5);
+      const normalize = (value: string) => value.normalize("NFKC").trim().toLowerCase();
+      const rank = recalled.findIndex(item => normalize(item.solution) === normalize(expectedAnswer));
+      return { question, hitAt1: rank === 0, hitAt5: rank >= 0, rank: rank < 0 ? null : rank + 1 };
+    }));
+    const count = results.length;
+    return {
+      count,
+      hitAt1: count ? results.filter(item => item.hitAt1).length / count : 0,
+      hitAt5: count ? results.filter(item => item.hitAt5).length / count : 0,
+      results,
+    };
+  }
+
   async getStatistics() {
     const data = await this.load();
     return {
