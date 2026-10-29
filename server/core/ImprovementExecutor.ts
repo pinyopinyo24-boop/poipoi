@@ -190,7 +190,8 @@ export class ImprovementExecutor {
    */
   public getSnapshot(candidateId: string, userId?: string): ExecutionSnapshot | undefined {
     if (userId) return this.snapshots.get(`${userId}:${candidateId}`);
-    return [...this.snapshots.values()].find(snapshot => snapshot.candidateId === candidateId);
+    // Without a user scope, do not expose another user's saved snapshot.
+    return undefined;
   }
 
   /**
