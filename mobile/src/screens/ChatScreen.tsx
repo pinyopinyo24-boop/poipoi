@@ -1114,7 +1114,15 @@ export default function ChatScreen() {
       ) {
         if (!isConnected) setIsConnected(true);
         try {
-          if (input.trim().startsWith('/計画 ')) {
+          const costMatch = input.trim().match(/^\/原価\s+([0-9]+(?:\.[0-9]+)?)\s+([0-9]+(?:\.[0-9]+)?)\s+([0-9]+(?:\.[0-9]+)?)$/);
+          if (costMatch) {
+            const cost = await apiConnector.executeUnifiedTool('analyzeCost', {
+              estimated: Number(costMatch[1]), actual: Number(costMatch[2]), quantity: Number(costMatch[3]),
+            });
+            response = cost.success
+              ? { success: true, data: { message: JSON.stringify(cost.data, null, 2) } }
+              : cost;
+          } else if (input.trim().startsWith('/計画 ')) {
             const planned = await apiConnector.planAndExecute(input.trim().slice('/計画 '.length));
             response = planned.success
               ? { success: true, data: { message: JSON.stringify(planned.data, null, 2) } }
