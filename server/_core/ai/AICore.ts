@@ -91,7 +91,7 @@ export class AICore {
       }
 
       // Skip validation for demo mode
-      if (process.env.NODE_ENV !== 'development' || process.env.GEMINI_API_KEY || process.env.OPENAI_API_KEY) {
+      if (true) {
         const isValid = await primaryProvider.validateConfig();
         if (!isValid) {
           throw new Error('[AICore] Local provider unavailable');
