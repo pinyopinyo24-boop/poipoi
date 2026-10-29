@@ -2,7 +2,6 @@ import { router, publicProcedure, protectedProcedure } from './_core/trpc';
 import { z } from 'zod';
 import { TRPCError } from '@trpc/server';
 import { ChatCoreManager } from './core/ChatCoreManager';
-import { PoipoiCodeAgent } from './core/PoipoiCodeAgent';
 import { ChatQualityService } from './managers/ChatQualityService';
 import { getDb } from './db';
 import { feedback } from '../drizzle/schema';
@@ -71,30 +70,56 @@ export const chatRouter = router({
     )
     .mutation(async ({ ctx, input }) => {
       try {
-        // Code changes are always previewed first; chat cannot silently apply them.
-        const codeRequest = /^(?:PoiPoiコードエージェント|コードエージェント)[：:\s]+(?:実装|修正|変更|作成|追加|改修)/u.test(input.message.trim());
-        if (codeRequest) {
-          if (ctx.user?.role !== 'admin') {
-            throw new TRPCError({
-              code: ctx.user ? 'FORBIDDEN' : 'UNAUTHORIZED',
-              message: 'コード変更機能は管理者のみ利用できます',
-            });
+        // All explicit tools share the authenticated unified router.
+        const command = input.message.trim();
+        const codeRequest = /^(?:PoiPoiコードエージェント|コードエージェント)[：:\s]+(?:実装|修正|変更|作成|追加|改修)/u.test(command);
+        const toolRequest = command.match(/^PoiPoiツール[：:\s]+(分析|原価|製造記録|製造一覧|資料作成|コード確認)[：:\s]+([\s\S]+)$/u);
+        if (codeRequest || toolRequest) {
+          if (!ctx.user) {
+            throw new TRPCError({ code: 'UNAUTHORIZED', message: 'ツール利用にはログインが必要です' });
           }
-          const changes = await PoipoiCodeAgent.getInstance().generate(input.message);
-          return {
-            message: {
-              id: 'code-preview-' + Date.now(),
-              userId: String(ctx.user.id),
-              role: 'assistant' as const,
-              content: changes.length
-                ? '変更案を生成しました。適用前に unifiedTools.codePreview と applyCodePreview の明示承認を使用してください。対象: ' + changes.map(change => change.path).join(', ')
-                : '変更案は生成されませんでした。既存ファイルのパスを指定してください。',
-              timestamp: Date.now(),
-            },
-            session: null,
-            relatedMemories: [],
-            reasoning: 'Code preview only; no files modified',
+          const { unifiedToolsRouter } = await import('./routers/unifiedTools');
+          const caller = unifiedToolsRouter.createCaller(ctx);
+          let result: unknown;
+          if (codeRequest || toolRequest?.[1] === 'コード確認') {
+            if (ctx.user.role !== 'admin') {
+              throw new TRPCError({ code: 'FORBIDDEN', message: 'コード変更機能は管理者のみ利用できます' });
+            }
+            result = await caller.codePreview({ request: codeRequest ? command : toolRequest![2] });
+          } else if (toolRequest?.[1] === '分析') {
+            result = await caller.reason({ prompt: toolRequest[2] });
+          } else if (toolRequest?.[1] === '原価') {
+            const args = z.object({ estimated: z.number().finite(), actual: z.number().finite(), quantity: z.number().positive().finite() }).parse(JSON.parse(toolRequest![2]));
+            result = await caller.analyzeCost(args);
+          } else if (toolRequest?.[1] === '製造記録') {
+            const args = z.object({
+              itemId: z.string().min(1).max(120), estimatedUnitCost: z.number().nonnegative(),
+              actualUnitCost: z.number().nonnegative(), quantity: z.number().positive(),
+              stockQuantity: z.number().nonnegative().optional(), reorderLevel: z.number().nonnegative().optional(),
+            }).parse(JSON.parse(toolRequest![2]));
+            result = await caller.saveManufacturingRecord(args);
+          } else if (toolRequest?.[1] === '製造一覧') {
+            result = await caller.listManufacturingRecords();
+          } else if (toolRequest?.[1] === '資料作成') {
+            const args = z.object({ title: z.string().min(1), analysis: z.string().min(1) }).parse(JSON.parse(toolRequest![2]));
+            result = await caller.createPresentationFromAnalysis(args);
+          } else {
+            throw new TRPCError({ code: 'BAD_REQUEST', message: '未対応のツールです' });
+          }
+          const userId = String(ctx.user.id);
+          const repository = (await import('./repositories/ChatRepository')).getSharedChatRepository();
+          const session = await repository.getSession(input.sessionId);
+          if (!session || session.userId !== userId) {
+            throw new TRPCError({ code: 'NOT_FOUND', message: 'チャットセッションが見つかりません' });
+          }
+          const timestamp = Date.now();
+          await repository.saveMessage({ id: 'tool-user-' + timestamp, userId, role: 'user', content: command, timestamp }, input.sessionId);
+          const message = {
+            id: 'tool-assistant-' + timestamp, userId, role: 'assistant' as const,
+            content: JSON.stringify(result, null, 2), timestamp: Date.now(),
           };
+          await repository.saveMessage(message, input.sessionId);
+          return { message, session, relatedMemories: [], reasoning: 'Unified tools execution' };
         }
 
         const userId = String(ctx.user?.id ?? "mobile");
