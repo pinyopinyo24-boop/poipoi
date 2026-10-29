@@ -255,6 +255,9 @@ export class AgentManager {
 
       const executionTime = Date.now() - startTime;
 
+      if (results.length !== steps.length) {
+        throw new Error('Workflow did not complete every planned step');
+      }
       workflow.status = 'completed';
       workflow.steps = results;
       workflow.aggregatedResults = aggregatedResults;
