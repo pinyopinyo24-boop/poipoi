@@ -147,9 +147,10 @@ export const chatRouter = router({
             throw new TRPCError({ code: 'BAD_REQUEST', message: '未対応のツールです' });
           }
           const timestamp = Date.now();
-          await repository.saveMessage({ id: 'tool-user-' + timestamp, userId, role: 'user', content: command, timestamp }, input.sessionId);
+          const toolUserId = uuidv4();
+          await repository.saveMessage({ id: toolUserId, userId, role: 'user', content: command, timestamp }, input.sessionId);
           const message = {
-            id: 'tool-assistant-' + timestamp, userId, role: 'assistant' as const,
+            id: uuidv4(), userId, role: 'assistant' as const,
             content: JSON.stringify(result, null, 2).slice(0, 20000), timestamp: Date.now(),
           };
           await repository.saveMessage(message, input.sessionId);
