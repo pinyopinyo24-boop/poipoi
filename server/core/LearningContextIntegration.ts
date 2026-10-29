@@ -6,10 +6,16 @@ async function publishLearning(task: string, solution: string, accepted: boolean
   const normalizedTask = task.normalize("NFKC").trim().toLowerCase();
   const normalizedSolution = (correction?.trim() || solution).normalize("NFKC").trim();
   const id = createHash("sha256").update(JSON.stringify([normalizedTask, normalizedSolution])).digest("hex");
-  await syncPoiPoiUnifiedState({ version: 1, records: [{
-    id, category: "learning", origin: "pc", updatedAt: Date.now(),
+  const records = [{
+    id, category: "learning" as const, origin: "pc" as const, updatedAt: Date.now(),
     value: JSON.stringify({ task, solution: correction?.trim() || solution, outcome: accepted || !!correction?.trim() ? "success" : "failure", feedback: correction?.trim() }),
-  }] });
+  }];
+  if (correction?.trim() && correction.trim() !== solution) {
+    const rejectedId = createHash("sha256").update(JSON.stringify([normalizedTask, solution.normalize("NFKC").trim()])).digest("hex");
+    records.push({ id: rejectedId, category: "learning", origin: "pc", updatedAt: Date.now(),
+      value: JSON.stringify({ task, solution, outcome: "failure" }) });
+  }
+  await syncPoiPoiUnifiedState({ version: 1, records });
 }
 
 
