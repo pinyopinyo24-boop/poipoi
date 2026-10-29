@@ -215,53 +215,27 @@ try {
   }
 }
 export async function listLLMModels(): Promise<{ data: LLMModel[] }> {
+  const baseUrl = (process.env.LOCAL_AI_URL || "http://localhost:11434").replace(/\/+$/, "");
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 5000);
   try {
-    // Gemini API縺ｧ縺ｯ models 繧ｨ繝ｳ繝峨・繧､繝ｳ繝医′逡ｰ縺ｪ繧九◆繧√√ョ繝輔か繝ｫ繝医Δ繝・Ν繧定ｿ斐☆
+    const response = await fetch(baseUrl + "/api/tags", { signal: controller.signal });
+    if (!response.ok) throw new Error("Local model listing failed: " + response.status);
+    const payload: unknown = await response.json();
+    if (!payload || typeof payload !== "object" || !("models" in payload) ||
+        !Array.isArray(payload.models)) throw new Error("Invalid local model listing");
     return {
-      data: [
-        {
-          id: "gemini-2.0-flash",
-          object: "model",
-          owned_by: "google",
-          permission: [],
-          created: Math.floor(Date.now() / 1000),
-          capabilities: {
-            vision: true,
-            function_calling: true,
-            json_mode: true,
-          },
-        },
-        {
-          id: "gemini-1.5-pro",
-          object: "model",
-          owned_by: "google",
-          permission: [],
-          created: Math.floor(Date.now() / 1000),
-          capabilities: {
-            vision: true,
-            function_calling: true,
-            json_mode: true,
-          },
-        },
-      ],
+      data: payload.models.filter((item: unknown): item is { name: string } =>
+        !!item && typeof item === "object" && "name" in item &&
+        typeof item.name === "string"
+      ).map(item => ({
+        id: item.name, object: "model", owned_by: "local", permission: [],
+      })),
     };
   } catch (error) {
-    console.error("[LLM] Failed to list models:", error);
-    // 繝・ヵ繧ｩ繝ｫ繝医Δ繝・Ν繧定ｿ斐☆
-    return {
-      data: [
-        {
-          id: DEFAULT_MODEL,
-          object: "model",
-          owned_by: "google",
-          permission: [],
-        },
-      ],
-    };
+    console.warn("[LLM] Local model discovery unavailable:", error);
+    return { data: [] };
+  } finally {
+    clearTimeout(timer);
   }
 }
-
-
-
-
-
