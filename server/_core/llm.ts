@@ -142,7 +142,7 @@ export async function invokeLLM(request: LLMRequest): Promise<LLMResponse> {
     if (typeof userMessage.content === "string") {
       messages[userIndex] = {
         ...userMessage,
-        content: await enrichPromptWithLearning(process.cwd(), userMessage.content),
+        content: userMessage.content.startsWith('Past examples:') ? userMessage.content : await enrichPromptWithLearning(process.cwd(), userMessage.content),
       };
     }
   }
