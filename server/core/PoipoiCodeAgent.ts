@@ -189,71 +189,88 @@ export class PoipoiCodeAgent {
 
   async applyAndTest(changes: CodeChange[]): Promise<CodeTaskResult> {
     const backups = new Map<string, string | null>();
-
-    // Do not report generated changes as verified: execution requires a separate
-    // explicit validation step and the caller must see tested=false.
-    try {
-      if (!changes.length) throw new Error('No generated changes to apply');
-      const paths = changes.map(change => this.safePath(change.path));
-      if (new Set(paths).size !== paths.length) throw new Error('Duplicate generated file paths');
-      if (changes.some(change => !change.content.trim())) throw new Error('Empty generated file content');
-      for (const change of changes) {
-        const absolute = this.safePath(change.path);
-
-        if (!backups.has(absolute)) {
-          backups.set(
-            absolute,
-            existsSync(absolute)
-              ? readFileSync(absolute, "utf8")
-              : null
-          );
+    const rollback = () => {
+      for (const [absolute, previous] of backups) {
+        if (previous === null) {
+          if (existsSync(absolute)) unlinkSync(absolute);
+        } else {
+          mkdirSync(dirname(absolute), { recursive: true });
+          writeFileSync(absolute, previous, "utf8");
         }
-
-        mkdirSync(dirname(absolute), { recursive: true });
-        writeFileSync(absolute, change.content, "utf8");
       }
+    };
 
+    try {
+      if (!changes.length) throw new Error("No generated changes to apply");
+      const paths = changes.map(change => this.safePath(change.path));
+      if (new Set(paths).size !== paths.length) throw new Error("Duplicate generated file paths");
+      if (changes.some(change => !change.content.trim())) throw new Error("Empty generated file content");
 
-      // Reject generated TypeScript with syntax diagnostics; catch restores backups.
+      // Validate syntax before modifying the working tree.
       const ts = await import("typescript");
       for (const change of changes) {
-        if (!change.path.endsWith(".ts") && !change.path.endsWith(".tsx")) continue;
+        if (!/\\.[cm]?[jt]sx?$/.test(change.path)) continue;
         const checked = ts.transpileModule(change.content, {
           fileName: change.path,
           reportDiagnostics: true,
-          compilerOptions: { target: ts.ScriptTarget.ES2022 },
+          compilerOptions: {
+            target: ts.ScriptTarget.ES2022,
+            jsx: ts.JsxEmit.ReactJSX,
+          },
         });
         if (checked.diagnostics?.some(item => item.category === ts.DiagnosticCategory.Error)) {
           throw new Error("Invalid generated TypeScript: " + change.path);
         }
       }
-      return {
-        success: true,
-        changes,
-        tested: false,
-      };
-    } catch (error) {
-      for (const absolute of Array.from(backups.keys())) {
-        const previous = backups.get(absolute);
 
-        if (previous === null) {
-          if (existsSync(absolute)) {
-            unlinkSync(absolute);
-          }
-        } else if (previous !== undefined) {
-          writeFileSync(absolute, previous, "utf8");
+      // Existing uncommitted edits must never be silently replaced.
+      const status = execFileSync("git", ["status", "--porcelain", "--untracked-files=all"], {
+        cwd: this.root, encoding: "utf8", timeout: 15000, windowsHide: true,
+      });
+      const dirty = status.split(/\\r?\\n/).filter(Boolean);
+      for (const path of changes.map(item => item.path.replace(/\\\\/g, "/"))) {
+        if (dirty.some(line => line.slice(3) === path || line.slice(3).endsWith(" -> " + path))) {
+          throw new Error("Refusing to overwrite existing local changes: " + path);
         }
       }
 
-      return {
-        success: false,
-        changes: [],
-        tested: false,
-        error:
-          error instanceof Error
-            ? error.message
-            : String(error),
-      };
+      for (const change of changes) {
+        const absolute = this.safePath(change.path);
+        backups.set(absolute, existsSync(absolute) ? readFileSync(absolute, "utf8") : null);
+        mkdirSync(dirname(absolute), { recursive: true });
+        writeFileSync(absolute, change.content, "utf8");
+      }
+
+      // A successful syntax check alone is not a verified evolution.
+      // Run the project's configured type checker; failures restore every file.
+      execFileSync("pnpm", ["exec", "tsc", "--noEmit"], {
+        cwd: this.root, encoding: "utf8", timeout: 120000,
+        windowsHide: true, stdio: "pipe",
+      });
+
+      // Only commit the exact generated paths after successful verification.
+      // No git add -A: unrelated user changes are preserved.
+      execFileSync("git", ["add", "--", ...changes.map(item => item.path)], {
+        cwd: this.root, timeout: 15000, windowsHide: true,
+      });
+      execFileSync("git", ["commit", "-m", "PoiPoi verified self-evolution", "--", ...changes.map(item => item.path)], {
+        cwd: this.root, timeout: 30000, windowsHide: true,
+      });
+      return { success: true, changes, tested: true };
+    } catch (error) {
+      let detail = error instanceof Error ? error.message : String(error);
+      try {
+        if (backups.size) {
+          // Discard only our staged paths, leaving unrelated staged changes alone.
+          execFileSync("git", ["reset", "--quiet", "--", ...changes.map(item => item.path)], {
+            cwd: this.root, timeout: 15000, windowsHide: true,
+          });
+          rollback();
+        }
+      } catch (restoreError) {
+        detail += "; rollback failed: " + String(restoreError);
+      }
+      return { success: false, changes: [], tested: false, error: detail };
     }
   }
 
