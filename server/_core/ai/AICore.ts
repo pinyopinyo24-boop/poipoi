@@ -91,11 +91,9 @@ export class AICore {
       }
 
       // Skip validation for demo mode
-      if (true) {
-        const isValid = await primaryProvider.validateConfig();
-        if (!isValid) {
-          throw new Error('[AICore] Local provider unavailable');
-        }
+      const isValid = await primaryProvider.validateConfig();
+      if (!isValid) {
+        throw new Error('[AICore] Local provider unavailable');
       }
 
       const fallbackProviders = Array.from(this.providers.values()).filter(
