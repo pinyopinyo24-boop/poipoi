@@ -289,8 +289,9 @@ export class PoipoiCodeAgent {
       const paths = changes.map(change => this.safePath(change.path));
       if (new Set(paths).size !== paths.length) throw new Error("Duplicate generated file paths");
       if (changes.some(change => !change.content.trim())) throw new Error("Empty generated file content");
+      if (changes.length > 5) throw new Error('Evolution batch exceeds five source files');
       for (const change of changes) {
-        if (!change.baseHash) continue;
+        if (!change.baseHash) throw new Error('Unverified source hash: ' + change.path);
         const absolute = this.safePath(change.path);
         const currentHash = existsSync(absolute)
           ? createHash("sha256").update(readFileSync(absolute, "utf8")).digest("hex")
