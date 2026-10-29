@@ -165,6 +165,8 @@ export class PoipoiCodeAgent {
       "Modify the existing TypeScript project according to the user's request.",
       "Preserve existing functionality.",
       "Make the minimum necessary file changes.",
+      "First reason about dependencies and preserve all existing exports.",
+      "Do not fabricate unknown existing file contents; return an empty changes array if necessary.",
       "Return JSON only.",
       "",
       "Required format:",
