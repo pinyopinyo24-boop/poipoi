@@ -43,11 +43,10 @@ export class PDFAnalysisManager {
       
       const pages: PDFPage[] = extracted.pages.map((page, index) => ({
         {
-          pageNumber: 1,
-          text: extracted.text,
-          lines: extracted.text.split('\n'),
-        },
-      ];
+          pageNumber: index + 1,
+          text: page.text,
+          lines: page.text.split('\n'),
+        }));
 
       const structure = this.extractStructure(extracted.text);
 
