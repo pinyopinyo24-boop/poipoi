@@ -214,6 +214,19 @@ export class PoipoiCodeAgent {
       }
 
 
+      // Reject generated TypeScript with syntax diagnostics; catch restores backups.
+      const ts = await import("typescript");
+      for (const change of changes) {
+        if (!change.path.endsWith(".ts") && !change.path.endsWith(".tsx")) continue;
+        const checked = ts.transpileModule(change.content, {
+          fileName: change.path,
+          reportDiagnostics: true,
+          compilerOptions: { target: ts.ScriptTarget.ES2022 },
+        });
+        if (checked.diagnostics?.some(item => item.category === ts.DiagnosticCategory.Error)) {
+          throw new Error("Invalid generated TypeScript: " + change.path);
+        }
+      }
       return {
         success: true,
         changes,
