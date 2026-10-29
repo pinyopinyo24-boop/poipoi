@@ -1,18 +1,4 @@
-/**
- * LLM Integration - Google Gemini API実装
- * Google Gemini APIを使用したLLM統合
- */
-
-// [LLM KEY CHECK] Startup verification
-if (typeof process !== 'undefined' && process.env) {
-  const apiKey = process.env.GEMINI_API_KEY;
-  if (!apiKey) {
-    console.warn('[LLM KEY CHECK] WARNING: GEMINI_API_KEY is not set');
-  } else {
-    console.log('[LLM KEY CHECK] GEMINI_API_KEY is configured');
-  }
-}
-
+/** PoiPoi local Ollama LLM adapter. No external API key required. */
 export type Role = "system" | "user" | "assistant" | "tool" | "function";
 
 export type TextContent = {
@@ -120,183 +106,49 @@ export type LLMModel = {
   capabilities?: Record<string, unknown>;
 };
 
-/**
- * Google Gemini API設定
- */
-const GEMINI_API_KEY = process.env.GEMINI_API_KEY || "";
-const GEMINI_API_URL = "https://generativelanguage.googleapis.com/v1beta/openai/";
-const DEFAULT_MODEL = "gemini-2.0-flash";
+const LOCAL_AI_URL = (process.env.LOCAL_AI_URL || "http://localhost:11434").replace(/\/$/, "");
+const DEFAULT_MODEL = process.env.LOCAL_AI_MODEL || "qwen2.5-coder:7b";
 
-/**
- * Invoke LLM - Google Gemini API実装
- */
-export async function invokeLLM(request: LLMRequest): Promise<LLMResponse> {
-  try {
-    const model = request.model || DEFAULT_MODEL;
-    
-    // [LLM REQUEST] Log request
-    console.log('[LLM REQUEST]', {
-      model,
-      messageCount: request.messages.length,
-      timestamp: new Date().toISOString(),
-    });
-    
-    // メッセージをOpenAI形式に変換
-    const messages = request.messages.map(msg => {
-      let content: any = "";
-      if (typeof msg.content === "string") {
-        content = msg.content;
-      } else if (Array.isArray(msg.content)) {
-        content = msg.content.map((c: any) => {
-          if (c.type === "text") {
-            return { type: "text", text: c.text };
-          }
-          if (c.type === "image_url") {
-            return { type: "image_url", image_url: c.image_url };
-          }
-          if (c.type === "file_url") {
-            return { type: "file_url", file_url: c.file_url };
-          }
-          return { type: "text", text: "" };
-        });
-      } else {
-        content = String(msg.content);
-      }
-      return { role: msg.role, content };
-    });
-
-    // Google Gemini APIを呼び出し (OpenAI互換エンドポイント)
-    const url = `${GEMINI_API_URL}chat/completions`;
-    const response = await globalThis.fetch(url, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "Authorization": `Bearer ${GEMINI_API_KEY}`,
-      },
-      body: JSON.stringify({
-        model,
-        messages,
-        temperature: request.temperature ?? 0.7,
-        top_p: request.top_p ?? 0.9,
-        max_tokens: request.max_tokens ?? 2048,
-        tools: request.tools,
-        tool_choice: request.tool_choice,
-        response_format: request.response_format,
-      }),
-    });
-
-    if (!response.ok) {
-      const errorData = await response.text();
-      const errorMsg = `Gemini API error: ${response.statusText} - ${errorData}`;
-      console.error('[LLM ERROR]', errorMsg);
-      throw new Error(errorMsg);
-    }
-
-    const data = await response.json() as any;
-    
-    // [LLM RESPONSE] Log response
-    console.log('[LLM RESPONSE]', {
-      id: data.id,
-      model: data.model,
-      tokensUsed: data.usage?.total_tokens,
-      timestamp: new Date().toISOString(),
-    });
-
-    return {
-      id: data.id || `gemini-${Date.now()}`,
-      object: data.object || "chat.completion",
-      created: data.created || Math.floor(Date.now() / 1000),
-      model: data.model || model,
-      choices: data.choices || [
-        {
-          index: 0,
-          message: {
-            role: "assistant",
-            content: "エラー: 応答がありません",
-          },
-          finish_reason: "error",
-        },
-      ],
-      usage: data.usage || {
-        prompt_tokens: 0,
-        completion_tokens: 0,
-        total_tokens: 0,
-      },
-    };
-  } catch (error) {
-    const errorMsg = error instanceof Error ? error.message : String(error);
-    console.error("[LLM ERROR] Gemini API call failed:", errorMsg);
-    // フォールバック: ダミー応答を返す
-    return {
-      id: `gemini-${Date.now()}`,
-      object: "chat.completion",
-      created: Math.floor(Date.now() / 1000),
-      model: DEFAULT_MODEL,
-      choices: [
-        {
-          index: 0,
-          message: {
-            role: "assistant",
-            content: "申し訳ありません。現在LLMサービスが利用できません。後でもう一度お試しください。",
-          },
-          finish_reason: "error",
-        },
-      ],
-      usage: {
-        prompt_tokens: 0,
-        completion_tokens: 0,
-        total_tokens: 0,
-      },
-    };
-  }
+function textOf(content: Message["content"]): string {
+  if (typeof content === "string") return content;
+  const parts = Array.isArray(content) ? content : [content];
+  return parts.map(part => typeof part === "string" ? part : part.type === "text" ? part.text : "[Unsupported non-text content]").join("\n");
 }
 
-/**
- * List LLM models - Gemini実装
- */
+export async function invokeLLM(request: LLMRequest): Promise<LLMResponse> {
+  const model = request.model && !/^(gemini|gpt-)/i.test(request.model) ? request.model : DEFAULT_MODEL;
+  const messages = request.messages.map(m => ({
+    role: m.role === "assistant" || m.role === "system" ? m.role : "user",
+    content: textOf(m.content),
+  }));
+  const response = await fetch(`${LOCAL_AI_URL}/api/chat`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      model, messages, stream: false,
+      options: { temperature: request.temperature ?? 0.7, top_p: request.top_p ?? 0.9, num_predict: request.max_tokens ?? 2048 },
+      ...(request.response_format ? { format: "json" } : {}),
+    }),
+    signal: AbortSignal.timeout(120000),
+  });
+  if (!response.ok) throw new Error(`Local Ollama error ${response.status}: ${(await response.text()).slice(0, 500)}`);
+  const data = await response.json() as {
+    model?: string; message?: { content?: string }; prompt_eval_count?: number; eval_count?: number;
+  };
+  const prompt = data.prompt_eval_count ?? 0, completion = data.eval_count ?? 0;
+  return {
+    id: `local-${Date.now()}`, object: "chat.completion",
+    created: Math.floor(Date.now() / 1000), model: data.model || model,
+    choices: [{ index: 0, message: { role: "assistant", content: data.message?.content ?? "" }, finish_reason: "stop" }],
+    usage: { prompt_tokens: prompt, completion_tokens: completion, total_tokens: prompt + completion },
+  };
+}
+
 export async function listLLMModels(): Promise<{ data: LLMModel[] }> {
-  try {
-    // Gemini APIでは models エンドポイントが異なるため、デフォルトモデルを返す
-    return {
-      data: [
-        {
-          id: "gemini-2.0-flash",
-          object: "model",
-          owned_by: "google",
-          permission: [],
-          created: Math.floor(Date.now() / 1000),
-          capabilities: {
-            vision: true,
-            function_calling: true,
-            json_mode: true,
-          },
-        },
-        {
-          id: "gemini-1.5-pro",
-          object: "model",
-          owned_by: "google",
-          permission: [],
-          created: Math.floor(Date.now() / 1000),
-          capabilities: {
-            vision: true,
-            function_calling: true,
-            json_mode: true,
-          },
-        },
-      ],
-    };
-  } catch (error) {
-    console.error("[LLM] Failed to list models:", error);
-    // デフォルトモデルを返す
-    return {
-      data: [
-        {
-          id: DEFAULT_MODEL,
-          object: "model",
-          owned_by: "google",
-          permission: [],
-        },
-      ],
-    };
-  }
+  const response = await fetch(`${LOCAL_AI_URL}/api/tags`, { signal: AbortSignal.timeout(10000) });
+  if (!response.ok) throw new Error(`Ollama model list error: ${response.status}`);
+  const data = await response.json() as { models?: Array<{ name: string }> };
+  return { data: (data.models || []).map(m => ({
+    id: m.name, object: "model", owned_by: "local", permission: [],
+  })) };
 }
