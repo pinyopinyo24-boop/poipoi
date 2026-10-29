@@ -12,7 +12,7 @@ async function publishLearning(task: string, solution: string, accepted: boolean
   }];
   if (correction?.trim() && correction.trim() !== solution) {
     const rejectedId = createHash("sha256").update(JSON.stringify([normalizedTask, solution.normalize("NFKC").trim()])).digest("hex");
-    records.push({ id: rejectedId, category: "learning", origin: "pc", updatedAt: Date.now(),
+    records.push({ id: rejectedId, category: "learning" as const, origin: "pc" as const, updatedAt: Date.now(),
       value: JSON.stringify({ task, solution, outcome: "failure" }) });
   }
   await syncPoiPoiUnifiedState({ version: 1, records });
