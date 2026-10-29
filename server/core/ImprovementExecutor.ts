@@ -371,7 +371,7 @@ export class ImprovementExecutor {
     // （学習サイクルが起動済みかどうかに依存しないよう try/catch で保護）
     try {
       const cycles = await this.learningEngine.getAllLearningCycles(userId);
-      const activeCycle = cycles.find(c => c.status === 'running' && !c.dataPoints.some(point => point.input?.candidateId === candidate.id));
+      const activeCycle = cycles.find(c => c.status === 'running' && !c.dataPoints.some(point => point.input?.candidateId === candidate.id || point.input?.candidateId === undefined && point.input?.source === 'improvement' && point.input?.title === candidate.title));
 
       if (activeCycle) {
         await this.learningEngine.recordDataPoint(
