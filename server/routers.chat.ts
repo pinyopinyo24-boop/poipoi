@@ -74,7 +74,7 @@ export const chatRouter = router({
         const command = input.message.trim();
         const codeRequest = /^(?:PoiPoiコードエージェント|コードエージェント)[：:\s]+(?:実装|修正|変更|作成|追加|改修)/u.test(command);
         const toolRequest = command.match(/^PoiPoiツール[：:\s]+(分析|原価|製造記録|製造一覧|資料作成|コード確認|コード適用|Excel|PDF|資料分析|複数資料|PPT出力|製造分析)[：:\s]+([\s\S]+)$/u);
-        if (codeRequest || toolRequest) {
+        if (codeRequest || toolRequest || /^PoiPoiツール[：:\s]+製造一覧\s*$/u.test(command)) {
           if (!ctx.user) {
             throw new TRPCError({ code: 'UNAUTHORIZED', message: 'ツール利用にはログインが必要です' });
           }
@@ -138,7 +138,7 @@ export const chatRouter = router({
               stockQuantity: z.number().nonnegative().optional(), reorderLevel: z.number().nonnegative().optional(),
             }).parse(JSON.parse(toolRequest![2]));
             result = await caller.saveManufacturingRecord(args);
-          } else if (toolRequest?.[1] === '製造一覧') {
+          } else if (toolRequest?.[1] === '製造一覧' || /^PoiPoiツール[：:\s]+製造一覧\s*$/u.test(command)) {
             result = await caller.listManufacturingRecords();
           } else if (toolRequest?.[1] === '資料作成') {
             const args = z.object({ title: z.string().min(1), analysis: z.string().min(1) }).parse(JSON.parse(toolRequest![2]));
@@ -151,7 +151,7 @@ export const chatRouter = router({
           await repository.saveMessage({ id: toolUserId, userId, role: 'user', content: command, timestamp }, input.sessionId);
           const message = {
             id: uuidv4(), userId, role: 'assistant' as const,
-            content: JSON.stringify(result, null, 2).slice(0, 20000), timestamp: Date.now(),
+            content: toolRequest?.[1] === 'PPT出力' ? 'PowerPointを生成しました。ファイル本体は出力APIから取得してください。' : JSON.stringify(result, null, 2).slice(0, 20000), timestamp: Date.now(),
           };
           await repository.saveMessage(message, input.sessionId);
           // Store a bounded, user-scoped tool outcome for subsequent AI reasoning.
