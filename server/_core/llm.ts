@@ -133,7 +133,13 @@ const DEFAULT_MODEL = "gemini-2.0-flash";
  */
 export async function invokeLLM(request: LLMRequest): Promise<LLMResponse> {
   const baseUrl = process.env.LOCAL_AI_URL || "http://localhost:11434";
-  const model = request.messages?.[0]?.content?.includes("code generation expert") ? "qwen2.5-coder:7b" : "qwen2.5:7b";
+  const isCodeTask = request.messages.some(message =>
+    typeof message.content === "string" &&
+    /code implementation agent|code generation expert|software implementation agent/i.test(message.content)
+  );
+  const model = request.model || (isCodeTask
+    ? process.env.LOCAL_CODER_MODEL || "qwen2.5-coder:7b"
+    : process.env.LOCAL_CHAT_MODEL || "qwen2.5:7b");
 
   const messages = [...(request.messages || [])];
   const userIndex = messages.findLastIndex(message => message.role === "user");
@@ -161,6 +167,8 @@ export async function invokeLLM(request: LLMRequest): Promise<LLMResponse> {
         model,
         messages,
         stream: false,
+        ...(request.temperature !== undefined ? { options: { temperature: request.temperature } } : {}),
+        ...(request.response_format ? { format: "json" } : {}),
       }),
     });
 
@@ -202,26 +210,8 @@ try {
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : String(error);
     console.error("[LLM ERROR] Local AI call failed:", errorMsg);
-
-    return {
-      id: `local-error-${Date.now()}`,
-      object: "chat.completion",
-      created: Math.floor(Date.now() / 1000),
-      model: model,
-      choices: [{
-        index: 0,
-        message: {
-          role: "assistant",
-          content: "現在、ローカルAIサービスに接続できません。",
-        },
-        finish_reason: "error",
-      }],
-      usage: {
-        prompt_tokens: 0,
-        completion_tokens: 0,
-        total_tokens: 0,
-      },
-    };
+    // Callers must be able to distinguish transport failure from a real answer.
+    throw error;
   }
 }
 export async function listLLMModels(): Promise<{ data: LLMModel[] }> {
