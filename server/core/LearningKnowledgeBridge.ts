@@ -11,6 +11,25 @@ type Entry = {
 
 export class LearningKnowledgeBridge {
   private file: string;
+  private static writes = new Map<string, Promise<void>>();
+
+  private async exclusive<T>(operation: () => Promise<T>): Promise<T> {
+    const previous = LearningKnowledgeBridge.writes.get(this.file) ?? Promise.resolve();
+    let release!: () => void;
+    const current = new Promise<void>(resolve => { release = resolve; });
+    const tail = previous.then(() => current);
+    LearningKnowledgeBridge.writes.set(this.file, tail);
+    await previous;
+    try {
+      return await operation();
+    } finally {
+      release();
+      if (LearningKnowledgeBridge.writes.get(this.file) === tail) {
+        LearningKnowledgeBridge.writes.delete(this.file);
+      }
+    }
+  }
+
   constructor(root: string) {
     this.file = path.join(root, "data", "learning-knowledge.json");
   }
@@ -25,6 +44,7 @@ export class LearningKnowledgeBridge {
   }
 
   async learn(input: Omit<Entry, "used">): Promise<void> {
+    return this.exclusive(async () => {
     const data = await this.load();
     const taskKey = (text: string) =>
       text.normalize("NFKC").toLowerCase().replace(/[\s、。,.!?！？・]+/g, "");
@@ -46,9 +66,15 @@ export class LearningKnowledgeBridge {
     if (index < 0) data.push(entry);
     else data[index] = entry;
     await fs.mkdir(path.dirname(this.file), { recursive: true });
-    await fs.writeFile(this.file, JSON.stringify(data, null, 2));
+    const temporary = `${this.file}.${process.pid}.${Date.now()}.${Math.random().toString(36).slice(2)}.tmp`;
+    try {
+      await fs.writeFile(temporary, JSON.stringify(data, null, 2));
+      await fs.rename(temporary, this.file);
+    } finally {
+      await fs.rm(temporary, { force: true }).catch(() => {});
+    }
+    });
   }
-
   async recall(query: string, limit = 5): Promise<Entry[]> {
     const data = await this.load();
     const compact = (v: string) => v.toLowerCase().normalize("NFKC")
@@ -82,13 +108,14 @@ export class LearningKnowledgeBridge {
   }
 
   async recordUsage(task: string): Promise<void> {
+    return this.exclusive(async () => {
     const data = await this.load();
     const entry = data.find(x => x.task === task);
     if (!entry) return;
     entry.used++;
     await fs.writeFile(this.file, JSON.stringify(data, null, 2));
+    });
   }
-
   async getStatistics() {
     const data = await this.load();
     return {
