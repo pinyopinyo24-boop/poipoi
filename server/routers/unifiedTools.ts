@@ -199,7 +199,27 @@ export const unifiedToolsRouter = router({
     if (!preview || preview.userId !== String(ctx.user.id)) throw new Error('Preview expired or unavailable');
     evolutionPreviews.delete(input.previewId);
     // Explicit approval only. applyAndTest performs typecheck, exact-path commit and rollback.
-    return PoipoiCodeAgent.getInstance().applyAndTest(preview.changes);
+    const outcome = await PoipoiCodeAgent.getInstance().applyAndTest(preview.changes);
+    try {
+      await syncUserPoiPoiUnifiedState(String(ctx.user.id), {
+        version: 1,
+        records: [{
+          id: 'evolution-' + input.previewId,
+          category: 'evolution',
+          origin: 'pc',
+          updatedAt: Date.now(),
+          value: JSON.stringify({
+            success: outcome.success,
+            tested: outcome.tested,
+            paths: preview.changes.map(item => item.path),
+            error: outcome.error?.slice(0, 1000),
+          }),
+        }],
+      });
+    } catch (error) {
+      console.warn('[PoiPoi] Evolution history unavailable:', error);
+    }
+    return outcome;
   }),
 
   analyzeMultipleDocuments: protectedProcedure.input(z.object({
