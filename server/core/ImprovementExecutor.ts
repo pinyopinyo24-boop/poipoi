@@ -173,9 +173,11 @@ export class ImprovementExecutor {
    * 実行履歴を取得
    */
   public getExecutionHistory(userId: string, limit = 50): ExecutionResult[] {
+    const safeLimit = Number.isFinite(limit) ? Math.max(0, Math.trunc(limit)) : 50;
+    if (safeLimit === 0) return [];
     return this.executionHistory
       .filter((r) => r.userId === userId)
-      .slice(-limit);
+      .slice(-safeLimit);
   }
 
   /**
