@@ -275,7 +275,7 @@ export class ChatCoreManager {
         const priorSessions = (await this.chatRepository.getUserSessions(session.userId))
           .filter(item => item.id !== sessionId).slice(0, 12);
         const query = userMessage.normalize('NFKC').toLowerCase();
-        const words = query.match(/[\\p{Script=Han}\\p{Script=Hiragana}\\p{Script=Katakana}]{2,}|[a-z0-9]{3,}/gu) ?? [];
+        const words = query.match(/[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}]{2,}|[a-z0-9]{3,}/gu) ?? [];
         const relevant: string[] = [];
         for (const prior of priorSessions) {
           const turns = await this.chatRepository.getMessages(prior.id, 40);
