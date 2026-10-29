@@ -73,7 +73,7 @@ export const chatRouter = router({
         // All explicit tools share the authenticated unified router.
         const command = input.message.trim();
         const codeRequest = /^(?:PoiPoiコードエージェント|コードエージェント)[：:\s]+(?:実装|修正|変更|作成|追加|改修)/u.test(command);
-        const toolRequest = command.match(/^PoiPoiツール[：:\s]+(分析|原価|製造記録|製造一覧|資料作成|コード確認)[：:\s]+([\s\S]+)$/u);
+        const toolRequest = command.match(/^PoiPoiツール[：:\s]+(分析|原価|製造記録|製造一覧|資料作成|コード確認|Excel|PDF|資料分析|複数資料|PPT出力|製造分析)[：:\s]+([\s\S]+)$/u);
         if (codeRequest || toolRequest) {
           if (!ctx.user) {
             throw new TRPCError({ code: 'UNAUTHORIZED', message: 'ツール利用にはログインが必要です' });
@@ -88,6 +88,31 @@ export const chatRouter = router({
             result = await caller.codePreview({ request: codeRequest ? command : toolRequest![2] });
           } else if (toolRequest?.[1] === '分析') {
             result = await caller.reason({ prompt: toolRequest[2] });
+          } else if (toolRequest?.[1] === 'Excel') {
+            result = await caller.excel({ file: toolRequest[2].trim() });
+          } else if (toolRequest?.[1] === 'PDF') {
+            result = await caller.pdf({ file: toolRequest[2].trim() });
+          } else if (toolRequest?.[1] === '資料分析') {
+            const args = z.object({
+              file: z.string().min(1), type: z.enum(['xlsx', 'pdf']), question: z.string().min(1),
+            }).parse(JSON.parse(toolRequest[2]));
+            result = await caller.analyzeDocument(args);
+          } else if (toolRequest?.[1] === '複数資料') {
+            const args = z.object({
+              files: z.array(z.object({ file: z.string().min(1), type: z.enum(['xlsx', 'pdf']) })).min(2).max(6),
+              question: z.string().min(1),
+            }).parse(JSON.parse(toolRequest[2]));
+            result = await caller.analyzeMultipleDocuments(args);
+          } else if (toolRequest?.[1] === 'PPT出力') {
+            result = await caller.exportPresentation({ id: toolRequest[2].trim() });
+          } else if (toolRequest?.[1] === '製造分析') {
+            const args = z.object({
+              estimatedUnitCost: z.number().nonnegative(), actualUnitCost: z.number().nonnegative(),
+              quantity: z.number().positive(), producedUnits: z.number().nonnegative().optional(),
+              plannedUnits: z.number().positive().optional(), stockQuantity: z.number().nonnegative().optional(),
+              reorderLevel: z.number().nonnegative().optional(), unitPrice: z.number().nonnegative().optional(),
+            }).parse(JSON.parse(toolRequest[2]));
+            result = await caller.analyzeManufacturing(args);
           } else if (toolRequest?.[1] === '原価') {
             const args = z.object({ estimated: z.number().finite(), actual: z.number().finite(), quantity: z.number().positive().finite() }).parse(JSON.parse(toolRequest![2]));
             result = await caller.analyzeCost(args);
