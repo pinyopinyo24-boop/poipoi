@@ -178,6 +178,12 @@ export function synchronizeMobilePoiPoiState(
           `PoiPoi state confirmation failed: ${confirmation.status} ${errorText.slice(0, 300)}`
         );
       }
+      const confirmedPayload: unknown = await confirmation.json();
+      if (!confirmedPayload || typeof confirmedPayload !== 'object' ||
+          !('result' in confirmedPayload) ||
+          !(confirmedPayload as { result?: { data?: unknown } }).result?.data) {
+        throw new Error('PoiPoi state confirmation response invalid');
+      }
     }
 
     return merged;
