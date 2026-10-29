@@ -11,6 +11,8 @@ export class LearningContextIntegration {
     const entries = await this.knowledge.recall(message, limit);
     if (!entries.length) return "";
 
+    // Record only accepted examples actually supplied to the AI.
+    await Promise.all(entries.map(e => this.knowledge.recordUsage(e.task)));
     return entries.map((e, i) =>
       `${i + 1}. Question: ${e.task.slice(0, 500)}\nAnswer: ${e.solution.slice(0, 1200)}`
     ).join("\n\n");
