@@ -172,7 +172,11 @@ export class ImprovementExecutor {
 
     // バッチサマリーをメモリに保存
     const batchKey = `execution_batch_${userId}_${summary.executedAt}`;
-    this.memoryEngine.setMemory(userId, batchKey, summary);
+    try {
+      this.memoryEngine.setMemory(userId, batchKey, summary);
+    } catch (storageError) {
+      console.warn('[PoiPoi] Improvement batch summary persistence failed:', storageError);
+    }
 
     return summary;
   }
