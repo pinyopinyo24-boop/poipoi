@@ -33,6 +33,11 @@ export class PDFAnalysisManager {
    */
   async parsePDF(filePath: string): Promise<PDFAnalysisResult | null> {
     try {
+      const { PDFParse } = await import('pdf-parse');
+      const { readFile } = await import('node:fs/promises');
+      const parser = new PDFParse({ data: new Uint8Array(await readFile(filePath)) });
+      const extracted = await parser.getText();
+      await parser.destroy();
       // シミュレーション用の実装
       const fileName = filePath.split('/').pop() || 'document.pdf';
       
