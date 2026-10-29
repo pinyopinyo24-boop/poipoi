@@ -8,11 +8,13 @@
 } from "fs";
 import { dirname, resolve, relative } from "path";
 import { execFileSync } from "child_process";
+import { createHash } from "node:crypto";
 import { invokeLLM } from "../_core/llm";
 
 export interface CodeChange {
   path: string;
   content: string;
+  baseHash?: string;
 }
 
 export interface CodeTaskResult {
@@ -163,6 +165,7 @@ export class PoipoiCodeAgent {
     // Read only explicitly referenced source files, within the project boundary.
     const sourceFiles = task.match(/(?:server|mobile|client|shared|src)\/[a-zA-Z0-9_./-]+\.(?:ts|tsx|js|jsx)/g) ?? [];
     const context: string[] = [];
+    const sourceHashes = new Map<string, string>();
     for (const file of [...new Set(sourceFiles)].slice(0, 5)) {
       try {
         const fullPath = this.safePath(file);
@@ -170,6 +173,7 @@ export class PoipoiCodeAgent {
         const source = readFileSync(fullPath, "utf8");
         if (source.length > 20000) continue;
         context.push("Existing source: " + file + "\n" + source);
+        sourceHashes.set(file, createHash("sha256").update(source).digest("hex"));
       } catch {
         // Never disclose protected or inaccessible paths.
       }
@@ -241,9 +245,11 @@ export class PoipoiCodeAgent {
     const generated = this.extractJson(content).changes;
     const allowed = new Set(context.map(item => item.slice("Existing source: ".length).split("\n", 1)[0]));
     for (const change of generated) {
-      if (!allowed.has(change.path.replace(/\\/g, "/"))) {
+      const normalizedPath = change.path.replace(/\\/g, "/");
+      if (!allowed.has(normalizedPath)) {
         throw new Error("Generated change targets an unreviewed file: " + change.path);
       }
+      change.baseHash = sourceHashes.get(normalizedPath);
     }
     return generated;
   }
@@ -266,6 +272,16 @@ export class PoipoiCodeAgent {
       const paths = changes.map(change => this.safePath(change.path));
       if (new Set(paths).size !== paths.length) throw new Error("Duplicate generated file paths");
       if (changes.some(change => !change.content.trim())) throw new Error("Empty generated file content");
+      for (const change of changes) {
+        if (!change.baseHash) continue;
+        const absolute = this.safePath(change.path);
+        const currentHash = existsSync(absolute)
+          ? createHash("sha256").update(readFileSync(absolute, "utf8")).digest("hex")
+          : "";
+        if (currentHash !== change.baseHash) {
+          throw new Error("Source changed after generation: " + change.path);
+        }
+      }
 
       // Validate syntax before modifying the working tree.
       const ts = await import("typescript");
