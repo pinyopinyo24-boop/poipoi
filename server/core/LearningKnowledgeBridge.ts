@@ -146,7 +146,13 @@ export class LearningKnowledgeBridge {
     const entry = data.find(x => x.task === task);
     if (!entry) return;
     entry.used++;
-    await fs.writeFile(this.file, JSON.stringify(data, null, 2));
+    const temporary = `${this.file}.${process.pid}.${Date.now()}.${Math.random().toString(36).slice(2)}.tmp`;
+    try {
+      await fs.writeFile(temporary, JSON.stringify(data, null, 2));
+      await fs.rename(temporary, this.file);
+    } finally {
+      await fs.rm(temporary, { force: true }).catch(() => {});
+    }
     });
   }
   async evaluateRecall(queries: Array<{ question: string; expectedAnswer: string }>) {
