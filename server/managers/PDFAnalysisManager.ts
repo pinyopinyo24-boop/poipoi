@@ -41,7 +41,7 @@ export class PDFAnalysisManager {
       // シミュレーション用の実装
       const fileName = filePath.split('/').pop() || 'document.pdf';
       
-      const pages: PDFPage[] = [
+      const pages: PDFPage[] = extracted.pages.map((page, index) => ({
         {
           pageNumber: 1,
           text: extracted.text,
