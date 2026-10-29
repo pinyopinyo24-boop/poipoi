@@ -270,6 +270,31 @@ export class ChatCoreManager {
             memories.map((item: string) => '- ' + item.slice(0, 500).replace(/[\r\n]+/g, ' ')).join('\n'),
         });
       }
+      const session = await this.chatRepository.getSession(sessionId);
+      if (session) {
+        const priorSessions = (await this.chatRepository.getUserSessions(session.userId))
+          .filter(item => item.id !== sessionId).slice(0, 12);
+        const query = userMessage.normalize('NFKC').toLowerCase();
+        const words = query.match(/[\\p{Script=Han}\\p{Script=Hiragana}\\p{Script=Katakana}]{2,}|[a-z0-9]{3,}/gu) ?? [];
+        const relevant: string[] = [];
+        for (const prior of priorSessions) {
+          const turns = await this.chatRepository.getMessages(prior.id, 40);
+          for (const turn of turns) {
+            if (turn.role !== 'user' || turn.userId !== session.userId) continue;
+            const text = turn.content.normalize('NFKC').toLowerCase();
+            if (words.some(word => word.length >= 3 && text.includes(word))) {
+              relevant.push(turn.content.slice(0, 300));
+            }
+          }
+        }
+        if (relevant.length) {
+          messages.unshift({
+            role: 'system',
+            content: '過去の会話でユーザーが述べた参考情報（現在の依頼を優先）：\\n' +
+              [...new Set(relevant)].slice(-5).join('\\n'),
+          });
+        }
+      }
       const aiCore = getAICore() ?? await initializeAICore();
       const aiMessage = await aiCore.invoke(messages);
       if (!aiMessage?.trim()) throw new Error('AI Core returned an empty response');
