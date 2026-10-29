@@ -183,9 +183,10 @@ export class AgentManager {
           const previousResults: Record<string, any> = {};
           for (const depType of step.dependsOn) {
             const depResult = results.find(r => r.agentType === depType);
-            if (depResult) {
-              previousResults[depType] = depResult.output;
+            if (!depResult || !depResult.success) {
+              throw new Error('Unmet workflow dependency: ' + depType);
             }
+            previousResults[depType] = depResult.output;
           }
           step.input.previousResults = previousResults;
         }
