@@ -171,7 +171,7 @@ export const aiAgentsRouter = router({
         stepCount: result.steps.length,
         executionTime: result.executionTime,
         totalTokensUsed: result.totalTokensUsed,
-        aggregatedResults: result.aggregatedResults,
+        aggregatedResults: revision?.verified === true ? revision.outputs : result.aggregatedResults,
         error: result.error,
       };
     }),
