@@ -14,7 +14,7 @@ export const selfEvolutionRouter = router({
         context: z.string().max(4000).optional().describe("現在のコンテキスト"),
       })
     )
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
       try {
         // Use LLM to analyze feedback and generate improvements
         const response = await invokeLLM({
@@ -67,6 +67,23 @@ Respond in JSON format with: { "analysis": "...", "suggestions": ["...", "..."],
         }
 
         const result = JSON.parse(content);
+        if (typeof result.analysis !== 'string' || !Array.isArray(result.suggestions) ||
+            !result.suggestions.every((item: unknown) => typeof item === 'string') ||
+            !['high', 'medium', 'low'].includes(result.priority)) {
+          throw new Error('Invalid feedback analysis response');
+        }
+        await syncUserPoiPoiUnifiedState(String(ctx.user.id), {
+          version: 1,
+          records: [{
+            id: 'feedback-' + randomUUID(),
+            category: 'learning',
+            origin: 'pc',
+            updatedAt: Date.now(),
+            value: JSON.stringify({ feedback: input.feedback, context: input.context,
+              analysis: result.analysis, suggestions: result.suggestions,
+              priority: result.priority }).slice(0, 3000),
+          }],
+        });
         return {
           success: true,
           analysis: result.analysis,
