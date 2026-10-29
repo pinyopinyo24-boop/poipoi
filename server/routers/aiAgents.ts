@@ -3,7 +3,7 @@
  * Provides RPC endpoints for agent operations
  */
 
-import { router, publicProcedure, protectedProcedure } from '../_core/trpc';
+import { router, protectedProcedure } from '../_core/trpc';
 import { z } from 'zod';
 import { invokeLLM } from '../_core/llm';
 import { evaluateLocalCapabilities } from '../core/PoiPoiCapabilityEvaluation';
@@ -205,7 +205,7 @@ export const aiAgentsRouter = router({
   /**
    * Initialize AI Core
    */
-  initialize: publicProcedure.mutation(async () => {
+  initialize: protectedProcedure.mutation(async () => {
     try {
       const aiCore = await initializeAICore();
       return {
@@ -221,7 +221,7 @@ export const aiAgentsRouter = router({
   /**
    * Get system status
    */
-  getSystemStatus: publicProcedure.query(async () => {
+  getSystemStatus: protectedProcedure.query(async () => {
     const aiCore = getAICore();
     if (!aiCore) {
       return {
@@ -236,7 +236,7 @@ export const aiAgentsRouter = router({
   /**
    * Get provider statuses
    */
-  getProviderStatuses: publicProcedure.query(async () => {
+  getProviderStatuses: protectedProcedure.query(async () => {
     const aiCore = getAICore();
     if (!aiCore) {
       return {};
@@ -253,7 +253,7 @@ export const aiAgentsRouter = router({
   /**
    * Get agent statuses
    */
-  getAgentStatuses: publicProcedure.query(async () => {
+  getAgentStatuses: protectedProcedure.query(async () => {
     const aiCore = getAICore();
     if (!aiCore) {
       return {};
