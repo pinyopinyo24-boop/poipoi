@@ -157,6 +157,7 @@ export class LearningKnowledgeBridge {
     });
   }
   async evaluateRecall(queries: Array<{ question: string; expectedAnswer: string }>) {
+    await (LearningKnowledgeBridge.writes.get(this.file) ?? Promise.resolve());
     const results = await Promise.all(queries.map(async ({ question, expectedAnswer }) => {
       const recalled = await this.recall(question, 5);
       const normalize = (value: string) => value.normalize("NFKC").trim().toLowerCase();
