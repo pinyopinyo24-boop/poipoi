@@ -184,6 +184,20 @@ export function synchronizeMobilePoiPoiState(
           !(confirmedPayload as { result?: { data?: unknown } }).result?.data) {
         throw new Error('PoiPoi state confirmation response invalid');
       }
+      const confirmedResult = (confirmedPayload as { result: { data: unknown } }).result.data;
+      const confirmedState = deserializePoiPoiState(JSON.stringify(
+        confirmedResult && typeof confirmedResult === 'object' && 'json' in confirmedResult
+          ? confirmedResult.json
+          : confirmedResult
+      ));
+      const missing = merged.records.some(record =>
+        !confirmedState.records.some(saved =>
+          saved.category === record.category && saved.id === record.id &&
+          saved.value === record.value && saved.updatedAt === record.updatedAt &&
+          saved.origin === record.origin
+        )
+      );
+      if (missing) throw new Error('PoiPoi state confirmation did not persist all records');
     }
 
     return merged;
