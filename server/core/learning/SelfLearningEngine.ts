@@ -356,7 +356,8 @@ export class SelfLearningEngine {
       throw new Error('User does not have permission to read learning data');
     }
 
-    return this.learningCycles.get(cycleId) || null;
+    const cycle = this.learningCycles.get(cycleId);
+    return cycle?.userId === userId ? cycle : null;
   }
 
   /**
