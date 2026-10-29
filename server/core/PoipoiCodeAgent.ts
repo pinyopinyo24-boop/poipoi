@@ -209,7 +209,7 @@ export class PoipoiCodeAgent {
       // Validate syntax before modifying the working tree.
       const ts = await import("typescript");
       for (const change of changes) {
-        if (!/\\.[cm]?[jt]sx?$/.test(change.path)) continue;
+        if (!/\.[cm]?[jt]sx?$/.test(change.path)) continue;
         const checked = ts.transpileModule(change.content, {
           fileName: change.path,
           reportDiagnostics: true,
@@ -227,8 +227,8 @@ export class PoipoiCodeAgent {
       const status = execFileSync("git", ["status", "--porcelain", "--untracked-files=all"], {
         cwd: this.root, encoding: "utf8", timeout: 15000, windowsHide: true,
       });
-      const dirty = status.split(/\\r?\\n/).filter(Boolean);
-      for (const path of changes.map(item => item.path.replace(/\\\\/g, "/"))) {
+      const dirty = status.split(/\r?\n/).filter(Boolean);
+      for (const path of changes.map(item => item.path.replace(/\\/g, "/"))) {
         if (dirty.some(line => line.slice(3) === path || line.slice(3).endsWith(" -> " + path))) {
           throw new Error("Refusing to overwrite existing local changes: " + path);
         }
