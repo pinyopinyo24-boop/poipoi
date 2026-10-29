@@ -100,7 +100,25 @@ export const aiAgentsRouter = router({
           reason: z.string().min(1).max(2000),
         }).parse(JSON.parse(assessment));
       }
+      let revision = null;
+      if (result.status === 'completed' && !verification.passed &&
+          plan.steps.every(step => step.agentType === 'design' || step.agentType === 'review')) {
+        const retryId = workflowId + '-retry';
+        const retrySteps = steps.map(step => ({
+          ...step,
+          description: step.description + '\nReviewer feedback: ' + verification.reason,
+        }));
+        const retry = await core.executeWorkflow(retryId, retrySteps);
+        revision = {
+          workflowId: retryId,
+          status: retry.status,
+          outputs: retry.aggregatedResults,
+          error: retry.error,
+          verified: false,
+        };
+      }
       return {
+        revision,
         verification,
         workflowId,
         plan: plan.steps,
