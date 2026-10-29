@@ -144,6 +144,29 @@ export const chatRouter = router({
             content: JSON.stringify(result, null, 2).slice(0, 20000), timestamp: Date.now(),
           };
           await repository.saveMessage(message, input.sessionId);
+          // Store a bounded, user-scoped tool outcome for subsequent AI reasoning.
+          try {
+            const { syncUserPoiPoiUnifiedState } = await import('./core/PoiPoiUnifiedStateStore');
+            await syncUserPoiPoiUnifiedState(userId, {
+              version: 1,
+              records: [{
+                id: 'tool-' + message.id,
+                category: 'memory',
+                origin: 'pc',
+                updatedAt: Date.now(),
+                value: JSON.stringify({
+                  command: command.slice(0, 800),
+                  outcome: codeRequest || toolRequest?.[1] === 'コード確認'
+                    ? 'Code preview generated; not applied'
+                    : toolRequest?.[1] === 'PPT出力'
+                      ? 'PowerPoint export generated'
+                      : message.content.slice(0, 1500),
+                }).slice(0, 3000),
+              }],
+            });
+          } catch (error) {
+            console.warn('[PoiPoi] Tool outcome memory sync skipped:', error);
+          }
           return { message, session, relatedMemories: [], reasoning: 'Unified tools execution' };
         }
 
