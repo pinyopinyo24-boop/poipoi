@@ -238,6 +238,28 @@ export class SelfImprovementManager {
       });
     }
 
+    // Learn from prior candidate simulation outcomes for this user.
+    const previous = this.cycleHistory.filter(c => c.userId === userId).slice(-10);
+    const previousScores = new Map<string, number[]>();
+    for (const cycle of previous) {
+      for (const candidate of cycle.candidates) {
+        const result = cycle.testResults.find(t => t.candidateId === candidate.id);
+        if (!result) continue;
+        const key = candidate.source + ':' + candidate.description;
+        const scores = previousScores.get(key) ?? [];
+        scores.push(result.score);
+        previousScores.set(key, scores);
+      }
+    }
+    for (const candidate of candidates) {
+      const scores = previousScores.get(candidate.source + ':' + candidate.description);
+      if (!scores?.length) continue;
+      const average = scores.reduce((sum, score) => sum + score, 0) / scores.length;
+      candidate.estimatedImpact = Math.max(0, Math.min(100,
+        Math.round(candidate.estimatedImpact * (0.5 + average / 200))
+      ));
+    }
+
     // 影響度の高い順に並べ替え
     candidates.sort((a, b) => b.estimatedImpact - a.estimatedImpact);
 
