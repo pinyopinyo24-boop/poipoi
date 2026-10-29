@@ -182,7 +182,7 @@ export class AgentManager {
         if (step.dependsOn && step.dependsOn.length > 0) {
           const previousResults: Record<string, any> = {};
           for (const depType of step.dependsOn) {
-            const depResult = results.find(r => r.agentType === depType);
+            const depResult = [...results].reverse().find(r => r.agentType === depType);
             if (!depResult || !depResult.success) {
               throw new Error('Unmet workflow dependency: ' + depType);
             }
@@ -218,6 +218,9 @@ export class AgentManager {
           );
 
           const stepExecutionTime = Date.now() - stepStartTime;
+          if (!result.success || (result.output && typeof result.output === 'object' && result.output.simulated === true)) {
+            throw new Error('Agent step did not complete real work: ' + step.agentType);
+          }
           this.executionLogger.logAgentCompletion(
             workflowId,
             entryId,
@@ -225,10 +228,6 @@ export class AgentManager {
             stepExecutionTime,
             result.tokensUsed || 0
           );
-
-          if (!result.success || (result.output && typeof result.output === 'object' && result.output.simulated === true)) {
-            throw new Error('Agent step did not complete real work: ' + step.agentType);
-          }
           results.push(result);
           aggregatedResults[step.agentType] = result.output;
           totalTokensUsed += result.tokensUsed || 0;
