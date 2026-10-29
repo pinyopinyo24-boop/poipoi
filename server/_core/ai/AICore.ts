@@ -325,13 +325,14 @@ export async function initializeAICore(config?: Partial<AICoreConfig>): Promise<
   }
 
   const defaultConfig: AICoreConfig = {
-    enableChatGPT: !!process.env.OPENAI_API_KEY,
-    enableGemini: !!process.env.GEMINI_API_KEY,
+    enableChatGPT: false,
+    enableGemini: false,
     primaryProvider: 'local',
     enableLogging: process.env.NODE_ENV !== 'production',
     ...config,
     primaryProvider: 'local',
     enableGemini: false,
+    enableChatGPT: false,
   };
 
   const candidate = new AICore(defaultConfig);
