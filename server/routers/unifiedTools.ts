@@ -240,6 +240,33 @@ export const unifiedToolsRouter = router({
     if (typeof answer !== 'string' || !answer) throw new Error('Analysis returned no answer');
     return { answer, sources: sources.map(source => source.file), sampled: true };
   }),
+  saveManufacturingRecord: protectedProcedure.input(z.object({
+    itemId: z.string().min(1).max(120),
+    estimatedUnitCost: z.number().nonnegative().finite(),
+    actualUnitCost: z.number().nonnegative().finite(),
+    quantity: z.number().positive().finite(),
+    stockQuantity: z.number().nonnegative().finite().optional(),
+    reorderLevel: z.number().nonnegative().finite().optional(),
+  })).mutation(async ({ ctx, input }) => {
+    const id = 'manufacturing-' + createHash('sha256').update(input.itemId).digest('hex').slice(0, 24);
+    const state = await syncUserPoiPoiUnifiedState(String(ctx.user.id), {
+      version: 1,
+      records: [{ id, category: 'memory', origin: 'pc', updatedAt: Date.now(), value: JSON.stringify(input) }],
+    });
+    return { id, saved: true, recordCount: state.records.length };
+  }),
+  listManufacturingRecords: protectedProcedure.query(async ({ ctx }) => {
+    const state = await getUserPoiPoiUnifiedState(String(ctx.user.id));
+    return state.records.filter(record => record.id.startsWith('manufacturing-')).flatMap(record => {
+      try {
+        const item = JSON.parse(record.value);
+        const variancePerUnit = item.actualUnitCost - item.estimatedUnitCost;
+        return [{ ...item, variancePerUnit, totalVariance: variancePerUnit * item.quantity,
+          reorderRequired: item.stockQuantity !== undefined && item.reorderLevel !== undefined
+            ? item.stockQuantity < item.reorderLevel : null, updatedAt: record.updatedAt }];
+      } catch { return []; }
+    });
+  }),
   analyzeManufacturing: protectedProcedure.input(z.object({
     estimatedUnitCost: z.number().nonnegative().finite(),
     actualUnitCost: z.number().nonnegative().finite(),
