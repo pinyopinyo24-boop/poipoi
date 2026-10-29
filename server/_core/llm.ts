@@ -120,7 +120,7 @@ export async function invokeLLM(request: LLMRequest): Promise<LLMResponse> {
   );
   const model = (request.model && !/^(gemini|gpt-)/i.test(request.model) ? request.model : undefined) || (isCodeTask
     ? process.env.LOCAL_CODER_MODEL || "qwen2.5-coder:7b"
-    : process.env.LOCAL_CHAT_MODEL || "qwen2.5:7b");
+    : process.env.LOCAL_CHAT_MODEL || process.env.LOCAL_CODER_MODEL || "qwen2.5-coder:7b");
 
   const messages = [...(request.messages || [])];
   const userIndex = messages.findLastIndex(message => message.role === "user");
