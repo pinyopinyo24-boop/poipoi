@@ -4,16 +4,6 @@ import { enrichPromptWithLearning } from "../core/LearningContextIntegration";
  * Google Gemini API繧剃ｽｿ逕ｨ縺励◆LLM邨ｱ蜷・
  */
 
-// [LLM KEY CHECK] Startup verification
-if (typeof process !== 'undefined' && process.env) {
-  const apiKey = process.env.GEMINI_API_KEY;
-  if (!apiKey) {
-    console.warn('[LLM KEY CHECK] WARNING: GEMINI_API_KEY is not set');
-  } else {
-    console.log('[LLM KEY CHECK] GEMINI_API_KEY is configured');
-  }
-}
-
 export type Role = "system" | "user" | "assistant" | "tool" | "function";
 
 export type TextContent = {
@@ -121,16 +111,7 @@ export type LLMModel = {
   capabilities?: Record<string, unknown>;
 };
 
-/**
- * Google Gemini API險ｭ螳・
- */
-const GEMINI_API_KEY = process.env.GEMINI_API_KEY || "";
-const GEMINI_API_URL = "https://generativelanguage.googleapis.com/v1beta/openai/";
-const DEFAULT_MODEL = "gemini-2.0-flash";
-
-/**
- * Invoke LLM - Google Gemini API螳溯｣・
- */
+/** Invoke local Ollama models. */
 export async function invokeLLM(request: LLMRequest): Promise<LLMResponse> {
   const baseUrl = process.env.LOCAL_AI_URL || "http://localhost:11434";
   const isCodeTask = request.messages.some(message =>
@@ -143,7 +124,7 @@ export async function invokeLLM(request: LLMRequest): Promise<LLMResponse> {
 
   const messages = [...(request.messages || [])];
   const userIndex = messages.findLastIndex(message => message.role === "user");
-  if (userIndex >= 0) {
+  if (userIndex >= 0 && !request.response_format) {
     const userMessage = messages[userIndex];
     if (typeof userMessage.content === "string") {
       messages[userIndex] = {
@@ -170,8 +151,12 @@ export async function invokeLLM(request: LLMRequest): Promise<LLMResponse> {
         model,
         messages,
         stream: false,
-        ...(request.temperature !== undefined ? { options: { temperature: request.temperature } } : {}),
-        ...(request.response_format ? { format: "json" } : {}),
+        options: {
+          ...(request.temperature !== undefined ? { temperature: request.temperature } : {}),
+          ...(request.top_p !== undefined ? { top_p: request.top_p } : {}),
+          ...(request.max_tokens !== undefined ? { num_predict: request.max_tokens } : {}),
+        },
+        ...(request.response_format ? { format: request.response_format.json_schema.schema } : {}),
       }),
     });
 
@@ -200,7 +185,7 @@ try {
         index: 0,
         message: {
           role: "assistant",
-          content: data.message?.content || "",
+          content: typeof data.message?.content === "string" ? data.message.content : "",
         },
         finish_reason: "stop",
       }],
