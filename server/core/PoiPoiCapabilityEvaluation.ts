@@ -30,6 +30,7 @@ export interface EvaluationReport {
   passRate: number;
   eligibleForParityClaim: false;
   limitations: string[];
+  capabilityScores: Record<Capability, { passed: number; total: number; passRate: number }>;
 }
 
 const DEFAULT_CASES: EvaluationCase[] = [
@@ -82,11 +83,18 @@ export async function evaluateLocalCapabilities(
     }
   }
   const passed = results.filter(item => item.passed).length;
+  const capabilityScores = {} as EvaluationReport['capabilityScores'];
+  for (const capability of ['reasoning', 'code', 'documents', 'memory', 'self_correction', 'tools', 'sync'] as Capability[]) {
+    const subset = results.filter(item => item.capability === capability);
+    const successes = subset.filter(item => item.passed).length;
+    capabilityScores[capability] = { passed: successes, total: subset.length, passRate: subset.length ? successes / subset.length : 0 };
+  }
   const report: EvaluationReport = {
     runId: createHash('sha256').update(userId + ':' + Date.now() + ':' + Math.random()).digest('hex').slice(0, 24),
     model, timestamp: new Date().toISOString(), cases: results,
     passed, total: results.length, passRate: passed / results.length,
     eligibleForParityClaim: false,
+    capabilityScores,
     limitations: [
       'These are basic smoke-test cases, not GPT-6 benchmark comparisons.',
       'Tool, document, synchronization and self-evolution end-to-end behavior is not verified by text questions.',
