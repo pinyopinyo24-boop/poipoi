@@ -1,4 +1,5 @@
 import { Platform } from 'react-native';
+import { getMobilePoiPoiState } from './PoiPoiUnifiedStateSync';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { AndroidAIModelManager, QWEN_MODEL_URLS } from './AndroidAIModelManager';
 
@@ -130,10 +131,36 @@ export class AndroidLocalAI {
     await this.restoreHistory();
     await this.initialize();
 
+    // Read the latest synchronized memory and accepted learning before every reply.
+    // Keep the model usable offline if storage is unavailable.
+    let recalled = '';
+    try {
+      const state = await getMobilePoiPoiState();
+      const normalized = (s: string) => s.normalize('NFKC').toLowerCase().replace(/[\\s、。,.!?！？・]+/g, '');
+      const query = normalized(message);
+      const relevant = state.records.filter(record => {
+        if (record.category !== 'learning' && record.category !== 'memory') return false;
+        if (record.category === 'memory') return normalized(record.value).includes(query) && query.length >= 3;
+        try {
+          const item = JSON.parse(record.value);
+          if (item?.outcome !== 'success' || typeof item.task !== 'string') return false;
+          const task = normalized(item.task);
+          return query.length >= 3 && (task.includes(query) || query.includes(task));
+        } catch { return false; }
+      }).sort((a, b) => b.updatedAt - a.updatedAt).slice(0, 5);
+      recalled = relevant.map(record => {
+        if (record.category === 'memory') return record.value.slice(0, 400);
+        const item = JSON.parse(record.value);
+        return `質問: ${String(item.task).slice(0, 250)} 回答: ${String(item.solution).slice(0, 500)}`;
+      }).join('\\n');
+    } catch (error) {
+      console.warn('[PoiPoi] Synced learning unavailable:', error);
+    }
+
     const messages: ChatTurn[] = [
       {
         role: 'system',
-        content: 'あなたはPoiPoi AIです。日本語で正確かつ簡潔に回答してください。',
+        content: 'あなたはPoiPoi AIです。日本語で正確かつ簡潔に回答してください。' + (recalled ? '\\n過去に確認済みの学習・記憶:\\n' + recalled : ''),
       },
       ...this.history.slice(-10),
       { role: 'user', content: message },
