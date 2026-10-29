@@ -193,6 +193,10 @@ export class PoipoiCodeAgent {
     // Do not report generated changes as verified: execution requires a separate
     // explicit validation step and the caller must see tested=false.
     try {
+      if (!changes.length) throw new Error('No generated changes to apply');
+      const paths = changes.map(change => this.safePath(change.path));
+      if (new Set(paths).size !== paths.length) throw new Error('Duplicate generated file paths');
+      if (changes.some(change => !change.content.trim())) throw new Error('Empty generated file content');
       for (const change of changes) {
         const absolute = this.safePath(change.path);
 
