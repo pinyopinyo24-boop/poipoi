@@ -77,6 +77,7 @@ export class SelfEvolutionWorkflow {
   private executor: ImprovementExecutor;
   private memoryEngine: MemoryEngine;
   private resultHistory: WorkflowResult[] = [];
+  private executionApprovals = new Map<string, Set<string>>();
 
   private constructor() {
     this.improvementManager = SelfImprovementManager.getInstance();
