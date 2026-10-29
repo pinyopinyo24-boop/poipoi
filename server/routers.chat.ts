@@ -153,7 +153,13 @@ export const chatRouter = router({
             id: uuidv4(), userId, role: 'assistant' as const,
             content: toolRequest?.[1] === 'PPT出力'
               ? JSON.stringify({ status: 'generated', format: 'pptx', note: 'Retrieve the file via unifiedTools.exportPresentation; binary data is not stored in chat.' })
-              : JSON.stringify(result, null, 2).slice(0, 20000),
+              : toolRequest?.[1] === 'コード適用'
+                ? JSON.stringify({
+                    success: (result as { success?: boolean }).success === true,
+                    tested: (result as { tested?: boolean }).tested === true,
+                    error: (result as { error?: string }).error,
+                  })
+                : JSON.stringify(result, null, 2).slice(0, 20000),
             timestamp: Date.now(),
           };
           await repository.saveMessage(message, input.sessionId);
