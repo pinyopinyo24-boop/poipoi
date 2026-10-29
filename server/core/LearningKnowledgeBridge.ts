@@ -1,5 +1,6 @@
 import { promises as fs } from "node:fs";
 import path from "node:path";
+import { getPoiPoiUnifiedState } from "./PoiPoiUnifiedStateStore";
 
 type Entry = {
   task: string;
@@ -111,6 +112,24 @@ export class LearningKnowledgeBridge {
   async recall(query: string, limit = 5): Promise<Entry[]> {
     await (LearningKnowledgeBridge.writes.get(this.file) ?? Promise.resolve());
     const data = await this.load();
+    // Merge synchronized learning records into recall without overwriting local history.
+    try {
+      const shared = await getPoiPoiUnifiedState();
+      for (const record of shared.records) {
+        if (record.category !== "learning") continue;
+        const item: unknown = JSON.parse(record.value);
+        if (!item || typeof item !== "object") continue;
+        const e = item as Partial<Entry>;
+        if (typeof e.task !== "string" || typeof e.solution !== "string" ||
+            !["success", "failure"].includes(e.outcome ?? "")) continue;
+        const normalized = (s: string) => s.normalize("NFKC").trim().toLowerCase();
+        const index = data.findIndex(x => normalized(x.task) === normalized(e.task!) && x.solution === e.solution);
+        const entry: Entry = { task: e.task, solution: e.solution, outcome: e.outcome!,
+          feedback: typeof e.feedback === "string" ? e.feedback : undefined, used: 0 };
+        if (index < 0) data.push(entry);
+        else if (entry.outcome === "failure") data[index].outcome = "failure";
+      }
+    } catch { /* Local learning remains available if sync state is unavailable. */ }
     const compact = (v: string) => v.toLowerCase().normalize("NFKC")
       .replace(/[\s、。,.!?！？・]+/g, "");
     const q = compact(query);
