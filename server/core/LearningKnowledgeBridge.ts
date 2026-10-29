@@ -144,7 +144,7 @@ export class LearningKnowledgeBridge {
   async recordUsage(task: string): Promise<void> {
     return this.exclusive(async () => {
     const data = await this.load();
-    const entry = data.find(x => x.task === task);
+    const entry = data.find(x => x.task === task && x.outcome === "success");
     if (!entry) return;
     entry.used++;
     const temporary = `${this.file}.${process.pid}.${Date.now()}.${Math.random().toString(36).slice(2)}.tmp`;
