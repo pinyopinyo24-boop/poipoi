@@ -190,6 +190,8 @@ export class PoipoiCodeAgent {
   async applyAndTest(changes: CodeChange[]): Promise<CodeTaskResult> {
     const backups = new Map<string, string | null>();
 
+    // Do not report generated changes as verified: execution requires a separate
+    // explicit validation step and the caller must see tested=false.
     try {
       for (const change of changes) {
         const absolute = this.safePath(change.path);
