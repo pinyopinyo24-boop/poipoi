@@ -260,6 +260,7 @@ export class PoipoiCodeAgent {
     }
 
     const generated = this.extractJson(content).changes;
+    if (generated.length > 5) throw new Error("Generated changes exceed the five-file safety limit");
     const allowed = new Set(context.map(item => item.slice("Existing source: ".length).split("\n", 1)[0]));
     for (const change of generated) {
       const normalizedPath = change.path.replace(/\\/g, "/");
