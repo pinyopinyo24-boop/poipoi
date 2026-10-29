@@ -1,5 +1,5 @@
 ﻿import { LearningKnowledgeBridge } from "./LearningKnowledgeBridge";
-import { syncPoiPoiUnifiedState } from "./PoiPoiUnifiedStateStore";
+import { syncPoiPoiUnifiedState, getPoiPoiUnifiedState } from "./PoiPoiUnifiedStateStore";
 import { createHash } from "node:crypto";
 
 async function publishLearning(task: string, solution: string, accepted: boolean, correction?: string): Promise<void> {
@@ -22,13 +22,19 @@ export class LearningContextIntegration {
 
   async buildContext(message: string, limit = 5): Promise<string> {
     const entries = await this.knowledge.recall(message, limit);
-    if (!entries.length) return "";
+    const shared = await getPoiPoiUnifiedState();
+    const memories = shared.records.filter(record =>
+      record.category === "memory" &&
+      message.length >= 4 &&
+      record.value.includes(message)
+    ).slice(-3);
+    if (!entries.length && !memories.length) return "";
 
     // Record only accepted examples actually supplied to the AI.
     await Promise.all(entries.map(e => this.knowledge.recordUsage(e.task)));
     return entries.map((e, i) =>
       `${i + 1}. Question: ${e.task.slice(0, 500)}\nAnswer: ${e.solution.slice(0, 1200)}`
-    ).join("\n\n");
+    ).concat(memories.map(record => `Memory: ${record.value.slice(0, 500)}`)).join("\n\n");
   }
 
   async evaluateKnowledge(queries: Array<{ question: string; expectedAnswer: string }>) {
