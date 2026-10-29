@@ -65,10 +65,46 @@ export const aiAgentsRouter = router({
         dependsOn: index > 0 ? [plan.steps[index - 1].agentType] : [],
       }));
       const result = await core.executeWorkflow(workflowId, steps);
+      let verification: { passed: boolean; reason: string } = {
+        passed: false,
+        reason: result.error || 'Workflow did not complete',
+      };
+      if (result.status === 'completed') {
+        const review = await invokeLLM({
+          model: process.env.LOCAL_CHAT_MODEL || 'qwen2.5:7b',
+          temperature: 0,
+          response_format: {
+            type: 'json_schema',
+            json_schema: {
+              name: 'workflow_verification',
+              schema: {
+                type: 'object',
+                properties: { passed: { type: 'boolean' }, reason: { type: 'string' } },
+                required: ['passed', 'reason'],
+              },
+            },
+          },
+          messages: [
+            { role: 'system', content: 'Evaluate whether the evidence in agent outputs satisfies the original request. Be conservative: generated text alone does not prove external actions occurred. Return JSON with passed boolean and reason.' },
+            { role: 'user', content: JSON.stringify({
+              request: input.request,
+              plan: plan.steps,
+              outputs: result.aggregatedResults,
+            }).slice(0, 16000) },
+          ],
+        });
+        const assessment = review.choices[0]?.message?.content;
+        if (!assessment) throw new Error('Workflow verification returned no assessment');
+        verification = z.object({
+          passed: z.boolean(),
+          reason: z.string().min(1).max(2000),
+        }).parse(JSON.parse(assessment));
+      }
       return {
+        verification,
         workflowId,
         plan: plan.steps,
-        status: result.status,
+        status: result.status === 'completed' && !verification.passed ? 'needs_revision' : result.status,
         stepCount: result.steps.length,
         executionTime: result.executionTime,
         totalTokensUsed: result.totalTokensUsed,
