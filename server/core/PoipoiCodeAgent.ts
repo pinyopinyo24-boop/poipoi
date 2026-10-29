@@ -160,6 +160,20 @@ export class PoipoiCodeAgent {
       throw new Error("Code generation task is empty");
     }
 
+    // Read only explicitly referenced source files, within the project boundary.
+    const sourceFiles = task.match(/(?:server|mobile|client|shared|src)\/[a-zA-Z0-9_./-]+\.(?:ts|tsx|js|jsx)/g) ?? [];
+    const context: string[] = [];
+    for (const file of [...new Set(sourceFiles)].slice(0, 5)) {
+      try {
+        const fullPath = this.safePath(file);
+        if (!existsSync(fullPath)) continue;
+        const source = readFileSync(fullPath, "utf8");
+        if (source.length > 20000) continue;
+        context.push("Existing source: " + file + "\n" + source);
+      } catch {
+        // Never disclose protected or inaccessible paths.
+      }
+    }
     const prompt = [
       "You are Poipoi's code implementation agent.",
       "Modify the existing TypeScript project according to the user's request.",
@@ -167,6 +181,9 @@ export class PoipoiCodeAgent {
       "Make the minimum necessary file changes.",
       "First reason about dependencies and preserve all existing exports.",
       "Do not fabricate unknown existing file contents; return an empty changes array if necessary.",
+      "Only modify files whose existing contents are supplied below.",
+      "Existing project files:",
+      context.join("\n\n") || "(none)",
       "Return JSON only.",
       "",
       "Required format:",
