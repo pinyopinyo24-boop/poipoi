@@ -109,12 +109,43 @@ export const aiAgentsRouter = router({
           description: step.description + '\nReviewer feedback: ' + verification.reason,
         }));
         const retry = await core.executeWorkflow(retryId, retrySteps);
+        let retryVerification: { passed: boolean; reason: string } = {
+          passed: false, reason: retry.error || 'Revised workflow did not complete',
+        };
+        if (retry.status === 'completed') {
+          const retryReview = await invokeLLM({
+            model: process.env.LOCAL_CHAT_MODEL || 'qwen2.5:7b',
+            temperature: 0,
+            response_format: {
+              type: 'json_schema',
+              json_schema: {
+                name: 'workflow_verification',
+                schema: {
+                  type: 'object',
+                  properties: { passed: { type: 'boolean' }, reason: { type: 'string' } },
+                  required: ['passed', 'reason'],
+                },
+              },
+            },
+            messages: [
+              { role: 'system', content: 'Check revised outputs against the request. Do not treat a claim of action as evidence. Return JSON with passed and reason.' },
+              { role: 'user', content: JSON.stringify({
+                request: input.request, priorFailure: verification.reason,
+                outputs: retry.aggregatedResults,
+              }).slice(0, 16000) },
+            ],
+          });
+          retryVerification = z.object({
+            passed: z.boolean(), reason: z.string().min(1).max(2000),
+          }).parse(JSON.parse(retryReview.choices[0]?.message?.content || '{}'));
+        }
         revision = {
           workflowId: retryId,
-          status: retry.status,
+          status: retry.status === 'completed' && !retryVerification.passed ? 'needs_revision' : retry.status,
           outputs: retry.aggregatedResults,
           error: retry.error,
-          verified: false,
+          verified: retryVerification.passed,
+          verification: retryVerification,
         };
       }
       return {
