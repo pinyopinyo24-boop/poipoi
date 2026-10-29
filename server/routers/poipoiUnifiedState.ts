@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { publicProcedure, router } from '../_core/trpc';
+import { protectedProcedure, router } from '../_core/trpc';
 import {
   getPoiPoiUnifiedState,
   syncPoiPoiUnifiedState,
@@ -19,11 +19,11 @@ const stateSchema = z.object({
 });
 
 export const poipoiUnifiedStateRouter = router({
-  get: publicProcedure.query(async () => {
+  get: protectedProcedure.query(async () => {
     return getPoiPoiUnifiedState();
   }),
 
-  sync: publicProcedure
+  sync: protectedProcedure
     .input(stateSchema)
     .mutation(async ({ input }) => {
       return syncPoiPoiUnifiedState(input);
