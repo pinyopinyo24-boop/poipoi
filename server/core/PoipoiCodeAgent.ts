@@ -266,11 +266,11 @@ export class PoipoiCodeAgent {
           execFileSync("git", ["reset", "--quiet", "--", ...changes.map(item => item.path)], {
             cwd: this.root, timeout: 15000, windowsHide: true,
           });
-          rollback();
         }
       } catch (restoreError) {
         detail += "; rollback failed: " + String(restoreError);
       }
+      try { if (backups.size) rollback(); } catch (restoreError) { detail += "; file restore failed: " + String(restoreError); }
       return { success: false, changes: [], tested: false, error: detail };
     }
   }
