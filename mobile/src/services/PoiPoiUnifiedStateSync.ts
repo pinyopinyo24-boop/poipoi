@@ -51,6 +51,8 @@ export function updateMobilePoiPoiState(
       records: [record],
     });
     await saveLocal(merged);
+    // Commit locally only after the PC confirms all merged records.
+    await saveLocal(merged);
     return merged;
   });
 }
@@ -137,7 +139,6 @@ export function synchronizeMobilePoiPoiState(
     // Preserve Android updates made while the network request was running.
     // The queue serializes local writes and synchronization.
     const merged = mergePoiPoiState(local, remote);
-    await saveLocal(merged);
 
     if (merged.records.some(record =>
       !remote.records.some(existing =>
