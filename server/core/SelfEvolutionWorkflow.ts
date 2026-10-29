@@ -136,6 +136,12 @@ export class SelfEvolutionWorkflow {
    *      - 謌仙粥 竊・謾ｹ蝟・ヱ繝ｩ繝｡繝ｼ繧ｿ遒ｺ螳壹・MemoryEngine / SelfLearningEngine 菫晏ｭ・   *      - 螟ｱ謨・竊・繝ｭ繝ｼ繝ｫ繝舌ャ繧ｯ
    *   3. 繝ｯ繝ｼ繧ｯ繝輔Ο繝ｼ蜈ｨ菴薙・邨先棡繧定ｿ斐☆
    */
+  public approveExecution(userId: string, simulationId: string): void {
+    const approved = this.executionApprovals.get(userId) ?? new Set<string>();
+    approved.add(simulationId);
+    this.executionApprovals.set(userId, approved);
+  }
+
   public async runExecution(
     userId: string,
     approvedSimulation?: SimulationResult
