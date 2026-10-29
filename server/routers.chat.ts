@@ -178,6 +178,25 @@ export const chatRouter = router({
           originalMessage
         );
 
+        // Persist a bounded, per-user conversation summary for tool and agent context.
+        if (ctx.user) {
+          try {
+            const { syncUserPoiPoiUnifiedState } = await import('./core/PoiPoiUnifiedStateStore');
+            await syncUserPoiPoiUnifiedState(userId, {
+              version: 1,
+              records: [{
+                id: 'chat-' + response.message.id,
+                category: 'memory',
+                origin: 'pc',
+                updatedAt: Date.now(),
+                value: JSON.stringify({ request: originalMessage.slice(0, 1200), answer: response.message.content.slice(0, 1200) }),
+              }],
+            });
+          } catch (error) {
+            console.warn('[PoiPoi] Unified memory sync skipped:', error);
+          }
+        }
+
         return {
           message: response.message,
           session: response.session,
