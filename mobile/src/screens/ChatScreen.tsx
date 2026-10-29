@@ -235,6 +235,33 @@ export default function ChatScreen() {
   };
   useEffect(()=>{AndroidAIModelManager.setProgressListener(setModelDownloadProgress);return ()=>AndroidAIModelManager.setProgressListener(null);},[]);
   const [apiConnector, setApiConnector] = useState<MobileAPIConnector | null>(null);
+  const rateAssistantAnswer = (item: Message) => {
+    if (item.isUser) return;
+    if (!apiConnector || !isConnected || !(sessionId || apiConnector.getSessionId())) {
+      Alert.alert('学習評価', 'PC接続時に評価できます。オフライン中の訂正はチャットで「正しくは…」と入力してください。');
+      return;
+    }
+    Alert.alert('この回答を評価', '回答を長押しして評価できます。', [
+      { text: 'キャンセル', style: 'cancel' },
+      { text: '正しい', onPress: () => { void submitRating(item, true); } },
+      { text: '間違い', onPress: () => { void submitRating(item, false); } },
+    ]);
+  };
+
+  const submitRating = async (item: Message, accepted: boolean) => {
+    const activeSession = sessionId || apiConnector?.getSessionId();
+    if (!apiConnector || !activeSession) return;
+    const result = await apiConnector.submitLearningFeedback({
+      sessionId: activeSession,
+      messageId: item.id,
+      accepted,
+    });
+    Alert.alert('学習評価', result.success
+      ? (accepted ? '正しい回答として記録しました' : '誤った回答として記録しました。正しい内容は「正しくは…」と送信してください。')
+      : (result.error || '評価を保存できませんでした'));
+  };
+
+
   const [isConnected, setIsConnected] = useState(false);
   const [sessionId, setSessionId] = useState<string | undefined>();
   const [loginUsername, setLoginUsername] = useState('');
@@ -1274,7 +1301,10 @@ export default function ChatScreen() {
             disabled={item.isUser}
             onLongPress={() => rateAssistantAnswer(item)}
             style={[styles.messageContainer, item.isUser && styles.userMessage]}>
-            <Text style={[styles.messageText, item.isUser && styles.userMessageText]}>
+            <Text
+              style={[styles.messageText, item.isUser && styles.userMessageText]}
+              onLongPress={() => rateAssistantAnswer(item)}
+            >
               {item.text}
             </Text>
             <Text style={styles.timestamp}>
