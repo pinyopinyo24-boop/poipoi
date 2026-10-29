@@ -5,6 +5,7 @@
 
 import { router, publicProcedure, protectedProcedure } from '../_core/trpc';
 import { z } from 'zod';
+import { invokeLLM } from '../_core/llm';
 import { getAICore, initializeAICore } from '../_core/ai/AICore';
 import { AgentType } from '../_core/ai/agents/BaseAgent';
 
