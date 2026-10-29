@@ -135,10 +135,9 @@ export class ImprovementExecutor {
       executedAt: startedAt,
     };
 
-    // Step 4: 結果を保存
-    await this.saveResult(userId, candidate, result);
-
+    // Store the outcome before forwarding it to learning storage.
     this.executionHistory.push(result);
+    await this.saveResult(userId, candidate, result);
     return result;
   }
 
