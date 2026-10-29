@@ -1,4 +1,15 @@
 ﻿import { LearningKnowledgeBridge } from "./LearningKnowledgeBridge";
+import { syncPoiPoiUnifiedState } from "./PoiPoiUnifiedStateStore";
+import { createHash } from "node:crypto";
+
+async function publishLearning(task: string, solution: string, accepted: boolean, correction?: string): Promise<void> {
+  const id = createHash("sha256").update(task.normalize("NFKC").trim().toLowerCase()).digest("hex");
+  await syncPoiPoiUnifiedState({ version: 1, records: [{
+    id, category: "learning", origin: "pc", updatedAt: Date.now(),
+    value: JSON.stringify({ task, solution: correction?.trim() || solution, outcome: accepted || !!correction?.trim() ? "success" : "failure", feedback: correction?.trim() }),
+  }] });
+}
+
 
 export class LearningContextIntegration {
   private readonly knowledge: LearningKnowledgeBridge;
@@ -34,6 +45,7 @@ export class LearningContextIntegration {
       outcome: input.success ? "success" : "failure",
       feedback: input.feedback
     });
+    await publishLearning(input.task, input.solution, input.success, input.feedback);
   }
 }
 
@@ -60,4 +72,5 @@ export async function recordLearningFeedback(
   await new LearningKnowledgeBridge(process.cwd()).recordFeedback(
     task, answer, accepted, correction
   );
+  await publishLearning(task, answer, accepted, correction);
 }
