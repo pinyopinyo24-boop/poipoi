@@ -4,6 +4,7 @@
   readFileSync,
   writeFileSync,
   unlinkSync,
+  lstatSync,
 } from "fs";
 import { dirname, resolve, relative } from "path";
 import { execFileSync } from "child_process";
@@ -70,6 +71,14 @@ export class PoipoiCodeAgent {
       throw new Error(`Protected file cannot be modified: ${filePath}`);
     }
 
+    // Never follow symlinks out of the repository, including parent folders.
+    let current = this.root;
+    for (const segment of rel.split(/[\\/]+/)) {
+      current = resolve(current, segment);
+      if (existsSync(current) && lstatSync(current).isSymbolicLink()) {
+        throw new Error(`Symlink paths are forbidden: ${filePath}`);
+      }
+    }
     return absolute;
   }
 
@@ -228,6 +237,11 @@ export class PoipoiCodeAgent {
         cwd: this.root, encoding: "utf8", timeout: 15000, windowsHide: true,
       });
       const dirty = status.split(/\r?\n/).filter(Boolean);
+      // A generated commit must not include unrelated pre-staged changes.
+      const staged = execFileSync("git", ["diff", "--cached", "--name-only"], {
+        cwd: this.root, encoding: "utf8", timeout: 15000, windowsHide: true,
+      }).trim();
+      if (staged) throw new Error("Refusing self-evolution while unrelated staged changes exist");
       for (const path of changes.map(item => item.path.replace(/\\/g, "/"))) {
         if (dirty.some(line => line.slice(3) === path || line.slice(3).endsWith(" -> " + path))) {
           throw new Error("Refusing to overwrite existing local changes: " + path);
