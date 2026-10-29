@@ -156,6 +156,12 @@ export const aiAgentsRouter = router({
           verification: retryVerification,
         };
       }
+      if (result.status === 'completed' && (verification.passed || revision?.verified === true)) {
+        await syncUserPoiPoiUnifiedState(userId, { version: 1, records: [{
+          id: workflowId, category: 'learning', origin: 'pc', updatedAt: Date.now(),
+          value: JSON.stringify({ request: input.request, verified: true }).slice(0, 1000),
+        }] });
+      }
       return {
         revision,
         verification,
