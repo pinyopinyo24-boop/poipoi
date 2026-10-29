@@ -153,6 +153,15 @@ export class MobileAPIConnector {
   /**
    * チャットメッセージ送信
    */
+  async executeUnifiedTool(name: 'reason' | 'analyzeCost' | 'memory' | 'excel' | 'pdf' | 'presentation' | 'exportPresentation' | 'codePreview', input: Record<string, unknown>): Promise<APIResponse> {
+    try {
+      const response = await this.apiClient.post('/api/trpc/unifiedTools.' + name, { json: input });
+      return { success: true, data: this.getTrpcData(response.data) };
+    } catch (error) {
+      return this.handleError(error, 'Unified tool request failed');
+    }
+  }
+
   async sendChatMessage(request: ChatRequest): Promise<APIResponse<ChatResponse>> {
     try {
       const sessionId = request.sessionId || this.sessionId || await this.createChatSession();
