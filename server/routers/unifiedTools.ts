@@ -6,6 +6,8 @@ import { readFile, realpath, stat } from 'node:fs/promises';
 import path from 'node:path';
 import { getUserPoiPoiUnifiedState, syncUserPoiPoiUnifiedState } from '../core/PoiPoiUnifiedStateStore';
 import { PoipoiCodeAgent } from '../core/PoipoiCodeAgent';
+import { getPresentationRepository } from '../managers/PresentationRepository';
+import { PresentationAIManager } from '../managers/PresentationAIManager';
 
 async function resolveUpload(file: string, extension: string): Promise<string> {
   const root = await realpath(path.resolve(process.cwd(), 'uploads'));
@@ -19,6 +21,18 @@ async function resolveUpload(file: string, extension: string): Promise<string> {
 }
 
 export const unifiedToolsRouter = router({
+  presentation: protectedProcedure.input(z.object({
+    title: z.string().min(1).max(255),
+    description: z.string().max(1000).default(''),
+    slides: z.array(z.object({ title: z.string().min(1).max(255), content: z.string().max(10000) })).min(1).max(30),
+  })).mutation(({ input }) => {
+    const manager = new PresentationAIManager(getPresentationRepository());
+    const created = manager.createPresentation(input.title, input.description);
+    for (const slide of input.slides) {
+      manager.addSlide(created.id, slide.title, slide.content, 'content');
+    }
+    return { id: created.id, slideCount: input.slides.length, generated: true };
+  }),
   excel: protectedProcedure.input(z.object({ file: z.string().min(1).max(500) }))
     .mutation(async ({ input }) => {
       const file = await resolveUpload(input.file, '.xlsx');
