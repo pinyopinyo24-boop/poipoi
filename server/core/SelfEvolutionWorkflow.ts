@@ -142,6 +142,9 @@ export class SelfEvolutionWorkflow {
     const workflowId = this.generateId('exec');
 
     // Step 1: 繧ｷ繝溘Η繝ｬ繝ｼ繧ｷ繝ｧ繝ｳ繝輔ぉ繝ｼ繧ｺ
+    if (approvedSimulation && approvedSimulation.mode !== 'simulation') {
+      throw new Error('Execution requires a simulation result');
+    }
     if (approvedSimulation && approvedSimulation.userId !== userId) {
       throw new Error('Simulation result does not belong to the requested user');
     }
