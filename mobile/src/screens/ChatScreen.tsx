@@ -423,6 +423,8 @@ export default function ChatScreen() {
   useEffect(() => {
     let active = true;
     let checking = false;
+    let previouslyReachable = false;
+    let lastSyncAt = 0;
 
     const checkPC = async () => {
       if (!active || checking) return;
@@ -445,6 +447,7 @@ export default function ChatScreen() {
         if (!active) return;
 
         if (!reachable) {
+          previouslyReachable = false;
           setIsConnected(false);
           return;
         }
@@ -459,7 +462,11 @@ export default function ChatScreen() {
         setIsAuthenticated(await connector.checkAuthentication());
         setSessionId(connector.getSessionId() || undefined);
         setIsConnected(true);
-        void checkMobileUpdate(url);
+        const justReconnected = !previouslyReachable;
+        previouslyReachable = true;
+        if (justReconnected) void checkMobileUpdate(url);
+        if (!justReconnected && Date.now() - lastSyncAt < 60000) return;
+        lastSyncAt = Date.now();
         void synchronizeMobilePoiPoiState(url)
           .then(async () => {
             await MobileSelfEvolution.restoreEvolutionFromUnifiedState();
@@ -470,6 +477,7 @@ export default function ChatScreen() {
             }
           })
           .catch(error => {
+            lastSyncAt = 0;
             console.warn('[PoiPoi] PC・Android自己進化同期失敗:', error);
           });
       } catch (error) {
