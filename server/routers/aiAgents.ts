@@ -79,7 +79,7 @@ export const aiAgentsRouter = router({
       };
       if (result.status === 'completed') {
         const review = await invokeLLM({
-          model: process.env.LOCAL_CHAT_MODEL || 'qwen2.5:7b',
+          model: process.env.LOCAL_CHAT_MODEL || process.env.LOCAL_CODER_MODEL || 'qwen2.5-coder:7b',
           temperature: 0,
           response_format: {
             type: 'json_schema',
@@ -148,7 +148,7 @@ export const aiAgentsRouter = router({
         };
         if (retry.status === 'completed') {
           const retryReview = await invokeLLM({
-            model: process.env.LOCAL_CHAT_MODEL || 'qwen2.5:7b',
+            model: process.env.LOCAL_CHAT_MODEL || process.env.LOCAL_CODER_MODEL || 'qwen2.5-coder:7b',
             temperature: 0,
             response_format: {
               type: 'json_schema',
@@ -265,7 +265,7 @@ export const aiAgentsRouter = router({
   /**
    * Get agent details
    */
-  getAgentDetails: publicProcedure
+  getAgentDetails: protectedProcedure
     .input(z.object({
       agentType: z.enum(['design', 'implementation', 'review', 'task', 'coordinator']),
     }))
@@ -293,7 +293,7 @@ export const aiAgentsRouter = router({
   /**
    * Execute agent task
    */
-  executeTask: publicProcedure
+  executeTask: protectedProcedure
     .input(z.object({
       agentType: z.enum(['design', 'implementation', 'review', 'task', 'coordinator']),
       description: z.string(),
@@ -329,7 +329,7 @@ export const aiAgentsRouter = router({
   /**
    * Execute workflow
    */
-  executeWorkflow: publicProcedure
+  executeWorkflow: protectedProcedure
     .input(z.object({
       workflowId: z.string(),
       steps: z.array(z.object({
@@ -366,7 +366,7 @@ export const aiAgentsRouter = router({
   /**
    * Get workflow result
    */
-  getWorkflowResult: publicProcedure
+  getWorkflowResult: protectedProcedure
     .input(z.object({
       workflowId: z.string(),
     }))
