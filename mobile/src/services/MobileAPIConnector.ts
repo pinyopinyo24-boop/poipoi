@@ -192,6 +192,20 @@ export class MobileAPIConnector {
   /**
    * チャット履歴取得
    */
+  async submitLearningFeedback(input: {
+    sessionId: string;
+    messageId: string;
+    accepted: boolean;
+    correction?: string;
+  }): Promise<APIResponse<{ success: boolean; learned: boolean }>> {
+    try {
+      const response = await this.apiClient.post('/api/trpc/chat.submitLearningFeedback', { json: input });
+      return { success: true, data: this.getTrpcData(response.data) };
+    } catch (error: any) {
+      return { success: false, error: error?.message || '学習評価の送信に失敗しました' };
+    }
+  }
+
   async getChatHistory(sessionId?: string): Promise<APIResponse<ChatMessage[]>> {
     // POIPOI_PRESERVE_LOCAL_HISTORY
     // PC側の取得処理が失敗しても既存の端末キャッシュは削除しない。
