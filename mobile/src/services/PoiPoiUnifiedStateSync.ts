@@ -14,6 +14,40 @@ const STORAGE_KEY = 'poipoi:unified-ai-state:v1';
 async function storageKey(): Promise<string> {
   const token = await AsyncStorage.getItem('sessionToken');
   if (!token) return STORAGE_KEY;
+  // The signed session's openId is stable across token refreshes.
+  // This is only a local storage namespace, never an authorization decision.
+  try {
+    const payload = token.split('.')[1];
+    if (payload) {
+      const alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/';
+      const encoded = payload.replace(/-/g, '+').replace(/_/g, '/');
+      let bits = 0;
+      let buffer = 0;
+      let decoded = '';
+      for (const character of encoded) {
+        if (character === '=') break;
+        const digit = alphabet.indexOf(character);
+        if (digit < 0) throw new Error('Invalid token payload');
+        buffer = (buffer << 6) | digit;
+        bits += 6;
+        if (bits >= 8) {
+          bits -= 8;
+          decoded += String.fromCharCode((buffer >>> bits) & 255);
+        }
+      }
+      const identity: unknown = JSON.parse(decoded);
+      if (identity && typeof identity === 'object' && 'openId' in identity &&
+          typeof identity.openId === 'string' && identity.openId.length > 0) {
+        const stableId = identity.openId;
+        let stableHash = 2166136261;
+        for (let i = 0; i < stableId.length; i++) {
+          stableHash ^= stableId.charCodeAt(i);
+          stableHash = Math.imul(stableHash, 16777619);
+        }
+        return STORAGE_KEY + ':user:' + (stableHash >>> 0).toString(16);
+      }
+    }
+  } catch { /* Older opaque tokens retain their previous isolated namespace. */ }
   let hash = 2166136261;
   for (let i = 0; i < token.length; i++) {
     hash ^= token.charCodeAt(i);
