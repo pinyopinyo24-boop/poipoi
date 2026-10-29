@@ -51,18 +51,29 @@ export class LearningKnowledgeBridge {
 
   async recall(query: string, limit = 5): Promise<Entry[]> {
     const data = await this.load();
-    const normalize = (v: string) => v.toLowerCase().normalize("NFKC").trim();
-    const compact = (v: string) => normalize(v).replace(/[\s、。,.!?！？・]+/g, "");
+    const compact = (v: string) => v.toLowerCase().normalize("NFKC")
+      .replace(/[\\s、。,.!?！？・]+/g, "");
     const q = compact(query);
-    if (!q) return [];
-    const words = normalize(query).split(/[\s、。,.!?！？・]+/).filter(w => w.length >= 2);
+    if (q.length < 2) return [];
+    const bigrams = (v: string): Set<string> => {
+      const pairs = new Set<string>();
+      for (let i = 0; i < v.length - 1; i++) pairs.add(v.slice(i, i + 2));
+      return pairs;
+    };
+    const queryPairs = bigrams(q);
     return data.filter(x => x.outcome === "success")
       .map((entry, index) => {
         const task = compact(entry.task);
-        let score = task === q ? 100 : task.includes(q) ? 50 : 0;
-        for (const w of words) if (task.includes(compact(w))) score += 10;
-        if (score > 0 && entry.feedback?.trim()) score += 20;
-        return { entry, score, index };
+        const taskPairs = bigrams(task);
+        let shared = 0;
+        for (const pair of queryPairs) if (taskPairs.has(pair)) shared++;
+        const overlap = shared / Math.max(queryPairs.size, taskPairs.size, 1);
+        const exact = task === q;
+        const contained = task.includes(q) || q.includes(task);
+        // Avoid unrelated historical answers: short incidental matches are insufficient.
+        const score = exact ? 100 : contained && Math.min(task.length, q.length) >= 4
+          ? 75 : overlap >= 0.45 && shared >= 3 ? Math.round(overlap * 65) : 0;
+        return { entry, score: score > 0 && entry.feedback?.trim() ? score + 5 : score, index };
       })
       .filter(x => x.score > 0)
       .sort((a, b) => b.score - a.score || b.index - a.index)
