@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { ExcelAnalysisManager } from '../managers/ExcelAnalysisManager';
 import { invokeLLM } from '../_core/llm';
 import { readFile, realpath, stat } from 'node:fs/promises';
+import { createHash, randomUUID } from 'node:crypto';
 import path from 'node:path';
 import { getUserPoiPoiUnifiedState, syncUserPoiPoiUnifiedState } from '../core/PoiPoiUnifiedStateStore';
 import { PoipoiCodeAgent } from '../core/PoipoiCodeAgent';
@@ -22,6 +23,14 @@ async function resolveUpload(file: string, extension: string): Promise<string> {
 
 const presentationManager = new PresentationAIManager(getPresentationRepository());
 const presentationOwners = new Map<string, string>();
+const evolutionPreviews = new Map<string, {
+  userId: string; expires: number; changes: Awaited<ReturnType<PoipoiCodeAgent['generate']>>;
+}>();
+function cleanExpiredPreviews() {
+  for (const [id, preview] of evolutionPreviews) {
+    if (preview.expires < Date.now()) evolutionPreviews.delete(id);
+  }
+}
 
 export const unifiedToolsRouter = router({
   presentation: protectedProcedure.input(z.object({
@@ -76,9 +85,36 @@ export const unifiedToolsRouter = router({
     }),
   codePreview: protectedProcedure.input(z.object({ request: z.string().min(1).max(4000) }))
     .mutation(async ({ input, ctx }) => {
-      if (ctx.user.role !== 'admin') throw new Error('Administrator permission required for code previews');
-      return { changes: await PoipoiCodeAgent.getInstance().generate(input.request), applied: false, tested: false };
+      if (ctx.user.role !== 'admin') throw new Error('Administrator permission required');
+      cleanExpiredPreviews();
+      const changes = await PoipoiCodeAgent.getInstance().generate(input.request);
+      if (!changes.length) throw new Error('No grounded changes were generated');
+      const previewId = randomUUID();
+      evolutionPreviews.set(previewId, { userId: String(ctx.user.id), expires: Date.now() + 15 * 60_000, changes });
+      return {
+        previewId,
+        expiresInSeconds: 900,
+        changes: changes.map(change => ({
+          path: change.path,
+          baseHash: change.baseHash,
+          proposedHash: createHash('sha256').update(change.content).digest('hex'),
+          content: change.content,
+        })),
+        applied: false, tested: false,
+      };
     }),
+  applyCodePreview: protectedProcedure.input(z.object({
+    previewId: z.string().uuid(),
+    confirm: z.literal('APPLY_AND_VERIFY'),
+  })).mutation(async ({ input, ctx }) => {
+    if (ctx.user.role !== 'admin') throw new Error('Administrator permission required');
+    cleanExpiredPreviews();
+    const preview = evolutionPreviews.get(input.previewId);
+    if (!preview || preview.userId !== String(ctx.user.id)) throw new Error('Preview expired or unavailable');
+    evolutionPreviews.delete(input.previewId);
+    // Explicit approval only. applyAndTest performs typecheck, exact-path commit and rollback.
+    return PoipoiCodeAgent.getInstance().applyAndTest(preview.changes);
+  }),
 
   analyzeCost: protectedProcedure.input(z.object({
     estimated: z.number().finite(),
