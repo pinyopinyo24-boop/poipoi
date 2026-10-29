@@ -1,5 +1,6 @@
 import { router, protectedProcedure } from "../_core/trpc";
 import { z } from "zod";
+import { randomUUID } from "node:crypto";
 import { invokeLLM } from "../_core/llm";
 import { getUserPoiPoiUnifiedState, syncUserPoiPoiUnifiedState } from "../core/PoiPoiUnifiedStateStore";
 
@@ -9,11 +10,11 @@ export const selfEvolutionRouter = router({
   analyzeFeedback: protectedProcedure
     .input(
       z.object({
-        feedback: z.string().describe("ユーザーからのフィードバック"),
-        context: z.string().optional().describe("現在のコンテキスト"),
+        feedback: z.string().min(1).max(4000).describe("ユーザーからのフィードバック"),
+        context: z.string().max(4000).optional().describe("現在のコンテキスト"),
       })
     )
-    .mutation(async ({ input, ctx }) => {
+    .mutation(async ({ input }) => {
       try {
         // Use LLM to analyze feedback and generate improvements
         const response = await invokeLLM({
@@ -85,9 +86,9 @@ Respond in JSON format with: { "analysis": "...", "suggestions": ["...", "..."],
   generateImprovement: protectedProcedure
     .input(
       z.object({
-        feature: z.string().describe("改善対象の機能"),
+        feature: z.string().min(1).max(300).describe("改善対象の機能"),
         feedback: z.string().describe("ユーザーからのフィードバック"),
-        codeFile: z.string().optional().describe("対象のコードファイル"),
+        codeFile: z.string().max(500).optional().describe("対象のコードファイル"),
       })
     )
     .mutation(async ({ input }) => {
@@ -160,8 +161,8 @@ Respond in JSON format with: { "improvements": "...", "code": "...", "explanatio
   learnFromInteraction: protectedProcedure
     .input(
       z.object({
-        interaction: z.string().describe("ユーザーとの相互作用"),
-        outcome: z.string().describe("相互作用の結果"),
+        interaction: z.string().min(1).max(4000).describe("ユーザーとの相互作用"),
+        outcome: z.string().min(1).max(4000).describe("相互作用の結果"),
         satisfaction: z.number().min(1).max(5).describe("ユーザー満足度 (1-5)"),
       })
     )
@@ -177,7 +178,7 @@ Respond in JSON format with: { "improvements": "...", "code": "...", "explanatio
         await syncUserPoiPoiUnifiedState(String(ctx.user.id), {
           version: 1,
           records: [{
-            id: 'interaction-' + Date.now() + '-' + Math.random().toString(36).slice(2),
+            id: 'interaction-' + randomUUID(),
             category: 'learning',
             origin: 'pc',
             updatedAt: Date.now(),
