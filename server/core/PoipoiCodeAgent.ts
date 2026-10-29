@@ -60,6 +60,10 @@ export class PoipoiCodeAgent {
     ];
 
     const normalized = rel.replace(/\\/g, "/");
+    const parts = normalized.split("/");
+    if (parts.some(part => part === ".git" || part === "node_modules" || part === ".env" || part.startsWith(".env."))) {
+      throw new Error("Protected path: " + filePath);
+    }
 
     if (
       forbidden.some(
