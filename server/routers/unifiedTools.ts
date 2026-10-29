@@ -155,6 +155,19 @@ export const unifiedToolsRouter = router({
       });
       return { count: state.records.length };
     }),
+  correctLearning: protectedProcedure.input(z.object({
+    topic: z.string().min(1).max(120),
+    correction: z.string().min(1).max(2000),
+  })).mutation(async ({ input, ctx }) => {
+    const state = await syncUserPoiPoiUnifiedState(String(ctx.user.id), {
+      version: 1, records: [{
+        id: 'correction-' + createHash('sha256').update(input.topic).digest('hex').slice(0, 24),
+        category: 'learning', origin: 'pc', updatedAt: Date.now(),
+        value: JSON.stringify({ topic: input.topic, correction: input.correction, priority: 'explicit_user_correction' }),
+      }],
+    });
+    return { saved: true, recordCount: state.records.length };
+  }),
   codePreview: protectedProcedure.input(z.object({ request: z.string().min(1).max(4000) }))
     .mutation(async ({ input, ctx }) => {
       if (ctx.user.role !== 'admin') throw new Error('Administrator permission required');
