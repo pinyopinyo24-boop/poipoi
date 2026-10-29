@@ -9,6 +9,19 @@ import {
 
 const STORAGE_KEY = 'poipoi:unified-ai-state:v1';
 
+// Keep offline records separated by the active login. Legacy anonymous records
+// remain on-device and are not uploaded into an unrelated authenticated account.
+async function storageKey(): Promise<string> {
+  const token = await AsyncStorage.getItem('sessionToken');
+  if (!token) return STORAGE_KEY;
+  let hash = 2166136261;
+  for (let i = 0; i < token.length; i++) {
+    hash ^= token.charCodeAt(i);
+    hash = Math.imul(hash, 16777619);
+  }
+  return STORAGE_KEY + ':account:' + (hash >>> 0).toString(16);
+}
+
 const emptyState = (): PoiPoiUnifiedState => ({
   version: 1,
   records: [],
@@ -26,13 +39,13 @@ function locked<T>(operation: () => Promise<T>): Promise<T> {
 }
 
 async function readLocal(): Promise<PoiPoiUnifiedState> {
-  const json = await AsyncStorage.getItem(STORAGE_KEY);
+  const json = await AsyncStorage.getItem(await storageKey());
   return json ? deserializePoiPoiState(json) : emptyState();
 }
 
 async function saveLocal(state: PoiPoiUnifiedState): Promise<void> {
   await AsyncStorage.setItem(
-    STORAGE_KEY,
+    await storageKey(),
     serializePoiPoiState(state)
   );
 }
