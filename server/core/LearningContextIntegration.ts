@@ -16,6 +16,10 @@ export class LearningContextIntegration {
     ).join("\n\n");
   }
 
+  async evaluateKnowledge(queries: Array<{ question: string; expectedAnswer: string }>) {
+    return this.knowledge.evaluateRecall(queries);
+  }
+
   async recordResult(input: {
     task: string;
     solution: string;
