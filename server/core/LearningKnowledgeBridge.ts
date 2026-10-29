@@ -126,8 +126,17 @@ export class LearningKnowledgeBridge {
         const index = data.findIndex(x => normalized(x.task) === normalized(e.task!) && x.solution === e.solution);
         const entry: Entry = { task: e.task, solution: e.solution, outcome: e.outcome!,
           feedback: typeof e.feedback === "string" ? e.feedback : undefined, used: 0 };
+        // The shared record is the latest decision for this question.
+        // An explicit correction supersedes older local successful answers.
+        if (entry.outcome === "success" && entry.feedback?.trim()) {
+          for (const prior of data) {
+            if (normalized(prior.task) === normalized(entry.task) && prior.solution !== entry.solution) {
+              prior.outcome = "failure";
+            }
+          }
+        }
         if (index < 0) data.push(entry);
-        else if (entry.outcome === "failure") data[index].outcome = "failure";
+        else data[index] = { ...data[index], ...entry, used: data[index].used };
       }
     } catch { /* Local learning remains available if sync state is unavailable. */ }
     const compact = (v: string) => v.toLowerCase().normalize("NFKC")
