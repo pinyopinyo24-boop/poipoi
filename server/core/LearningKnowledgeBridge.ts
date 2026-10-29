@@ -173,6 +173,7 @@ export class LearningKnowledgeBridge {
   }
 
   async getStatistics() {
+    await (LearningKnowledgeBridge.writes.get(this.file) ?? Promise.resolve());
     const data = await this.load();
     return {
       total: data.length,
