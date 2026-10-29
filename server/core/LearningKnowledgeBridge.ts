@@ -115,7 +115,7 @@ export class LearningKnowledgeBridge {
     // Merge synchronized learning records into recall without overwriting local history.
     try {
       const shared = await getPoiPoiUnifiedState();
-      for (const record of shared.records) {
+      for (const record of [...shared.records].sort((a, b) => a.updatedAt - b.updatedAt)) {
         if (record.category !== "learning") continue;
         const item: unknown = JSON.parse(record.value);
         if (!item || typeof item !== "object") continue;
