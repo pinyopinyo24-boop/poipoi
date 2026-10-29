@@ -351,6 +351,18 @@ export const chatRouter = router({
         status: 'new',
       });
 
+      // Negative feedback must reach the same learning store used by local AI recall.
+      const previous = messages
+        .filter(item => item.timestamp < message.timestamp && item.role === 'user')
+        .sort((a, b) => b.timestamp - a.timestamp)[0];
+      if (previous?.content && message.content) {
+        try {
+          const { recordLearningFeedback } = await import('./core/LearningContextIntegration');
+          await recordLearningFeedback(previous.content, message.content, false);
+        } catch (error) {
+          console.warn('[PoiPoi Learning] Response issue not recorded:', error);
+        }
+      }
       return chatQualityService.reportChatIssue(
         input.messageId,
         input.issueType,
