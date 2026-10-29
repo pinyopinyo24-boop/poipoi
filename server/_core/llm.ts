@@ -113,12 +113,12 @@ export type LLMModel = {
 
 /** Invoke local Ollama models. */
 export async function invokeLLM(request: LLMRequest): Promise<LLMResponse> {
-  const baseUrl = process.env.LOCAL_AI_URL || "http://localhost:11434";
+  const baseUrl = (process.env.LOCAL_AI_URL || "http://localhost:11434").replace(/\/+$/, "");
   const isCodeTask = request.messages.some(message =>
     typeof message.content === "string" &&
     /code implementation agent|code generation expert|software implementation agent/i.test(message.content)
   );
-  const model = request.model || (isCodeTask
+  const model = (request.model && !/^(gemini|gpt-)/i.test(request.model) ? request.model : undefined) || (isCodeTask
     ? process.env.LOCAL_CODER_MODEL || "qwen2.5-coder:7b"
     : process.env.LOCAL_CHAT_MODEL || "qwen2.5:7b");
 
@@ -190,9 +190,9 @@ try {
         finish_reason: "stop",
       }],
       usage: {
-        prompt_tokens: data.usage?.prompt_tokens || 0,
-        completion_tokens: data.usage?.completion_tokens || 0,
-        total_tokens: data.usage?.total_tokens || 0,
+        prompt_tokens: data.prompt_eval_count ?? data.usage?.prompt_tokens ?? 0,
+        completion_tokens: data.eval_count ?? data.usage?.completion_tokens ?? 0,
+        total_tokens: (data.prompt_eval_count ?? data.usage?.prompt_tokens ?? 0) + (data.eval_count ?? data.usage?.completion_tokens ?? 0),
       },
     };
   } catch (error) {
