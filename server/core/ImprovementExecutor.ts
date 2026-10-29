@@ -188,8 +188,9 @@ export class ImprovementExecutor {
   /**
    * スナップショットを取得
    */
-  public getSnapshot(candidateId: string): ExecutionSnapshot | undefined {
-    return this.snapshots.get(candidateId);
+  public getSnapshot(candidateId: string, userId?: string): ExecutionSnapshot | undefined {
+    if (userId) return this.snapshots.get(`${userId}:${candidateId}`);
+    return [...this.snapshots.values()].find(snapshot => snapshot.candidateId === candidateId);
   }
 
   /**
