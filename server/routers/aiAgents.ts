@@ -157,7 +157,7 @@ export const aiAgentsRouter = router({
         verification,
         workflowId,
         plan: plan.steps,
-        status: result.status === 'completed' && !verification.passed ? 'needs_revision' : result.status,
+        status: revision?.verified === true ? 'completed' : result.status === 'completed' && !verification.passed ? 'needs_revision' : result.status,
         stepCount: result.steps.length,
         executionTime: result.executionTime,
         totalTokensUsed: result.totalTokensUsed,
