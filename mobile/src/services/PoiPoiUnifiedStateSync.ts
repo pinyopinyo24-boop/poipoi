@@ -73,7 +73,24 @@ function locked<T>(operation: () => Promise<T>): Promise<T> {
 }
 
 async function readLocal(): Promise<PoiPoiUnifiedState> {
-  const json = await AsyncStorage.getItem(await storageKey());
+  const key = await storageKey();
+  let json = await AsyncStorage.getItem(key);
+  if (!json && key.includes(':user:')) {
+    const token = await AsyncStorage.getItem('sessionToken');
+    if (token) {
+      let hash = 2166136261;
+      for (let i = 0; i < token.length; i++) {
+        hash ^= token.charCodeAt(i);
+        hash = Math.imul(hash, 16777619);
+      }
+      const previous = await AsyncStorage.getItem(STORAGE_KEY + ':account:' + (hash >>> 0).toString(16));
+      if (previous) {
+        deserializePoiPoiState(previous);
+        await AsyncStorage.setItem(key, previous);
+        json = previous;
+      }
+    }
+  }
   return json ? deserializePoiPoiState(json) : emptyState();
 }
 
