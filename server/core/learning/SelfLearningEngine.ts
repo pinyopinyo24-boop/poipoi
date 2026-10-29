@@ -142,7 +142,7 @@ export class SelfLearningEngine {
     }
 
     const cycle = this.learningCycles.get(cycleId);
-    if (!cycle) {
+    if (!cycle || cycle.userId !== userId) {
       throw new Error('Learning cycle not found');
     }
 
@@ -175,7 +175,7 @@ export class SelfLearningEngine {
     }
 
     const cycle = this.learningCycles.get(cycleId);
-    if (!cycle) {
+    if (!cycle || cycle.userId !== userId) {
       throw new Error('Learning cycle not found');
     }
 
