@@ -334,10 +334,10 @@ export async function initializeAICore(config?: Partial<AICoreConfig>): Promise<
     enableGemini: false,
   };
 
-  globalAICore = new AICore(defaultConfig);
-  await globalAICore.initialize();
-
-  return globalAICore;
+  const candidate = new AICore(defaultConfig);
+  await candidate.initialize();
+  globalAICore = candidate;
+  return candidate;
 }
 
 /**
