@@ -42,7 +42,6 @@ export class PDFAnalysisManager {
       const fileName = filePath.split('/').pop() || 'document.pdf';
       
       const pages: PDFPage[] = extracted.pages.map((page, index) => ({
-        {
           pageNumber: index + 1,
           text: page.text,
           lines: page.text.split('\n'),
