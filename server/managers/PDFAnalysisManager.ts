@@ -44,17 +44,17 @@ export class PDFAnalysisManager {
       const pages: PDFPage[] = [
         {
           pageNumber: 1,
-          text: 'ページ1のコンテンツ',
-          lines: ['ページ1のコンテンツ'],
+          text: extracted.text,
+          lines: extracted.text.split('\n'),
         },
       ];
 
-      const structure = this.extractStructure('ページ1のコンテンツ');
+      const structure = this.extractStructure(extracted.text);
 
       return {
         fileName,
-        pageCount: 1,
-        totalText: 'ページ1のコンテンツ',
+        pageCount: extracted.total,
+        totalText: extracted.text,
         pages,
         metadata: {
           title: fileName,
