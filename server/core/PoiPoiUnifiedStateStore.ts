@@ -99,6 +99,24 @@ export async function getUserPoiPoiUnifiedState(userId: string): Promise<PoiPoiU
   return readScoped(file);
 }
 
+export async function searchUserPoiPoiMemories(
+  userId: string, query: string, limit = 8
+): Promise<PoiPoiUnifiedState['records']> {
+  const state = await getUserPoiPoiUnifiedState(userId);
+  const terms = query.toLocaleLowerCase().split(/\s+/u).filter(term => term.length > 1).slice(0, 20);
+  if (!terms.length) return [];
+  return state.records
+    .filter(record => record.category === 'memory' || record.category === 'learning')
+    .map(record => ({
+      record,
+      score: terms.reduce((score, term) => score + (record.value.toLocaleLowerCase().includes(term) ? 1 : 0), 0),
+    }))
+    .filter(item => item.score > 0)
+    .sort((a, b) => b.score - a.score || b.record.updatedAt - a.record.updatedAt)
+    .slice(0, Math.max(1, Math.min(limit, 20)))
+    .map(item => item.record);
+}
+
 export function syncUserPoiPoiUnifiedState(userId: string, incoming: PoiPoiUnifiedState): Promise<PoiPoiUnifiedState> {
   const file = scopedFile(userId);
   const previous = scopedQueues.get(file) ?? Promise.resolve();
