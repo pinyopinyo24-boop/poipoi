@@ -1,7 +1,6 @@
 import { recordLearningFeedback } from "./LearningContextIntegration";
 import { LearningContextIntegration } from "./LearningContextIntegration";
 import { enrichPromptWithLearning } from "./LearningContextIntegration";
-import { PoipoiCodeAgent } from "./PoipoiCodeAgent";
 /**
  * ChatCoreManager - 郢晄亢縺・ｹ晄亢縺・I 郢昶・ﾎ慕ｹ昴・繝ｨ郢ｧ・ｳ郢ｧ・｢
  * AI邵ｺ謔滂ｽｮ貊・怙邵ｺ・ｫ闔ｨ螟奇ｽｩ・ｱ陷ｿ・ｯ髢ｭ・ｽ邵ｺ・ｫ邵ｺ蜷ｶ・狗ｹｧ・ｳ郢ｧ・｢陞ｳ貅ｯ・｣繝ｻ
@@ -47,18 +46,6 @@ export interface ChatResponse {
 }
 
 export class ChatCoreManager {
-  private isCodeImplementationRequest(message: string): boolean {
-    return /菫ｮ豁｣|謾ｹ蝟л螟画峩|菴懈・|繧ｳ繝ｼ繝・/.test(message);
-  }
-
-  private async executeCodeImplementationRequest(message: string): Promise<string> {
-    const result = await PoipoiCodeAgent.getInstance().execute(message);
-    if (!result.success) {
-      return `郢ｧ・ｳ郢晢ｽｼ郢晉甥・ｮ貅ｯ・｣繝ｻ竊楢棔・ｱ隰ｨ蜉ｱ・邵ｺ・ｾ邵ｺ蜉ｱ笳・ ${result.error ?? "闕ｳ閧ｴ繝ｻ邵ｺ・ｪ郢ｧ・ｨ郢晢ｽｩ郢晢ｽｼ"}`;
-    }
-    return JSON.stringify(result, null, 2);
-  }
-
   private chatService: ChatService;
   private messageProcessingService: MessageProcessingService;
   private contextAwarenessService: ContextAwarenessService;
