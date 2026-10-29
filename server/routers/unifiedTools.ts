@@ -159,6 +159,7 @@ export const unifiedToolsRouter = router({
     .mutation(async ({ input, ctx }) => {
       if (ctx.user.role !== 'admin') throw new Error('Administrator permission required');
       cleanExpiredPreviews();
+      if (evolutionPreviews.size >= 20) throw new Error('Too many pending evolution previews');
       const changes = await PoipoiCodeAgent.getInstance().generate(input.request);
       if (!changes.length) throw new Error('No grounded changes were generated');
       const previewId = randomUUID();
@@ -188,6 +189,34 @@ export const unifiedToolsRouter = router({
     return PoipoiCodeAgent.getInstance().applyAndTest(preview.changes);
   }),
 
+  analyzeManufacturing: protectedProcedure.input(z.object({
+    estimatedUnitCost: z.number().nonnegative().finite(),
+    actualUnitCost: z.number().nonnegative().finite(),
+    quantity: z.number().positive().finite(),
+    producedUnits: z.number().nonnegative().finite().optional(),
+    plannedUnits: z.number().positive().finite().optional(),
+    stockQuantity: z.number().nonnegative().finite().optional(),
+    reorderLevel: z.number().nonnegative().finite().optional(),
+    unitPrice: z.number().nonnegative().finite().optional(),
+  })).mutation(async ({ input }) => {
+    const variancePerUnit = input.actualUnitCost - input.estimatedUnitCost;
+    const totalVariance = variancePerUnit * input.quantity;
+    const productionRate = input.producedUnits !== undefined && input.plannedUnits !== undefined
+      ? input.producedUnits / input.plannedUnits : null;
+    const reorderRequired = input.stockQuantity !== undefined && input.reorderLevel !== undefined
+      ? input.stockQuantity < input.reorderLevel : null;
+    const marginPerUnit = input.unitPrice !== undefined
+      ? input.unitPrice - input.actualUnitCost : null;
+    return {
+      estimatedUnitCost: input.estimatedUnitCost,
+      actualUnitCost: input.actualUnitCost,
+      variancePerUnit, totalVariance,
+      varianceType: totalVariance > 0 ? 'unfavorable' : totalVariance < 0 ? 'favorable' : 'neutral',
+      productionRate, reorderRequired, marginPerUnit,
+      dataOrigin: 'user_supplied',
+      note: 'Calculated from supplied figures; no live manufacturing records were queried.',
+    };
+  }),
   analyzeCost: protectedProcedure.input(z.object({
     estimated: z.number().finite(),
     actual: z.number().finite(),
