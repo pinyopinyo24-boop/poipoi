@@ -313,6 +313,36 @@ export const chatRouter = router({
       getChatCoreManager().getChatStatistics(String(ctx.user?.id ?? "mobile"))
     ),
 
+  // Shared feedback endpoint for desktop and Android chat clients.
+  submitLearningFeedback: publicProcedure
+    .input(z.object({
+      sessionId: z.string().min(1),
+      messageId: z.string().min(1),
+      accepted: z.boolean(),
+      correction: z.string().trim().min(1).max(3000).optional(),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      const userId = String(ctx.user?.id ?? "mobile");
+      const repository = (await import('./repositories/ChatRepository')).getSharedChatRepository();
+      const session = await repository.getSession(input.sessionId);
+      if (!session || session.userId !== userId) {
+        throw new TRPCError({ code: 'NOT_FOUND', message: 'チャットセッションが見つかりません' });
+      }
+      const messages = await repository.getMessages(input.sessionId, 100000);
+      const index = messages.findIndex(item => item.id === input.messageId);
+      const answer = messages[index];
+      if (!answer || answer.userId !== userId || answer.role !== 'assistant') {
+        throw new TRPCError({ code: 'NOT_FOUND', message: '対象のAI回答が見つかりません' });
+      }
+      const question = messages.slice(0, index).reverse().find(item => item.role === 'user');
+      if (!question || question.userId !== userId) {
+        throw new TRPCError({ code: 'BAD_REQUEST', message: '対応する質問が見つかりません' });
+      }
+      const { recordLearningFeedback } = await import('./core/LearningContextIntegration');
+      await recordLearningFeedback(question.content, answer.content, input.accepted, input.correction);
+      return { success: true, learned: true };
+    }),
+
   reportResponseIssue: publicProcedure
     .input(
       z.object({
