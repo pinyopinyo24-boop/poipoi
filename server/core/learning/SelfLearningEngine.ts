@@ -334,7 +334,7 @@ export class SelfLearningEngine {
     if (cycle.dataPoints.length > 0) {
       const avgDuration =
         cycle.dataPoints.reduce((sum, d) => sum + d.duration, 0) / cycle.dataPoints.length;
-      if (avgDuration > 1000) {
+      if (cycle.dataPoints.length >= 5 && avgDuration > 1000) {
         recommendations.push('Performance optimization recommended');
       }
     }
