@@ -188,7 +188,7 @@ export class AgentManager {
             }
             previousResults[depType] = depResult.output;
           }
-          step.input.previousResults = previousResults;
+          step.input = { ...step.input, previousResults };
         }
 
         // Execute step
@@ -230,6 +230,7 @@ export class AgentManager {
           );
           results.push(result);
           aggregatedResults[step.agentType] = result.output;
+          aggregatedResults['step_' + results.length] = result.output;
           totalTokensUsed += result.tokensUsed || 0;
         } catch (stepError) {
           const stepExecutionTime = Date.now() - stepStartTime;
