@@ -12,8 +12,8 @@ export class LearningContextIntegration {
     if (!entries.length) return "";
 
     return entries.map((e, i) =>
-      `${i + 1}. Question: ${e.task}\nAnswer: ${e.solution}`
-    ).join("\n\n");
+      `${i + 1}. Question: ${e.task.slice(0, 500)}\\nAnswer: ${e.solution.slice(0, 1200)}`
+    ).join("\\n\\n");
   }
 
   async recordResult(input: {
