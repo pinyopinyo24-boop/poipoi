@@ -20,13 +20,15 @@ async function resolveUpload(file: string, extension: string): Promise<string> {
   return full;
 }
 
+const presentationManager = new PresentationAIManager(getPresentationRepository());
+
 export const unifiedToolsRouter = router({
   presentation: protectedProcedure.input(z.object({
     title: z.string().min(1).max(255),
     description: z.string().max(1000).default(''),
     slides: z.array(z.object({ title: z.string().min(1).max(255), content: z.string().max(10000) })).min(1).max(30),
   })).mutation(({ input }) => {
-    const manager = new PresentationAIManager(getPresentationRepository());
+    const manager = presentationManager;
     const created = manager.createPresentation(input.title, input.description);
     for (const slide of input.slides) {
       manager.addSlide(created.id, { title: slide.title, content: slide.content, layout: 'content', elements: [] });
