@@ -277,6 +277,9 @@ export class AgentManager {
 
       workflow.status = 'failed';
       workflow.error = errorMessage;
+      workflow.steps = results;
+      workflow.aggregatedResults = aggregatedResults;
+      workflow.totalTokensUsed = totalTokensUsed;
       workflow.executionTime = executionTime;
 
       // Complete execution logging
