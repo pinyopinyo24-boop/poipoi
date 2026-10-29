@@ -69,6 +69,8 @@ export function deserializePoiPoiState(
 
   const records: PoiPoiStateRecord[] = [];
 
+  if (parsed.records.length > 10000) throw new Error('PoiPoi state exceeds sync limit');
+
   for (const item of parsed.records) {
     if (
       !item ||
