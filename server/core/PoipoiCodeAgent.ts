@@ -376,8 +376,13 @@ export class PoipoiCodeAgent {
     }
   }
 
-  async execute(task: string): Promise<CodeTaskResult> {
-    const changes = await this.generate(task);
-    return this.applyAndTest(changes);
+  // The code agent must never bypass the user-scoped preview/approval router.
+  async execute(_task: string): Promise<CodeTaskResult> {
+    return {
+      success: false,
+      changes: [],
+      tested: false,
+      error: 'Direct execution disabled. Use unifiedTools.codePreview and applyCodePreview with explicit approval.',
+    };
   }
 }
