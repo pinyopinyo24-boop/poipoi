@@ -43,6 +43,39 @@ export class LearningKnowledgeBridge {
     }
   }
 
+  async recordFeedback(task: string, answer: string, accepted: boolean, correction?: string): Promise<void> {
+    const corrected = correction?.trim();
+    await this.exclusive(async () => {
+      const data = await this.load();
+      const key = (text: string) => text.normalize("NFKC").toLowerCase().replace(/[\s、。,.!?！？・]+/g, "");
+      const question = key(task);
+      const upsert = (solution: string, outcome: Entry["outcome"], feedback?: string) => {
+        const index = data.findIndex(e => key(e.task) === question && e.solution === solution);
+        if (outcome === "success" && !feedback && index >= 0 && data[index].outcome === "failure") return;
+        const entry: Entry = { task, solution, outcome, feedback, used: index >= 0 ? data[index].used : 0 };
+        if (index < 0) data.push(entry);
+        else data[index] = entry;
+      };
+      if (!accepted) upsert(answer, "failure", corrected);
+      if (corrected) {
+        for (const entry of data) {
+          if (key(entry.task) === question && entry.solution !== corrected) entry.outcome = "failure";
+        }
+        upsert(corrected, "success", corrected);
+      } else if (accepted) {
+        upsert(answer, "success");
+      }
+      await fs.mkdir(path.dirname(this.file), { recursive: true });
+      const temporary = `${this.file}.${process.pid}.${Date.now()}.${Math.random().toString(36).slice(2)}.tmp`;
+      try {
+        await fs.writeFile(temporary, JSON.stringify(data, null, 2));
+        await fs.rename(temporary, this.file);
+      } finally {
+        await fs.rm(temporary, { force: true }).catch(() => {});
+      }
+    });
+  }
+
   async learn(input: Omit<Entry, "used">): Promise<void> {
     return this.exclusive(async () => {
     const data = await this.load();
@@ -78,7 +111,7 @@ export class LearningKnowledgeBridge {
   async recall(query: string, limit = 5): Promise<Entry[]> {
     const data = await this.load();
     const compact = (v: string) => v.toLowerCase().normalize("NFKC")
-      .replace(/[\\s、。,.!?！？・]+/g, "");
+      .replace(/[\s、。,.!?！？・]+/g, "");
     const q = compact(query);
     if (q.length < 2) return [];
     const bigrams = (v: string): Set<string> => {
