@@ -243,7 +243,8 @@ export class PoipoiCodeAgent {
 
       // A successful syntax check alone is not a verified evolution.
       // Run the project's configured type checker; failures restore every file.
-      execFileSync("pnpm", ["exec", "tsc", "--noEmit"], {
+      execFileSync(process.platform === "win32" ? "cmd.exe" : "pnpm",
+        process.platform === "win32" ? ["/d", "/s", "/c", "pnpm exec tsc --noEmit"] : ["exec", "tsc", "--noEmit"], {
         cwd: this.root, encoding: "utf8", timeout: 120000,
         windowsHide: true, stdio: "pipe",
       });
