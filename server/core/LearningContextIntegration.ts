@@ -51,18 +51,7 @@ export async function recordLearningFeedback(
 ): Promise<void> {
   if (!task.trim() || !answer.trim()) return;
 
-  const learning = new LearningContextIntegration(process.cwd());
-  const corrected = correction?.trim();
-
-  if (!accepted) {
-    await learning.recordResult({
-      task, solution: answer, success: false, feedback: corrected
-    });
-  }
-
-  if (accepted || corrected) {
-    await learning.recordResult({
-      task, solution: corrected || answer, success: true, feedback: corrected
-    });
-  }
+  await new LearningKnowledgeBridge(process.cwd()).recordFeedback(
+    task, answer, accepted, correction
+  );
 }
