@@ -158,6 +158,9 @@ export class SelfLearningEngine {
       metadata: metadata || {},
     };
 
+    if (cycle.status !== LearningCycleStatus.RUNNING) {
+      throw new Error('Cannot record data in a non-running learning cycle');
+    }
     this.learningData.push(dataPoint);
     cycle.dataPoints.push(dataPoint);
 
