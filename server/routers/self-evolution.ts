@@ -1,4 +1,4 @@
-import { router, protectedProcedure, protectedProcedure } from "../_core/trpc";
+import { router, protectedProcedure } from "../_core/trpc";
 import { z } from "zod";
 import { invokeLLM } from "../_core/llm";
 import { getUserPoiPoiUnifiedState, syncUserPoiPoiUnifiedState } from "../core/PoiPoiUnifiedStateStore";
@@ -165,7 +165,7 @@ Respond in JSON format with: { "improvements": "...", "code": "...", "explanatio
         satisfaction: z.number().min(1).max(5).describe("ユーザー満足度 (1-5)"),
       })
     )
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
       try {
         // Store interaction data for learning
         const learningData = {
