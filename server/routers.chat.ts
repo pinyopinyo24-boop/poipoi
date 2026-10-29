@@ -73,7 +73,7 @@ export const chatRouter = router({
         // All explicit tools share the authenticated unified router.
         const command = input.message.trim();
         const codeRequest = /^(?:PoiPoiコードエージェント|コードエージェント)[：:\s]+(?:実装|修正|変更|作成|追加|改修)/u.test(command);
-        const toolRequest = command.match(/^PoiPoiツール[：:\s]+(分析|原価|製造記録|製造一覧|資料作成|コード確認|Excel|PDF|資料分析|複数資料|PPT出力|製造分析)[：:\s]+([\s\S]+)$/u);
+        const toolRequest = command.match(/^PoiPoiツール[：:\s]+(分析|原価|製造記録|製造一覧|資料作成|コード確認|コード適用|Excel|PDF|資料分析|複数資料|PPT出力|製造分析)[：:\s]+([\s\S]+)$/u);
         if (codeRequest || toolRequest) {
           if (!ctx.user) {
             throw new TRPCError({ code: 'UNAUTHORIZED', message: 'ツール利用にはログインが必要です' });
@@ -87,7 +87,16 @@ export const chatRouter = router({
           const { unifiedToolsRouter } = await import('./routers/unifiedTools');
           const caller = unifiedToolsRouter.createCaller(ctx);
           let result: unknown;
-          if (codeRequest || toolRequest?.[1] === 'コード確認') {
+          if (toolRequest?.[1] === 'コード適用') {
+            if (ctx.user.role !== 'admin') {
+              throw new TRPCError({ code: 'FORBIDDEN', message: 'コード変更機能は管理者のみ利用できます' });
+            }
+            const args = z.object({
+              previewId: z.string().uuid(),
+              confirm: z.literal('APPLY_AND_VERIFY'),
+            }).parse(JSON.parse(toolRequest[2]));
+            result = await caller.applyCodePreview(args);
+          } else if (codeRequest || toolRequest?.[1] === 'コード確認') {
             if (ctx.user.role !== 'admin') {
               throw new TRPCError({ code: 'FORBIDDEN', message: 'コード変更機能は管理者のみ利用できます' });
             }
