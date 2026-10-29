@@ -138,12 +138,35 @@ export class AndroidLocalAI {
       const state = await getMobilePoiPoiState();
       const normalized = (s: string) => s.normalize('NFKC').toLowerCase().replace(/[\s、。,.!?！？・]+/g, '');
       const query = normalized(message);
+      const latestByAnswer = new Map<string, (typeof state.records)[number]>();
+      for (const record of [...state.records].sort((a, b) => a.updatedAt - b.updatedAt)) {
+        if (record.category !== 'learning') continue;
+        try {
+          const item = JSON.parse(record.value);
+          if (typeof item.task !== 'string' || typeof item.solution !== 'string') continue;
+          const key = normalized(item.task) + ':' + normalized(item.solution);
+          latestByAnswer.set(key, record);
+        } catch { /* Keep unrelated records untouched. */ }
+      }
+      const corrections = new Map<string, string>();
+      for (const record of latestByAnswer.values()) {
+        try {
+          const item = JSON.parse(record.value);
+          if (item.outcome === 'success' && typeof item.feedback === 'string' && item.feedback.trim()) {
+            corrections.set(normalized(item.task), normalized(item.solution));
+          }
+        } catch { /* Ignore malformed learning. */ }
+      }
       const relevant = state.records.filter(record => {
         if (record.category !== 'learning' && record.category !== 'memory') return false;
         if (record.category === 'memory') return normalized(record.value).includes(query) && query.length >= 3;
         try {
           const item = JSON.parse(record.value);
-          if (item?.outcome !== 'success' || typeof item.task !== 'string') return false;
+          if (item?.outcome !== 'success' || typeof item.task !== 'string' || typeof item.solution !== 'string') return false;
+          const key = normalized(item.task) + ':' + normalized(item.solution);
+          if (latestByAnswer.get(key) !== record) return false;
+          const corrected = corrections.get(normalized(item.task));
+          if (corrected && corrected !== normalized(item.solution)) return false;
           const task = normalized(item.task);
           return query.length >= 3 && (task.includes(query) || query.includes(task));
         } catch { return false; }
