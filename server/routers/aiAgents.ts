@@ -6,6 +6,7 @@
 import { router, publicProcedure, protectedProcedure } from '../_core/trpc';
 import { z } from 'zod';
 import { invokeLLM } from '../_core/llm';
+import { evaluateLocalCapabilities } from '../core/PoiPoiCapabilityEvaluation';
 import { getAICore, initializeAICore } from '../_core/ai/AICore';
 import { AgentType } from '../_core/ai/agents/BaseAgent';
 
@@ -13,6 +14,9 @@ import { AgentType } from '../_core/ai/agents/BaseAgent';
  * AI Agents Router
  */
 export const aiAgentsRouter = router({
+  evaluateCapabilities: protectedProcedure.mutation(async ({ ctx }) => {
+    return evaluateLocalCapabilities(String(ctx.user.id));
+  }),
   planAndExecute: protectedProcedure
     .input(z.object({ request: z.string().min(1).max(4000) }))
     .mutation(async ({ input }) => {
