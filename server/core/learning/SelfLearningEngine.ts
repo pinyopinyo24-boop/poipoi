@@ -182,6 +182,9 @@ export class SelfLearningEngine {
       throw new Error('Learning cycle not found');
     }
 
+    if (cycle.status !== LearningCycleStatus.RUNNING) {
+      throw new Error('Learning cycle is not running');
+    }
     cycle.endTime = Date.now();
     cycle.status = LearningCycleStatus.COMPLETED;
 
