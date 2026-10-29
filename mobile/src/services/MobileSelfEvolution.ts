@@ -423,7 +423,7 @@ export class MobileSelfEvolution {
       .filter(record =>
         record.category === 'evolution' &&
         record.origin === 'pc' &&
-        record.id.startsWith('evolution_run_')
+        (record.id.startsWith('evolution_run_') || record.id.startsWith('evolution-'))
       )
       .sort((a, b) => b.updatedAt - a.updatedAt)
       .map(record => {
@@ -448,7 +448,7 @@ export class MobileSelfEvolution {
     const pcRecords = state.records.filter(record =>
       record.category === 'evolution' &&
       record.origin === 'pc' &&
-      record.id.startsWith('evolution_run_')
+      (record.id.startsWith('evolution_run_') || record.id.startsWith('evolution-'))
     );
 
     const key = 'poipoi:evolution:pc-applied';
@@ -483,7 +483,7 @@ export class MobileSelfEvolution {
 
       const run = result as Record<string, unknown>;
 
-      if (run.outcome !== 'executed') {
+      if (run.outcome !== 'executed' && !(run.success === true && run.tested === true)) {
         skipped++;
         continue;
       }
@@ -521,8 +521,8 @@ export class MobileSelfEvolution {
 
       const run = result as Record<string, unknown>;
 
-      if (run.outcome === 'executed') executedRuns++;
-      if (run.outcome === 'error') errorRuns++;
+      if (run.outcome === 'executed' || (run.success === true && run.tested === true)) executedRuns++;
+      if (run.outcome === 'error' || run.success === false) errorRuns++;
 
       if (
         typeof run.changesApplied === 'number' &&
