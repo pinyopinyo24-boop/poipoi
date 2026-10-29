@@ -135,7 +135,17 @@ export async function invokeLLM(request: LLMRequest): Promise<LLMResponse> {
   const baseUrl = process.env.LOCAL_AI_URL || "http://localhost:11434";
   const model = request.messages?.[0]?.content?.includes("code generation expert") ? "qwen2.5-coder:7b" : "qwen2.5:7b";
 
-  const messages = request.messages || [];
+  const messages = [...(request.messages || [])];
+  const userIndex = messages.findLastIndex(message => message.role === "user");
+  if (userIndex >= 0) {
+    const userMessage = messages[userIndex];
+    if (typeof userMessage.content === "string") {
+      messages[userIndex] = {
+        ...userMessage,
+        content: await enrichPromptWithLearning(process.cwd(), userMessage.content),
+      };
+    }
+  }
 
   console.log("[LLM REQUEST] Local AI", {
     model,
