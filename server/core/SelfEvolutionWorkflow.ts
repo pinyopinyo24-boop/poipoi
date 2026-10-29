@@ -155,7 +155,10 @@ export class SelfEvolutionWorkflow {
     if (approvedSimulation && approvedSimulation.userId !== userId) {
       throw new Error('Simulation result does not belong to the requested user');
     }
-    const simulationResult = approvedSimulation ?? await this.runSimulation(userId);
+    if (!approvedSimulation || !this.executionApprovals.get(userId)?.has(approvedSimulation.workflowId)) {
+      throw new Error('Explicit approval is required before execution');
+    }
+    const simulationResult = approvedSimulation;
     // simulation 縺ｮ workflowId 縺ｯ繝ｯ繝ｼ繧ｯ繝輔Ο繝ｼID縺ｨ縺ｯ蛻･縺ｫ謖√◆縺帙ｋ
     const simulation: SimulationResult = simulationResult;
 
