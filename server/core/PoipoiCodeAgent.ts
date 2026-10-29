@@ -175,6 +175,28 @@ export class PoipoiCodeAgent {
     ].join("\n");
 
     const response = await invokeLLM({
+      model: process.env.LOCAL_CODER_MODEL || "qwen2.5-coder:7b",
+      temperature: 0.1,
+      response_format: {
+        type: "json_schema",
+        json_schema: {
+          name: "poipoi_code_changes",
+          schema: {
+            type: "object",
+            properties: {
+              changes: {
+                type: "array",
+                items: {
+                  type: "object",
+                  properties: { path: { type: "string" }, content: { type: "string" } },
+                  required: ["path", "content"],
+                },
+              },
+            },
+            required: ["changes"],
+          },
+        },
+      },
       messages: [
         {
           role: "system",
