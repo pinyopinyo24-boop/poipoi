@@ -319,6 +319,7 @@ export const chatRouter = router({
         sessionId: z.string().min(1),
         messageId: z.string().min(1),
         issueType: z.enum(['irrelevant', 'unclear', 'unhelpful']),
+        correction: z.string().trim().min(1).max(3000).optional(),
       })
     )
     .mutation(async ({ ctx, input }) => {
@@ -358,7 +359,7 @@ export const chatRouter = router({
       if (previous?.content && message.content) {
         try {
           const { recordLearningFeedback } = await import('./core/LearningContextIntegration');
-          await recordLearningFeedback(previous.content, message.content, false);
+          await recordLearningFeedback(previous.content, message.content, false, input.correction);
         } catch (error) {
           console.warn('[PoiPoi Learning] Response issue not recorded:', error);
         }
