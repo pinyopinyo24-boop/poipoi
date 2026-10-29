@@ -30,6 +30,7 @@ export interface EvaluationReport {
   passRate: number;
   eligibleForParityClaim: false;
   limitations: string[];
+  integrationVerified: false;
   capabilityScores: Record<Capability, { passed: number; total: number; passRate: number }>;
 }
 
@@ -94,6 +95,7 @@ export async function evaluateLocalCapabilities(
     model, timestamp: new Date().toISOString(), cases: results,
     passed, total: results.length, passRate: passed / results.length,
     eligibleForParityClaim: false,
+    integrationVerified: false,
     capabilityScores,
     limitations: [
       'These are basic smoke-test cases, not GPT-6 benchmark comparisons.',
