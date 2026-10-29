@@ -1123,6 +1123,20 @@ export default function ChatScreen() {
             response = cost.success
               ? { success: true, data: { message: JSON.stringify(cost.data, null, 2) } }
               : cost;
+          } else if (input.trim().startsWith('/資料PPT ')) {
+            const request = input.trim().slice('/資料PPT '.length).trim();
+            const split = request.indexOf('｜');
+            if (split < 1 || split === request.length - 1) {
+              throw new Error('使い方: /資料PPT タイトル｜分析結果');
+            }
+            const title = request.slice(0, split).trim();
+            const analysis = request.slice(split + 1).trim();
+            const created = await apiConnector.executeUnifiedTool('createPresentationFromAnalysis', {
+              title, analysis,
+            });
+            response = created.success
+              ? { success: true, data: { message: 'PowerPoint資料をPC版に作成しました。\\n' + JSON.stringify(created.data, null, 2) } }
+              : created;
           } else if (input.trim().startsWith('/計画 ')) {
             const planned = await apiConnector.planAndExecute(input.trim().slice('/計画 '.length));
             response = planned.success
