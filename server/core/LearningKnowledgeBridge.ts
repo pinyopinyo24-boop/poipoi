@@ -109,6 +109,7 @@ export class LearningKnowledgeBridge {
     });
   }
   async recall(query: string, limit = 5): Promise<Entry[]> {
+    await (LearningKnowledgeBridge.writes.get(this.file) ?? Promise.resolve());
     const data = await this.load();
     const compact = (v: string) => v.toLowerCase().normalize("NFKC")
       .replace(/[\s、。,.!?！？・]+/g, "");
