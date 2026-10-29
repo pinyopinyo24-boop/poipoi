@@ -159,8 +159,11 @@ export async function invokeLLM(request: LLMRequest): Promise<LLMResponse> {
     timestamp: new Date().toISOString(),
   });
 
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 120000);
   try {
     const response = await fetch(`${baseUrl}/api/chat`, {
+      signal: controller.signal,
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -212,6 +215,8 @@ try {
     console.error("[LLM ERROR] Local AI call failed:", errorMsg);
     // Callers must be able to distinguish transport failure from a real answer.
     throw error;
+  } finally {
+    clearTimeout(timer);
   }
 }
 export async function listLLMModels(): Promise<{ data: LLMModel[] }> {
