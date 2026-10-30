@@ -4,10 +4,16 @@
 
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { chatRouter } from './routers.chat';
+import { getSharedChatRepository } from './repositories/ChatRepository';
 
 describe('Chat Router', () => {
-  beforeEach(() => {
+  beforeEach(async () => {
     vi.clearAllMocks();
+    const repository = getSharedChatRepository();
+    await repository.saveSession({
+      id: 'session-1', userId: 'user-123', title: 'Test session',
+      createdAt: Date.now(), updatedAt: Date.now(), messageCount: 0,
+    });
   });
 
   describe('processMessage', () => {
