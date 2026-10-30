@@ -290,6 +290,10 @@ export class ChatCoreManager {
           content: '複雑な依頼は、目的と制約を整理し、必要な作業を順序立て、結果を検証可能な根拠とともに回答してください。未実行の操作を完了と断定せず、検証できない点は明示してください。',
         });
       }
+      const { PoiPoiIdentity } = await import('./PoiPoiIdentity');
+      const identitySession = await this.chatRepository.getSession(sessionId);
+      if (!identitySession) throw new Error('Chat session not found');
+      messages.unshift({ role: 'system', content: PoiPoiIdentity.getSystemPrompt(identitySession.userId) });
       const aiCore = getAICore() ?? await initializeAICore();
       const aiMessage = await aiCore.invoke(messages);
       if (!aiMessage?.trim()) throw new Error('AI Core returned an empty response');
