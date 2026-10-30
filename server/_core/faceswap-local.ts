@@ -1,5 +1,5 @@
 /**
- * Gemini Vision API を使用したリアルな顔入れ替え処理
+ * LocalAI local vision model を使用したリアルな顔入れ替え処理
  * 高品質な顔認識・検出・置き換え機能
  */
 
@@ -26,9 +26,9 @@ export interface FaceSwapResult {
 }
 
 /**
- * Gemini Vision API で顔を検出・分析
+ * LocalAI local vision model で顔を検出・分析
  */
-async function analyzeFaceWithGemini(
+async function analyzeFaceWithLocalAI(
   imageBase64: string,
   analysisType: "detection" | "landmarks"
 ): Promise<{
@@ -104,7 +104,7 @@ async function analyzeFaceWithGemini(
 
     return result;
   } catch (error) {
-    console.error("[FaceSwap] Gemini 分析エラー:", error);
+    console.error("[FaceSwap] LocalAI 分析エラー:", error);
     return { faceDetected: false };
   }
 }
@@ -156,7 +156,7 @@ export async function performFaceSwap(
 
     // 1. ソース画像の顔を検出
     console.log("[FaceSwap] ソース画像の顔を検出中...");
-    const sourceAnalysis = await analyzeFaceWithGemini(
+    const sourceAnalysis = await analyzeFaceWithLocalAI(
       request.sourceImageBase64,
       "detection"
     );
@@ -171,7 +171,7 @@ export async function performFaceSwap(
 
     // 2. ターゲット画像の顔を検出
     console.log("[FaceSwap] ターゲット画像の顔を検出中...");
-    const targetAnalysis = await analyzeFaceWithGemini(
+    const targetAnalysis = await analyzeFaceWithLocalAI(
       request.targetImageBase64,
       "detection"
     );
@@ -186,11 +186,11 @@ export async function performFaceSwap(
 
     // 3. 顔のランドマークを検出
     console.log("[FaceSwap] 顔のランドマークを検出中...");
-    const sourceLandmarks = await analyzeFaceWithGemini(
+    const sourceLandmarks = await analyzeFaceWithLocalAI(
       request.sourceImageBase64,
       "landmarks"
     );
-    const targetLandmarks = await analyzeFaceWithGemini(
+    const targetLandmarks = await analyzeFaceWithLocalAI(
       request.targetImageBase64,
       "landmarks"
     );

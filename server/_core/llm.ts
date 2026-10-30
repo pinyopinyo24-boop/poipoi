@@ -1,7 +1,6 @@
 import { enrichPromptWithLearning } from "../core/LearningContextIntegration";
 /**
- * LLM Integration - Google Gemini API螳溯｣・
- * Google Gemini API繧剃ｽｿ逕ｨ縺励◆LLM邨ｱ蜷・
+ * PoiPoi local Ollama LLM integration.
  */
 
 export type Role = "system" | "user" | "assistant" | "tool" | "function";
@@ -118,7 +117,7 @@ export async function invokeLLM(request: LLMRequest): Promise<LLMResponse> {
     typeof message.content === "string" &&
     /code implementation agent|code generation expert|software implementation agent/i.test(message.content)
   );
-  const model = (request.model && !/^(gemini|gpt-)/i.test(request.model) ? request.model : undefined) || (isCodeTask
+  const model = (request.model && /^(qwen|llama|mistral|phi|deepseek|codellama|gemma)/i.test(request.model) ? request.model : undefined) || (isCodeTask
     ? process.env.LOCAL_CODER_MODEL || "qwen2.5-coder:7b"
     : process.env.LOCAL_CHAT_MODEL || process.env.LOCAL_CODER_MODEL || "qwen2.5-coder:7b");
 
