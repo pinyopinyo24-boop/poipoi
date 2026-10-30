@@ -33,10 +33,12 @@ function getChatCoreManager(): ChatCoreManager {
         if (records.length) await syncUserPoiPoiUnifiedState(userId, { version: 1, records });
       },
       getRelatedMemories: async (userId: string, query: string) => {
+        if (userId === 'mobile') return [];
         const { searchUserPoiPoiMemories } = await import('./core/PoiPoiUnifiedStateStore');
         return (await searchUserPoiPoiMemories(userId, query, 8)).map(record => record.value);
       },
       searchMemories: async (userId: string, query: string) => {
+        if (userId === 'mobile') return [];
         const { searchUserPoiPoiMemories } = await import('./core/PoiPoiUnifiedStateStore');
         return (await searchUserPoiPoiMemories(userId, query, 8)).map(record => record.value);
       },

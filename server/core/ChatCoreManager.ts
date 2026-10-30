@@ -196,7 +196,7 @@ export class ChatCoreManager {
     await this.chatRepository.saveMessage(assistantMsg, sessionId);
 
     // 6. 郢晢ｽ｡郢晢ｽ｢郢晢ｽｪ邵ｺ・ｫ闔ｨ螟奇ｽｩ・ｱ郢ｧ蜑・ｽｿ譎擾ｽｭ繝ｻ
-    if (this.memoryManager && typeof (this.memoryManager as any).saveConversation === 'function') {
+    if (userId !== 'mobile' && this.memoryManager && typeof (this.memoryManager as any).saveConversation === 'function') {
       try {
         await (this.memoryManager as any).saveConversation(userId, [userMsg]);
       } catch (error) {

@@ -124,10 +124,12 @@ export function synchronizeMobilePoiPoiState(
   headers: Record<string, string> = {}
 ): Promise<PoiPoiUnifiedState> {
   return locked(async () => {
+    const initialKey = await storageKey();
     const local = await readLocal();
     const base = serverUrl.replace(/\/+$/, '');
     const token = await AsyncStorage.getItem('sessionToken');
     if (!token) throw new Error('PoiPoi sync requires login');
+    if (await storageKey() !== initialKey) throw new Error('PoiPoi account changed before sync');
     const authorizedHeaders = { ...headers, Authorization: `Bearer ${token}` };
 
     // POIPOI_SYNC_TIMEOUT_V1
@@ -269,6 +271,9 @@ export function synchronizeMobilePoiPoiState(
     }
 
     const finalState = confirmedStateForSave ? mergePoiPoiState(merged, confirmedStateForSave) : merged;
+    if (await AsyncStorage.getItem('sessionToken') !== token || await storageKey() !== initialKey) {
+      throw new Error('PoiPoi account changed during sync; retry for the current account');
+    }
     await saveLocal(finalState);
     return finalState;
   });
