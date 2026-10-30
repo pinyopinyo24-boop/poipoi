@@ -162,7 +162,7 @@ export class MobileAPIConnector {
     }
   }
 
-  async executeUnifiedTool(name: 'reason' | 'analyzeCost' | 'memory' | 'excel' | 'pdf' | 'presentation' | 'exportPresentation' | 'codePreview' | 'analyzeDocument' | 'analyzeMultipleDocuments' | 'createPresentationFromAnalysis', input: Record<string, unknown>): Promise<APIResponse> {
+  async executeUnifiedTool(name: 'reason' | 'analyzeCost' | 'memory' | 'excel' | 'pdf' | 'presentation' | 'exportPresentation' | 'codePreview' | 'analyzeDocument' | 'analyzeMultipleDocuments' | 'createPresentationFromAnalysis' | 'uploadDocument', input: Record<string, unknown>): Promise<APIResponse> {
     try {
       const response = await this.apiClient.post('/api/trpc/unifiedTools.' + name, { json: input });
       return { success: true, data: this.getTrpcData(response.data) };
