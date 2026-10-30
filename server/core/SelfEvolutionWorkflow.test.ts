@@ -150,11 +150,17 @@ describe('SelfEvolutionWorkflow', () => {
     });
   });
 
+  async function runApprovedExecution(): Promise<ExecutionWorkflowResult> {
+    const simulation = await workflow.runSimulation(userId);
+    workflow.approveExecution(userId, simulation.workflowId);
+    return workflow.runExecution(userId, simulation);
+  }
+
   // ── runExecution ──────────────────────────────────────────────────────────
 
   describe('runExecution', () => {
     it('should return an ExecutionWorkflowResult', async () => {
-      const result = await workflow.runExecution(userId);
+      const result = await runApprovedExecution();
 
       expect(result).toBeDefined();
       expect(result.mode).toBe('execution');
@@ -163,7 +169,7 @@ describe('SelfEvolutionWorkflow', () => {
     });
 
     it('should contain a simulation sub-result', async () => {
-      const result = await workflow.runExecution(userId);
+      const result = await runApprovedExecution();
 
       expect(result.simulation).toBeDefined();
       expect(result.simulation.mode).toBe('simulation');
@@ -171,7 +177,7 @@ describe('SelfEvolutionWorkflow', () => {
     });
 
     it('should contain an execution sub-result', async () => {
-      const result = await workflow.runExecution(userId);
+      const result = await runApprovedExecution();
 
       expect(result.execution).toBeDefined();
       expect(typeof result.execution.total).toBe('number');
@@ -180,14 +186,14 @@ describe('SelfEvolutionWorkflow', () => {
     });
 
     it('should only execute approved candidates', async () => {
-      const result = await workflow.runExecution(userId);
+      const result = await runApprovedExecution();
 
       // 実行数 = 承認済み候補数
       expect(result.execution.total).toBe(result.simulation.approvedCandidates.length);
     });
 
     it('should NOT execute rejected candidates', async () => {
-      const result = await workflow.runExecution(userId);
+      const result = await runApprovedExecution();
 
       // executor の履歴には拒否候補の id が含まれない
       const executedIds = new Set(result.execution.results.map((r) => r.candidateId));
@@ -197,14 +203,14 @@ describe('SelfEvolutionWorkflow', () => {
     });
 
     it('should set a non-empty summary with [Execution] prefix', async () => {
-      const result = await workflow.runExecution(userId);
+      const result = await runApprovedExecution();
 
       expect(result.summary.startsWith('[Execution]')).toBe(true);
       expect(result.summary.length).toBeGreaterThan(10);
     });
 
     it('should save result to MemoryEngine', async () => {
-      const result = await workflow.runExecution(userId);
+      const result = await runApprovedExecution();
 
       const stored = MemoryEngine.getInstance().getMemory<ExecutionWorkflowResult>(
         userId,
@@ -215,7 +221,7 @@ describe('SelfEvolutionWorkflow', () => {
     });
 
     it('should record execution in ImprovementExecutor history', async () => {
-      const result = await workflow.runExecution(userId);
+      const result = await runApprovedExecution();
 
       const execHistory = ImprovementExecutor.getInstance().getExecutionHistory(userId);
       // 承認候補がある場合は履歴に記録されている
@@ -225,7 +231,7 @@ describe('SelfEvolutionWorkflow', () => {
     });
 
     it('succeeded + rolledBack + failed + skipped = total', async () => {
-      const result = await workflow.runExecution(userId);
+      const result = await runApprovedExecution();
       const { succeeded, rolledBack, failed, skipped, total } = result.execution;
       expect(succeeded + rolledBack + failed + skipped).toBe(total);
     });
@@ -241,7 +247,7 @@ describe('SelfEvolutionWorkflow', () => {
     });
 
     it('execution should touch ImprovementExecutor when candidates exist', async () => {
-      const result = await workflow.runExecution(userId);
+      const result = await runApprovedExecution();
       // 承認候補が 1 件以上あれば Executor が動いている
       if (result.simulation.approvedCandidates.length > 0) {
         expect(
@@ -256,7 +262,7 @@ describe('SelfEvolutionWorkflow', () => {
     });
 
     it('execution result mode is "execution"', async () => {
-      const r = await workflow.runExecution(userId);
+      const r = await runApprovedExecution();
       expect(r.mode).toBe<'execution'>('execution');
     });
   });
@@ -270,7 +276,7 @@ describe('SelfEvolutionWorkflow', () => {
 
     it('should accumulate results from both modes', async () => {
       await workflow.runSimulation(userId);
-      await workflow.runExecution(userId);
+      await runApprovedExecution();
       // simulation + execution 内でもう 1 つ simulation が記録されるので 3 件
       expect(workflow.getHistory(userId).length).toBe(3);
     });
@@ -322,7 +328,7 @@ describe('SelfEvolutionWorkflow', () => {
   describe('getHistoryByMode', () => {
     it('should filter by simulation mode', async () => {
       await workflow.runSimulation(userId);
-      await workflow.runExecution(userId);
+      await runApprovedExecution();
 
       const simOnly = workflow.getHistoryByMode(userId, 'simulation');
       expect(simOnly.every((r) => r.mode === 'simulation')).toBe(true);
@@ -330,7 +336,7 @@ describe('SelfEvolutionWorkflow', () => {
 
     it('should filter by execution mode', async () => {
       await workflow.runSimulation(userId);
-      await workflow.runExecution(userId);
+      await runApprovedExecution();
 
       const execOnly = workflow.getHistoryByMode(userId, 'execution');
       expect(execOnly.every((r) => r.mode === 'execution')).toBe(true);
@@ -349,7 +355,7 @@ describe('SelfEvolutionWorkflow', () => {
 
     it('should count simulation and execution runs separately', async () => {
       await workflow.runSimulation(userId);
-      await workflow.runExecution(userId);
+      await runApprovedExecution();
 
       const stats = workflow.getStats(userId);
       // simulation 単独 1回 + execution 内の simulation 1回 = 2 sim, 1 exec
@@ -359,7 +365,7 @@ describe('SelfEvolutionWorkflow', () => {
     });
 
     it('should track executed and succeeded counts', async () => {
-      await workflow.runExecution(userId);
+      await runApprovedExecution();
 
       const stats = workflow.getStats(userId);
       expect(stats.totalCandidatesExecuted).toBeGreaterThanOrEqual(0);
