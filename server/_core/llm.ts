@@ -121,7 +121,10 @@ export async function invokeLLM(request: LLMRequest): Promise<LLMResponse> {
     ? process.env.LOCAL_CODER_MODEL || "qwen2.5-coder:7b"
     : process.env.LOCAL_CHAT_MODEL || process.env.LOCAL_CODER_MODEL || "qwen2.5-coder:7b");
 
-  const messages = [...(request.messages || [])];
+  const messages = [
+    { role: "system" as const, content: "Verify arithmetic using units and equations before answering. Per-unit time = total minutes / total units. Total cost variance = (actual unit cost - estimated unit cost) * quantity. Never claim a file, tool action or synchronization succeeded without a confirmed successful result. Follow the requested answer format." },
+    ...(request.messages || []),
+  ];
   const userIndex = messages.findLastIndex(message => message.role === "user");
   if (userIndex >= 0 && !request.response_format) {
     const userMessage = messages[userIndex];
