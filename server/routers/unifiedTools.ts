@@ -2,7 +2,7 @@ import { router, protectedProcedure } from '../_core/trpc';
 import { z } from 'zod';
 import { ExcelAnalysisManager } from '../managers/ExcelAnalysisManager';
 import { invokeLLM } from '../_core/llm';
-import { readFile, realpath, stat } from 'node:fs/promises';
+import { readFile, realpath, stat, mkdir, writeFile } from 'node:fs/promises';
 import { createHash, randomUUID } from 'node:crypto';
 import path from 'node:path';
 import { getUserPoiPoiUnifiedState, syncUserPoiPoiUnifiedState } from '../core/PoiPoiUnifiedStateStore';
@@ -33,6 +33,36 @@ function cleanExpiredPreviews() {
 }
 
 export const unifiedToolsRouter = router({
+  uploadDocument: protectedProcedure.input(z.object({
+    fileName: z.string().min(1).max(255),
+    type: z.enum(['xlsx', 'pdf']),
+    base64: z.string().min(4).max(14_000_000),
+  })).mutation(async ({ input, ctx }) => {
+    const extension = '.' + input.type;
+    if (path.extname(input.fileName).toLowerCase() !== extension) {
+      throw new Error('File extension does not match document type');
+    }
+    if (!/^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/.test(input.base64)) {
+      throw new Error('Invalid base64 document');
+    }
+    const bytes = Buffer.from(input.base64, 'base64');
+    if (bytes.length < 8 || bytes.length > 10 * 1024 * 1024) {
+      throw new Error('Document size must be between 8 bytes and 10 MB');
+    }
+    if (input.type === 'pdf' && bytes.subarray(0, 5).toString('ascii') !== '%PDF-') {
+      throw new Error('Invalid PDF signature');
+    }
+    if (input.type === 'xlsx' && !bytes.subarray(0, 4).equals(Buffer.from([0x50, 0x4b, 0x03, 0x04]))) {
+      throw new Error('Invalid XLSX signature');
+    }
+    const userKey = createHash('sha256').update(String(ctx.user.id)).digest('hex').slice(0, 24);
+    const relativeFile = path.join('documents', userKey, randomUUID() + extension);
+    const uploadRoot = path.resolve(process.cwd(), 'uploads');
+    const destination = path.resolve(uploadRoot, relativeFile);
+    await mkdir(path.dirname(destination), { recursive: true });
+    await writeFile(destination, bytes, { flag: 'wx', mode: 0o600 });
+    return { file: relativeFile, type: input.type, size: bytes.length };
+  }),
   presentation: protectedProcedure.input(z.object({
     title: z.string().min(1).max(255),
     description: z.string().max(1000).default(''),
