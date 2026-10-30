@@ -1,6 +1,6 @@
 import * as React from 'react';
 
-import { synchronizeMobilePoiPoiState } from '../services/PoiPoiUnifiedStateSync';
+import { synchronizeMobilePoiPoiState, getMobilePoiPoiAccountNamespace } from '../services/PoiPoiUnifiedStateSync';
 import * as Linking from 'expo-linking';
 import * as Updates from 'expo-updates';
 function extractAIMessage(value: unknown): string {
@@ -69,36 +69,9 @@ export default function ChatScreen() {
   }, []);
 
 
-  // POIPOI_UNIFIED_STATE_RUNTIME_V1
-  React.useEffect(() => {
-    let active = true;
-
-    const sync = async () => {
-      if (!active) return;
-      try {
-        const savedPcUrl = await AsyncStorage.getItem('POIPOI_PC_URL');
-        if (savedPcUrl) await synchronizeMobilePoiPoiState(savedPcUrl);
-        await MobileSelfEvolution.restoreEvolutionFromUnifiedState();
-        await MobileSelfEvolution.applyPcEvolutionResults();
-      } catch (error) {
-        console.warn('PoiPoi unified AI state sync:', error);
-      }
-    };
-
-    void sync();
-
-    return () => {
-      active = false;
-    };
-  }, []);
-
   const POIPOI_LOCAL_CHAT_V1 = 'POIPOI_LOCAL_CHAT_V1';
   const chatKey = async () => {
-    const token = await AsyncStorage.getItem('sessionToken');
-    if (!token) return POIPOI_LOCAL_CHAT_V1;
-    let hash = 2166136261;
-    for (const char of token) hash = Math.imul(hash ^ char.charCodeAt(0), 16777619);
-    return POIPOI_LOCAL_CHAT_V1 + ':' + (hash >>> 0).toString(16);
+    return POIPOI_LOCAL_CHAT_V1 + ':' + await getMobilePoiPoiAccountNamespace();
   };
   const currentChatKey = useRef<string | null>(null);
   const historyEpoch = useRef(0);
@@ -106,7 +79,18 @@ export default function ChatScreen() {
   useEffect(() => {
     const epoch = ++historyEpoch.current;
     localHistoryLoad.current = chatKey().then(async key => {
-      const value = await AsyncStorage.getItem(key);
+      let value = await AsyncStorage.getItem(key);
+      // One-time migration from the previous token-scoped cache for the same login.
+      if (!value) {
+        const token = await AsyncStorage.getItem('sessionToken');
+        if (token) {
+          let hash = 2166136261;
+          for (const char of token) hash = Math.imul(hash ^ char.charCodeAt(0), 16777619);
+          const legacy = POIPOI_LOCAL_CHAT_V1 + ':' + (hash >>> 0).toString(16);
+          value = await AsyncStorage.getItem(legacy);
+          if (value && key !== legacy && epoch === historyEpoch.current) await AsyncStorage.setItem(key, value);
+        }
+      }
       if (epoch !== historyEpoch.current) return null;
       currentChatKey.current = key;
       return value;
@@ -348,7 +332,14 @@ export default function ChatScreen() {
         console.warn('Office作業状態を復元できませんでした:', storageError);
       }
       const key = await chatKey();
-      const cached = await AsyncStorage.getItem(key);
+      let cached = await AsyncStorage.getItem(key);
+      if (!cached) {
+        let hash = 2166136261;
+        for (const char of token) hash = Math.imul(hash ^ char.charCodeAt(0), 16777619);
+        const legacy = POIPOI_LOCAL_CHAT_V1 + ':' + (hash >>> 0).toString(16);
+        cached = await AsyncStorage.getItem(legacy);
+        if (cached && legacy !== key && historyEpoch.current === epoch) await AsyncStorage.setItem(key, cached);
+      }
       if (historyEpoch.current !== epoch) throw new Error('Account switched');
       let restored: Message[] = [];
       try {
@@ -557,6 +548,7 @@ export default function ChatScreen() {
         lastSyncAt = Date.now();
         void synchronizeMobilePoiPoiState(url)
           .then(async () => {
+            if (!active || !await connector.checkAuthentication()) return;
             await MobileSelfEvolution.restoreEvolutionFromUnifiedState();
             await MobileSelfEvolution.applyPcEvolutionResults();
             const pcResults = await MobileSelfEvolution.getPcEvolutionHistory(20);

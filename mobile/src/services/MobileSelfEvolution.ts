@@ -101,6 +101,7 @@ export class MobileSelfEvolution {
     const history = await this.getProposals();
     history.push(feature);
     await scopedEvolutionStorage.setItem(key, JSON.stringify(history));
+    await this.syncEvolutionToUnifiedState();
     return feature;
   }
 
@@ -151,6 +152,7 @@ export class MobileSelfEvolution {
       `次の承認済み機能について、実装設計を作成してください。既存機能は削除せず、コードは実行しないでください。\n要求: ${feature.request}\n提案: ${feature.proposal}`
     );
     await scopedEvolutionStorage.setItem('poipoi:evolution:design:' + index, design);
+    await this.syncEvolutionToUnifiedState();
     return design;
   }
   static async getFeatureDesign(index: number): Promise<string> {
@@ -200,6 +202,7 @@ export class MobileSelfEvolution {
       await scopedEvolutionStorage.setItem(key, JSON.stringify(active));
     }
 
+    await this.syncEvolutionToUnifiedState();
     return '拡張機能を登録しました: ' + feature.request;
   }
   static async getActiveFeatures(): Promise<string> {
