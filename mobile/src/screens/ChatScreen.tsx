@@ -43,7 +43,6 @@ import { Keyboard,
 import { CameraView, useCameraPermissions } from 'expo-camera';
 import { useRef } from 'react';
 import * as FileSystem from 'expo-file-system';
-import * as Sharing from 'expo-sharing';
 import { VoiceInputUI } from '../components/VoiceInputUI';
 import { MobileAPIConnector, ChatRequest, ChatResponse } from "../services/MobileAPIConnector";
 import Constants from "expo-constants";
@@ -1222,21 +1221,33 @@ export default function ChatScreen() {
             if (!title || !analysis) {
               throw new Error('先にPDF・Excel資料を解析するか「/資料PPT タイトル｜分析結果」を入力してください');
             }
-            const created = await apiConnector.executeUnifiedTool('createPresentationFromAnalysis', {
-              title, analysis,
-            });
+            const documents = analyzedDocumentsRef.current;
+            const fromDocuments = split < 0 && documents.length > 0;
+            const created = fromDocuments
+              ? await apiConnector.executeUnifiedTool('createPresentationFromDocuments', {
+                  title, files: documents.map(({ file, type }) => ({ file, type })),
+                })
+              : await apiConnector.executeUnifiedTool('createPresentationFromAnalysis', { title, analysis });
             if (!created.success || !created.data || typeof created.data !== 'object') {
               throw new Error(created.error || 'PowerPoint作成に失敗しました');
             }
-            const presentationId = (created.data as { id?: unknown }).id;
-            if (typeof presentationId !== 'string' || !presentationId) {
-              throw new Error('PowerPointの作成IDが取得できませんでした');
+            let exportData: unknown = created.data;
+            if (!fromDocuments) {
+              const presentationId = (created.data as { id?: unknown }).id;
+              if (typeof presentationId !== 'string' || !presentationId) throw new Error('PowerPointの作成IDが取得できませんでした');
+              const exported = await apiConnector.executeUnifiedTool('exportPresentation', { id: presentationId });
+              if (!exported.success || !exported.data || typeof exported.data !== 'object') {
+                throw new Error(exported.error || 'PowerPointの出力に失敗しました');
+              }
+              exportData = exported.data;
+            } else {
+              const newAnalysis = (created.data as { analysis?: unknown }).analysis;
+              if (typeof newAnalysis === 'string' && newAnalysis.trim()) {
+                lastDocumentAnalysisRef.current = newAnalysis;
+                await saveOfficeSession().catch(error => console.warn('Office作業状態を保存できませんでした:', error));
+              }
             }
-            const exported = await apiConnector.executeUnifiedTool('exportPresentation', { id: presentationId });
-            if (!exported.success || !exported.data || typeof exported.data !== 'object') {
-              throw new Error(exported.error || 'PowerPointの出力に失敗しました');
-            }
-            const fileBase64 = (exported.data as { base64?: unknown }).base64;
+            const fileBase64 = (exportData as { base64?: unknown } | null)?.base64;
             if (typeof fileBase64 !== 'string' || !fileBase64 || fileBase64.length > 28_000_000) {
               throw new Error('PowerPointファイルが空、または保存上限を超えています');
             }
@@ -1248,16 +1259,19 @@ export default function ChatScreen() {
             await FileSystem.writeAsStringAsync(destination, fileBase64, {
               encoding: FileSystem.EncodingType.Base64,
             });
-            if (await Sharing.isAvailableAsync()) {
-              try {
+            // The existing APK may not contain the native expo-sharing module.
+            // Save first, then attempt native sharing only when available.
+            try {
+              const Sharing = require('expo-sharing') as typeof import('expo-sharing');
+              if (await Sharing.isAvailableAsync()) {
                 await Sharing.shareAsync(destination, {
                   mimeType: 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
                   dialogTitle: 'PoiPoi PowerPointを共有',
                   UTI: 'org.openxmlformats.presentationml.presentation',
                 });
-              } catch (shareError) {
-                console.warn('PowerPoint共有を開けませんでした。ファイルは保存済みです:', shareError);
               }
+            } catch (shareError) {
+              console.warn('共有機能が使えないためPowerPointを端末内に保存しました:', shareError);
             }
             response = {
               success: true,
