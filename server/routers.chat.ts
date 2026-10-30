@@ -416,6 +416,7 @@ export const chatRouter = router({
         const previous = existing ? await repository.getMessages(conversation.id, 100000) : [];
         if (ctx.user) for (const m of previous.slice(-200)) if (m.role === 'user' && m.content.length <= 2000) syncedMemories.push({ id: "conversation-" + m.id, category: "memory", origin: "android", updatedAt: m.timestamp, value: JSON.stringify({ role: m.role, content: m.content }) });
         const known = new Set(previous.map(m => m.id));
+        const incomingIds = new Set<string>();
         const existingTurns = previous.map(m => ({ role: m.role, content: m.content, timestamp: m.timestamp }));
         await repository.saveSession({
           id: conversation.id,
@@ -426,7 +427,8 @@ export const chatRouter = router({
           messageCount: previous.length,
         });
         for (const message of conversation.messages) {
-          if (!message.id.trim() || !message.content.trim() || known.has(message.id)) continue;
+          if (!message.id.trim() || !message.content.trim() || known.has(message.id) || incomingIds.has(message.id)) continue;
+          incomingIds.add(message.id);
           const parsedTime = Date.parse(message.timestamp);
           const timestamp = Number.isFinite(parsedTime) ? Math.min(parsedTime, Date.now()) : Date.now();
           if (existingTurns.some(turn => turn.role === message.role && turn.content === message.content && Math.abs(turn.timestamp - timestamp) < 120000)) {
