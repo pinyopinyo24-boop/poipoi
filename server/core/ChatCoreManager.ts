@@ -125,6 +125,29 @@ export class ChatCoreManager {
         } catch (error) {
           console.warn('[PoiPoi Learning] Feedback skipped:', error);
         }
+        // Share explicit user corrections with the same scoped memory store
+        // used by PC and Android. A failed sync must not discard the chat turn.
+        if (userId !== 'mobile') {
+          try {
+            const { syncUserPoiPoiUnifiedState } = await import('./PoiPoiUnifiedStateStore');
+            await syncUserPoiPoiUnifiedState(userId, {
+              version: 1,
+              records: [{
+                id: 'correction-' + previousAssistant.id,
+                category: 'learning',
+                origin: 'pc',
+                updatedAt: Date.now(),
+                value: JSON.stringify({
+                  question: previousUser.content.slice(0, 800),
+                  incorrectAnswer: previousAssistant.content.slice(0, 800),
+                  correction: correctionMatch[1].trim().slice(0, 1500),
+                }),
+              }],
+            });
+          } catch (error) {
+            console.warn('[AZ] Correction sync unavailable:', error);
+          }
+        }
       }
     }
 
