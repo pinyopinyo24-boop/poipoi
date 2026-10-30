@@ -653,6 +653,7 @@ export class MobileSelfEvolution {
       throw new Error('設計データが不正です');
     }
 
+    const designs = value.designs as Array<string | null>;
     if (!value.active.every(item =>
       Number.isInteger(item) &&
       item >= 0 &&
