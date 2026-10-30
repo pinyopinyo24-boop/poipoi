@@ -414,7 +414,7 @@ export const chatRouter = router({
           continue;
         }
         const previous = existing ? await repository.getMessages(conversation.id, 100000) : [];
-        if (ctx.user) for (const m of previous.slice(-200)) if (m.role === 'user' && m.content.length <= 2000) syncedMemories.push({ id: "conversation-" + m.id, category: "memory", origin: "android", updatedAt: m.timestamp, value: JSON.stringify({ role: m.role, content: m.content }) });
+        if (ctx.user) for (const m of previous.slice(-200)) if (m.role === 'user' && m.userId === userId && m.content.length <= 2000) syncedMemories.push({ id: "conversation-" + conversation.id + "-" + m.id, category: "memory", origin: "android", updatedAt: m.timestamp, value: JSON.stringify({ role: m.role, content: m.content }) });
         const known = new Set(previous.map(m => m.id));
         const incomingIds = new Set<string>();
         const existingTurns = previous.map(m => ({ role: m.role, content: m.content, timestamp: m.timestamp }));
@@ -445,7 +445,7 @@ export const chatRouter = router({
           known.add(message.id);
           existingTurns.push({ role: message.role, content: message.content, timestamp });
           if (ctx.user && message.role === 'user' && message.content.length <= 2000) {
-            syncedMemories.push({ id: "conversation-" + message.id, category: "memory", origin: "android", updatedAt: timestamp, value: JSON.stringify({ role: message.role, content: message.content }) });
+            syncedMemories.push({ id: "conversation-" + conversation.id + "-" + message.id, category: "memory", origin: "android", updatedAt: timestamp, value: JSON.stringify({ role: message.role, content: message.content }) });
           }
         }
       }
