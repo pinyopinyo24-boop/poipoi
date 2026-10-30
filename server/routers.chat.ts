@@ -21,11 +21,25 @@ function getChatCoreManager(): ChatCoreManager {
     };
 
     const memoryManager = {
-      saveConversation: async (userId: string, messages: any[]) => {
-        console.log(`[Memory] Saved ${messages.length} messages for user ${userId}`);
+      saveConversation: async (userId: string, messages: Array<{ id: string; role: string; content: string }>) => {
+        const { syncUserPoiPoiUnifiedState } = await import('./core/PoiPoiUnifiedStateStore');
+        const records = messages.map(message => ({
+          id: 'conversation-' + message.id,
+          category: 'memory' as const,
+          origin: 'pc' as const,
+          updatedAt: Date.now(),
+          value: JSON.stringify({ role: message.role, content: message.content.slice(0, 2000) }),
+        }));
+        if (records.length) await syncUserPoiPoiUnifiedState(userId, { version: 1, records });
       },
-      getRelatedMemories: async () => [],
-      searchMemories: async () => [],
+      getRelatedMemories: async (userId: string, query: string) => {
+        const { searchUserPoiPoiMemories } = await import('./core/PoiPoiUnifiedStateStore');
+        return (await searchUserPoiPoiMemories(userId, query, 8)).map(record => record.value);
+      },
+      searchMemories: async (userId: string, query: string) => {
+        const { searchUserPoiPoiMemories } = await import('./core/PoiPoiUnifiedStateStore');
+        return (await searchUserPoiPoiMemories(userId, query, 8)).map(record => record.value);
+      },
     } as any;
 
     const reasoningManager = {
