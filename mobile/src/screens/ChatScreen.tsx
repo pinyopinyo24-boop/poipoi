@@ -1,5 +1,5 @@
 import * as React from 'react';
-import { useState, useEffect } from 'react';
+
 import { synchronizeMobilePoiPoiState } from '../services/PoiPoiUnifiedStateSync';
 import * as Linking from 'expo-linking';
 import * as Updates from 'expo-updates';

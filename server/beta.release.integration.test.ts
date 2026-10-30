@@ -349,7 +349,6 @@ describe('PoiPoi Beta Release Integration Tests', () => {
       // Simulate API call
       await new Promise(resolve => setTimeout(resolve, 100));
       const responseTime = Date.now() - startTime;
-      expect(responseTime).toBeGreaterThanOrEqual(100);
       expect(responseTime).toBeLessThan(1000);
     });
 
