@@ -1,8 +1,9 @@
 ﻿import { LearningKnowledgeBridge } from "./LearningKnowledgeBridge";
 import { syncPoiPoiUnifiedState, getPoiPoiUnifiedState } from "./PoiPoiUnifiedStateStore";
 import { createHash } from "node:crypto";
+import { syncUserPoiPoiUnifiedState } from "./PoiPoiUnifiedStateStore";
 
-async function publishLearning(task: string, solution: string, accepted: boolean, correction?: string): Promise<void> {
+async function publishLearning(task: string, solution: string, accepted: boolean, correction?: string, userId?: string): Promise<void> {
   const normalizedTask = task.normalize("NFKC").trim().toLowerCase();
   const normalizedSolution = (correction?.trim() || solution).normalize("NFKC").trim();
   const id = createHash("sha256").update(JSON.stringify([normalizedTask, normalizedSolution])).digest("hex");
@@ -15,7 +16,8 @@ async function publishLearning(task: string, solution: string, accepted: boolean
     records.push({ id: rejectedId, category: "learning" as const, origin: "pc" as const, updatedAt: Date.now(),
       value: JSON.stringify({ task, solution, outcome: "failure" }) });
   }
-  await syncPoiPoiUnifiedState({ version: 1, records });
+  if (userId) await syncUserPoiPoiUnifiedState(userId, { version: 1, records });
+  else await syncPoiPoiUnifiedState({ version: 1, records });
 }
 
 
@@ -79,12 +81,13 @@ export async function recordLearningFeedback(
   task: string,
   answer: string,
   accepted: boolean,
-  correction?: string
+  correction?: string,
+  userId?: string
 ): Promise<void> {
   if (!task.trim() || !answer.trim()) return;
 
   await new LearningKnowledgeBridge(process.cwd()).recordFeedback(
     task, answer, accepted, correction
   );
-  await publishLearning(task, answer, accepted, correction);
+  await publishLearning(task, answer, accepted, correction, userId);
 }

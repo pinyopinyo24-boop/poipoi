@@ -120,7 +120,8 @@ export class ChatCoreManager {
             previousUser.content,
             previousAssistant.content,
             false,
-            correctionMatch[1].trim()
+            correctionMatch[1].trim(),
+            userId
           );
         } catch (error) {
           console.warn('[PoiPoi Learning] Feedback skipped:', error);

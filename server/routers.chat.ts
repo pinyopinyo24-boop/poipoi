@@ -524,7 +524,7 @@ export const chatRouter = router({
         throw new TRPCError({ code: 'BAD_REQUEST', message: '対応する質問が見つかりません' });
       }
       const { recordLearningFeedback } = await import('./core/LearningContextIntegration');
-      await recordLearningFeedback(question.content, answer.content, input.accepted, input.correction);
+      await recordLearningFeedback(question.content, answer.content, input.accepted, input.correction, userId);
       if (!input.accepted && input.correction) {
         const { syncUserPoiPoiUnifiedState } = await import('./core/PoiPoiUnifiedStateStore');
         await syncUserPoiPoiUnifiedState(userId, {
@@ -591,7 +591,7 @@ export const chatRouter = router({
       if (previous?.content && message.content) {
         try {
           const { recordLearningFeedback } = await import('./core/LearningContextIntegration');
-          await recordLearningFeedback(previous.content, message.content, false, input.correction);
+          await recordLearningFeedback(previous.content, message.content, false, input.correction, userId);
         } catch (error) {
           console.warn('[PoiPoi Learning] Response issue not recorded:', error);
         }
