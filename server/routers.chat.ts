@@ -218,43 +218,25 @@ export const chatRouter = router({
         const { PoiPoiIdentity } = await import("./core/PoiPoiIdentity");
 
         const originalMessage = input.message.trim();
-        const rename = originalMessage.match(
-          /^(?:(?:これからは|今後は|あなたの)[ \t]*)?(?:名前|呼び名)(?:を|は)[ \t]*[「『"]?(.{1,40}?)[」』"]?[ \t]*(?:にして|に変更して|に変えて|です|だよ|と呼んで|にしてください)[。！!]*$/u
-        );
-        if (originalMessage === '名前は？' || originalMessage === 'あなたの名前は？') {
-          await repository.saveMessage({ id: `identity_user_${Date.now()}`, userId, role: 'user', content: originalMessage, timestamp: Date.now() }, input.sessionId);
-          const reply = {
-            message: {
-              id: 'identity_' + Date.now(),
-              userId,
-              role: 'assistant' as const,
-              content: '私の名前は「' + PoiPoiIdentity.getName() + '」です。',
-              timestamp: Date.now(),
-            },
-            session: existingSession,
-            relatedMemories: [],
-            reasoning: 'Identity lookup',
-          };
-          await repository.saveMessage(reply.message, input.sessionId);
-          return reply;
+        // AI and user identity are distinct, including corrections.
+        const userRename = originalMessage.match(/^(?:私の名前は|わたしの名前は|僕の名前は|俺の名前は|私の名前を|私を)[「『"]?(.{1,40}?)[」』"]?(?:です|だよ|にして|と呼んで|にしてください)?[。！!]*$/u);
+        const aiRename = originalMessage.match(/^(?:あなたの名前|AIの名前|AZの呼び名)(?:を|は)[ \\t]*[「『"]?(.{1,40}?)[」』"]?[ \\t]*(?:にして|に変更して|に変えて|です|だよ|と呼んで|にしてください)[。！!]*$/u);
+        let directAnswer: string | undefined;
+        if (/^(?:私|わたし|僕|俺)の名前(?:は|って)?[？?]$/u.test(originalMessage)) {
+          const name = PoiPoiIdentity.getUserName(userId);
+          directAnswer = name ? `あなたの名前は「${name}」です。` : 'あなたの名前はまだ登録されていません。何とお呼びすればよいですか？';
+        } else if (/^(?:あなた|AI|AZ)の名前(?:は|って)?[？?]$/u.test(originalMessage) || /^名前は[？?]$/u.test(originalMessage)) {
+          directAnswer = `私の名前は「${PoiPoiIdentity.getName()}」です。`;
+        } else if (userRename) {
+          directAnswer = `あなたの名前を「${PoiPoiIdentity.setUserName(userId, userRename[1].trim())}」として覚えました。`;
+        } else if (aiRename) {
+          directAnswer = `AIの名前を「${PoiPoiIdentity.setName(aiRename[1].trim())}」に変更しました。`;
         }
-        if (rename) {
-          await repository.saveMessage({ id: `rename_user_${Date.now()}`, userId, role: 'user', content: originalMessage, timestamp: Date.now() }, input.sessionId);
-          const newName = PoiPoiIdentity.setName(rename[1].trim());
-          const reply = {
-            message: {
-              id: `rename_${Date.now()}`,
-              userId,
-              role: 'assistant' as const,
-              content: `名前を「${newName}」に変更しました。`,
-              timestamp: Date.now(),
-            },
-            session: existingSession,
-            relatedMemories: [],
-            reasoning: 'Identity updated',
-          };
-          await repository.saveMessage(reply.message, input.sessionId);
-          return reply;
+        if (directAnswer !== undefined) {
+          await repository.saveMessage({ id: uuidv4(), userId, role: 'user', content: originalMessage, timestamp: Date.now() }, input.sessionId);
+          const message = { id: uuidv4(), userId, role: 'assistant' as const, content: directAnswer, timestamp: Date.now() };
+          await repository.saveMessage(message, input.sessionId);
+          return { message, session: existingSession, relatedMemories: [], reasoning: 'AZ identity memory' };
         }
 
         const mobileHistory = (input.context?.poipoiConversation ?? [])
@@ -266,7 +248,7 @@ export const chatRouter = router({
         const response = await manager.processMessage(
           userId,
           input.sessionId,
-          `${PoiPoiIdentity.getSystemPrompt()}\n\n${mobileHistoryPrefix}${originalMessage}`
+          `${PoiPoiIdentity.getSystemPrompt(userId)}\n\n${mobileHistoryPrefix}${originalMessage}`
         );
 
         // Persist a bounded, per-user conversation summary for tool and agent context.
