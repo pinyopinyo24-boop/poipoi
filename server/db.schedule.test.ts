@@ -13,6 +13,7 @@ describe("Schedule Database Helpers", () => {
   beforeAll(() => {
     vi.mocked(getDb).mockResolvedValue({
       insert: () => ({ values: async () => [{ insertId: 1 }] }),
+      select: () => ({ from: () => ({ where: async () => [] }) }),
       update: () => ({ set: () => ({ where: async () => ({ affectedRows: 1 }) }) }),
     } as any);
   });
