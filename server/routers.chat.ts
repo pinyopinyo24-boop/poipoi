@@ -306,15 +306,14 @@ export const chatRouter = router({
         }
 
         const mobileHistory = (input.context?.poipoiConversation ?? [])
-          .map(turn => `${turn.role === 'user' ? 'ユーザー' : 'AZ'}: ${turn.content.slice(0, 2000)}`)
-          .join('\n');
-        const mobileHistoryPrefix = mobileHistory
-          ? `スマホ側の直前の会話:\n${mobileHistory}\n\n現在の質問:\n`
-          : '';
+          .filter(turn => (turn.role === 'user' || turn.role === 'assistant') && typeof turn.content === 'string')
+          .slice(-12)
+          .map(turn => ({ role: turn.role, content: turn.content.slice(0, 1000) }));
         const response = await manager.processMessage(
           userId,
           input.sessionId,
-          `${mobileHistoryPrefix}${originalMessage}`
+          originalMessage,
+          mobileHistory
         );
 
         // Persist a bounded, per-user conversation summary for tool and agent context.
