@@ -1205,11 +1205,15 @@ export default function ChatScreen() {
               encoding: FileSystem.EncodingType.Base64,
             });
             if (await Sharing.isAvailableAsync()) {
-              await Sharing.shareAsync(destination, {
-                mimeType: 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
-                dialogTitle: 'PoiPoi PowerPointを共有',
-                UTI: 'org.openxmlformats.presentationml.presentation',
-              });
+              try {
+                await Sharing.shareAsync(destination, {
+                  mimeType: 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+                  dialogTitle: 'PoiPoi PowerPointを共有',
+                  UTI: 'org.openxmlformats.presentationml.presentation',
+                });
+              } catch (shareError) {
+                console.warn('PowerPoint共有を開けませんでした。ファイルは保存済みです:', shareError);
+              }
             }
             response = {
               success: true,
