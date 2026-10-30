@@ -182,9 +182,6 @@ export class MobileAPIConnector {
 
   async sendChatMessage(request: ChatRequest): Promise<APIResponse<ChatResponse>> {
     try {
-      if (!this.sessionToken) {
-        return { success: false, error: 'PCチャットにはログインが必要です', code: 'UNAUTHORIZED' };
-      }
       const sessionId = request.sessionId || this.sessionId || await this.createChatSession();
       this.sessionId = sessionId;
       const response = await this.apiClient.post('/api/trpc/chat.processMessage', {
