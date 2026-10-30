@@ -113,7 +113,7 @@ export class FeedbackService {
    */
   async getUserFeedbackHistory(userId: string, limit = 50): Promise<UserFeedback[]> {
     const feedback = await this.collectFeedback(userId);
-    return feedback.slice(0, limit);
+    return feedback.sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime()).slice(0, limit);
   }
 
   /**
