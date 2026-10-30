@@ -51,7 +51,7 @@ export async function addSchedule(userId: number, input: ScheduleInput) {
     tags: input.tags ? JSON.stringify(input.tags) : null,
     location: input.location,
   });
-  return { id, ...input };
+  return { id, ...input, priority: input.priority ?? 'medium', status: input.status ?? 'pending' };
 }
 
 /**
@@ -175,10 +175,10 @@ export async function addScheduleMemory(
     memoryType: input.memoryType,
     content: input.content,
     relatedScheduleIds: input.relatedScheduleIds ? JSON.stringify(input.relatedScheduleIds) : null,
-    confidence: input.confidence || 0.5,
+    confidence: input.confidence ?? 0.5,
     tags: input.tags ? JSON.stringify(input.tags) : null,
   } as any);
-  return { id, ...input };
+  return { id, ...input, confidence: input.confidence ?? 0.5 };
 }
 
 /**
@@ -188,13 +188,10 @@ export async function getScheduleMemories(userId: number, memoryType?: string) {
   const db = await getDb();
   if (!db) return [];
 
-  let query = db.select().from(scheduleMemories).where(eq(scheduleMemories.userId, userId)) as any;
-
-  if (memoryType) {
-    query = query.where(eq(scheduleMemories.memoryType, memoryType as any));
-  }
-
-  const results = await query;
+  const conditions = memoryType
+    ? and(eq(scheduleMemories.userId, userId), eq(scheduleMemories.memoryType, memoryType as any))
+    : eq(scheduleMemories.userId, userId);
+  const results = await db.select().from(scheduleMemories).where(conditions);
   return results as any[];
 }
 
