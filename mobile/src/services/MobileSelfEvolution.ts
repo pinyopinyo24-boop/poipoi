@@ -2,6 +2,30 @@ import { updateMobilePoiPoiState, synchronizeMobilePoiPoiState, getMobilePoiPoiS
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { AndroidLocalAI } from './AndroidLocalAI';
 
+const scopedEvolutionStorage = {
+  async key(key: string): Promise<string> {
+    const token = await AsyncStorage.getItem('sessionToken');
+    if (!token) return key + ':anonymous';
+    let hash = 2166136261;
+    for (const char of token) hash = Math.imul(hash ^ char.charCodeAt(0), 16777619);
+    return key + ':account:' + (hash >>> 0).toString(16);
+  },
+  async getItem(key: string) { return AsyncStorage.getItem(await this.key(key)); },
+  async setItem(key: string, value: string) { return AsyncStorage.setItem(await this.key(key), value); },
+  async multiGet(keys: string[]) {
+    const scoped = await Promise.all(keys.map(key => this.key(key)));
+    const entries = await AsyncStorage.multiGet(scoped);
+    return entries.map((entry, i) => [keys[i], entry[1]] as [string, string | null]);
+  },
+  async multiSet(entries: [string, string][]) {
+    const scoped = await Promise.all(entries.map(async ([key, value]) => [await this.key(key), value] as [string, string]));
+    return AsyncStorage.multiSet(scoped);
+  },
+  async multiRemove(keys: string[]) {
+    return AsyncStorage.multiRemove(await Promise.all(keys.map(key => this.key(key))));
+  },
+};
+
 export type FeatureProposal = {
   request: string;
   proposal: string;
@@ -30,7 +54,7 @@ export class MobileSelfEvolution {
     }
   }
   static async getProposals(): Promise<FeatureProposal[]> {
-    const saved = await AsyncStorage.getItem('poipoi:evolution:proposals');
+    const saved = await scopedEvolutionStorage.getItem('poipoi:evolution:proposals');
     if (!saved) return [];
 
     let parsed: unknown;
@@ -80,7 +104,7 @@ export class MobileSelfEvolution {
     const key = 'poipoi:evolution:proposals';
     const history = await this.getProposals();
     history.push(feature);
-    await AsyncStorage.setItem(key, JSON.stringify(history));
+    await scopedEvolutionStorage.setItem(key, JSON.stringify(history));
     return feature;
   }
 
@@ -96,15 +120,15 @@ export class MobileSelfEvolution {
     }
     const approved = this.approve(history[index]);
     history[index] = approved;
-    await AsyncStorage.setItem('poipoi:evolution:proposals', JSON.stringify(history));
+    await scopedEvolutionStorage.setItem('poipoi:evolution:proposals', JSON.stringify(history));
     try {
       await this.syncEvolutionToUnifiedState();
     } catch (error) {
       console.warn('[PoiPoi] Evolution state registration failed:', error);
     }
     try {
-      const disconnected = await AsyncStorage.getItem('POIPOI_PC_DISCONNECTED');
-      const configuredUrl = await AsyncStorage.getItem('POIPOI_PC_URL');
+      const disconnected = await scopedEvolutionStorage.getItem('POIPOI_PC_DISCONNECTED');
+      const configuredUrl = await scopedEvolutionStorage.getItem('POIPOI_PC_URL');
 
       if (disconnected !== '1' && configuredUrl?.trim()) {
         await synchronizeMobilePoiPoiState(configuredUrl.trim());
@@ -130,7 +154,7 @@ export class MobileSelfEvolution {
     const design = await AndroidLocalAI.sendMessage(
       `次の承認済み機能について、実装設計を作成してください。既存機能は削除せず、コードは実行しないでください。\n要求: ${feature.request}\n提案: ${feature.proposal}`
     );
-    await AsyncStorage.setItem('poipoi:evolution:design:' + index, design);
+    await scopedEvolutionStorage.setItem('poipoi:evolution:design:' + index, design);
     return design;
   }
   static async getFeatureDesign(index: number): Promise<string> {
@@ -138,7 +162,7 @@ export class MobileSelfEvolution {
     if (!Number.isInteger(index) || index < 0 || index >= history.length) {
       throw new Error('提案が見つかりません');
     }
-    return await AsyncStorage.getItem('poipoi:evolution:design:' + index)
+    return await scopedEvolutionStorage.getItem('poipoi:evolution:design:' + index)
       || '設計はまだ生成されていません';
   }
     static async activateFeatureExclusive(index: number): Promise<string> {
@@ -153,13 +177,13 @@ export class MobileSelfEvolution {
       throw new Error('承認済みの提案がありません');
     }
 
-    const design = await AsyncStorage.getItem('poipoi:evolution:design:' + index);
+    const design = await scopedEvolutionStorage.getItem('poipoi:evolution:design:' + index);
     if (!design) {
       throw new Error('先に設計を生成してください');
     }
 
     const key = 'poipoi:evolution:active';
-    const saved = await AsyncStorage.getItem(key);
+    const saved = await scopedEvolutionStorage.getItem(key);
     const active: number[] = (() => {
         try {
           const parsed: unknown = saved ? JSON.parse(saved) : [];
@@ -177,13 +201,13 @@ export class MobileSelfEvolution {
 
     if (!active.includes(index)) {
       active.push(index);
-      await AsyncStorage.setItem(key, JSON.stringify(active));
+      await scopedEvolutionStorage.setItem(key, JSON.stringify(active));
     }
 
     return '拡張機能を登録しました: ' + feature.request;
   }
   static async getActiveFeatures(): Promise<string> {
-    const saved = await AsyncStorage.getItem('poipoi:evolution:active');
+    const saved = await scopedEvolutionStorage.getItem('poipoi:evolution:active');
     let active: number[] = [];
 
     if (saved) {
@@ -227,7 +251,7 @@ export class MobileSelfEvolution {
     }
 
     const key = 'poipoi:evolution:active';
-    const saved = await AsyncStorage.getItem(key);
+    const saved = await scopedEvolutionStorage.getItem(key);
     const active: number[] = (() => {
         try {
           const parsed: unknown = saved ? JSON.parse(saved) : [];
@@ -247,7 +271,7 @@ export class MobileSelfEvolution {
       return 'この機能は登録されていません';
     }
 
-    await AsyncStorage.setItem(
+    await scopedEvolutionStorage.setItem(
       key,
       JSON.stringify(active.filter(i => i !== index))
     );
@@ -260,7 +284,7 @@ export class MobileSelfEvolution {
       throw new Error('提案が見つかりません');
     }
 
-    const saved = await AsyncStorage.getItem('poipoi:evolution:active');
+    const saved = await scopedEvolutionStorage.getItem('poipoi:evolution:active');
     const active: number[] = (() => {
         try {
           const parsed: unknown = saved ? JSON.parse(saved) : [];
@@ -275,7 +299,7 @@ export class MobileSelfEvolution {
           return [];
         }
       })();
-    const design = await AsyncStorage.getItem('poipoi:evolution:design:' + index);
+    const design = await scopedEvolutionStorage.getItem('poipoi:evolution:design:' + index);
 
     return [
       '機能: ' + history[index].request,
@@ -297,7 +321,7 @@ export class MobileSelfEvolution {
       throw new Error('未承認の機能です');
     }
 
-    const saved = await AsyncStorage.getItem('poipoi:evolution:active');
+    const saved = await scopedEvolutionStorage.getItem('poipoi:evolution:active');
     const active: number[] = (() => {
         try {
           const parsed: unknown = saved ? JSON.parse(saved) : [];
@@ -316,7 +340,7 @@ export class MobileSelfEvolution {
       throw new Error('登録されていない機能です');
     }
 
-    const design = await AsyncStorage.getItem('poipoi:evolution:design:' + index);
+    const design = await scopedEvolutionStorage.getItem('poipoi:evolution:design:' + index);
     if (!design) {
       throw new Error('設計がありません');
     }
@@ -330,11 +354,11 @@ export class MobileSelfEvolution {
   }
   static async exportEvolutionData(): Promise<string> {
     const proposals = await this.getProposals();
-    const saved = await AsyncStorage.getItem('poipoi:evolution:active');
+    const saved = await scopedEvolutionStorage.getItem('poipoi:evolution:active');
     const active = saved ? JSON.parse(saved) : [];
     const designs = await Promise.all(
       proposals.map((_, index) =>
-        AsyncStorage.getItem('poipoi:evolution:design:' + index)
+        scopedEvolutionStorage.getItem('poipoi:evolution:design:' + index)
       )
     );
 
@@ -352,7 +376,7 @@ export class MobileSelfEvolution {
       const previous = await this.exportEvolutionData();
       const backupKey = 'poipoi:evolution:before-import';
 
-      await AsyncStorage.setItem(backupKey, previous);
+      await scopedEvolutionStorage.setItem(backupKey, previous);
 
       try {
         await this.importEvolutionData(json);
@@ -372,7 +396,7 @@ export class MobileSelfEvolution {
 
   static async restorePreviousEvolutionData(): Promise<string> {
     const backupKey = 'poipoi:evolution:before-import';
-    const saved = await AsyncStorage.getItem(backupKey);
+    const saved = await scopedEvolutionStorage.getItem(backupKey);
 
     if (!saved) {
       throw new Error('復元前のバックアップがありません');
@@ -388,14 +412,14 @@ export class MobileSelfEvolution {
         throw error;
       }
 
-      await AsyncStorage.setItem(backupKey, current);
+      await scopedEvolutionStorage.setItem(backupKey, current);
     });
 
     return '復元前の自己進化データに戻しました';
   }
 
   static async getPreviousEvolutionBackup(): Promise<string> {
-    const saved = await AsyncStorage.getItem(
+    const saved = await scopedEvolutionStorage.getItem(
       'poipoi:evolution:before-import'
     );
 
@@ -452,7 +476,7 @@ export class MobileSelfEvolution {
     );
 
     const key = 'poipoi:evolution:pc-applied';
-    const saved = await AsyncStorage.getItem(key);
+    const saved = await scopedEvolutionStorage.getItem(key);
 
     let applied: Record<string, number> = {};
     if (saved) {
@@ -501,7 +525,7 @@ export class MobileSelfEvolution {
         continue;
       }
 
-      await AsyncStorage.setItem(
+      await scopedEvolutionStorage.setItem(
         'poipoi:evolution:pc-result:' + record.id,
         record.value
       );
@@ -510,7 +534,7 @@ export class MobileSelfEvolution {
       imported++;
     }
 
-    await AsyncStorage.setItem(key, JSON.stringify(applied));
+    await scopedEvolutionStorage.setItem(key, JSON.stringify(applied));
 
     return { imported, skipped };
   }
@@ -671,7 +695,7 @@ export class MobileSelfEvolution {
       ...proposals.map((_, index) => 'poipoi:evolution:design:' + index)
     ];
 
-    const existing = await AsyncStorage.multiGet(keys);
+    const existing = await scopedEvolutionStorage.multiGet(keys);
     const existingMap = new Map(existing);
     const updates: [string, string][] = [
       ['poipoi:evolution:proposals', JSON.stringify(proposals)],
@@ -685,7 +709,7 @@ export class MobileSelfEvolution {
     });
 
     try {
-      await AsyncStorage.multiSet(updates);
+      await scopedEvolutionStorage.multiSet(updates);
       const missingDesignKeys = value.designs
         .map((design, index) =>
           design === null ? 'poipoi:evolution:design:' + index : null
@@ -693,15 +717,15 @@ export class MobileSelfEvolution {
         .filter((key): key is string => key !== null);
 
       if (missingDesignKeys.length) {
-        await AsyncStorage.multiRemove(missingDesignKeys);
+        await scopedEvolutionStorage.multiRemove(missingDesignKeys);
       }
     } catch (error) {
-      await AsyncStorage.multiSet(
+      await scopedEvolutionStorage.multiSet(
         existing.filter((entry): entry is [string, string] =>
           entry[1] !== null
         )
       );
-      await AsyncStorage.multiRemove(
+      await scopedEvolutionStorage.multiRemove(
         existing.filter(entry => entry[1] === null).map(entry => entry[0])
       );
       throw error;
