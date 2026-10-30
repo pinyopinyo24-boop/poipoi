@@ -278,6 +278,8 @@ export default function ChatScreen() {
   const handleLogin = async () => {
     if (!apiConnector || !loginUsername.trim() || !loginPassword || loginBusy) return;
     setLoginBusy(true);
+    const oldToken = await AsyncStorage.getItem('sessionToken');
+    let loginTokenInstalled = false;
     try {
       const baseURL = (await AsyncStorage.getItem('POIPOI_PC_URL')) || Constants.expoConfig?.extra?.apiBaseUrl;
       if (typeof baseURL !== 'string' || !baseURL.trim()) throw new Error('API URLが未設定です');
@@ -295,14 +297,16 @@ export default function ChatScreen() {
       const epoch = ++historyEpoch.current;
       if (currentChatKey.current) await AsyncStorage.setItem(currentChatKey.current, JSON.stringify(messagesRef.current));
       currentChatKey.current = null;
-      await AsyncStorage.setItem('sessionToken', token);
-      apiConnector.setAuthToken(token);
+      // Validate the new identity before replacing the current account.
       const authResponse = await fetch(`${baseURL.replace(/\/$/, '')}/api/trpc/auth.me`, {
         headers: { Authorization: `Bearer ${token}` },
       });
       const authResult = await authResponse.json();
       const authUser = authResult?.result?.data?.json ?? authResult?.result?.data;
       if (!authResponse.ok || !authUser?.id) throw new Error('認証確認に失敗しました');
+      await AsyncStorage.setItem('sessionToken', token);
+      apiConnector.setAuthToken(token);
+      loginTokenInstalled = true;
       if (!apiConnector.getSessionId()) {
         setSessionId(undefined);
         
@@ -358,6 +362,15 @@ export default function ChatScreen() {
       setShowLogin(false);
       Alert.alert('ログイン完了', 'PoiPoiに接続しました');
     } catch (error) {
+      if (loginTokenInstalled) {
+        if (oldToken) {
+          await AsyncStorage.setItem('sessionToken', oldToken);
+          apiConnector.setAuthToken(oldToken);
+        } else {
+          await AsyncStorage.removeItem('sessionToken');
+          apiConnector.clearAuthToken();
+        }
+      }
       Alert.alert('ログインエラー', error instanceof Error ? error.message : '認証失敗');
     } finally {
       setLoginBusy(false);

@@ -508,6 +508,13 @@ export class MobileAPIConnector {
       return false;
     }
   }
+  clearAuthToken(): void {
+    this.sessionToken = null;
+    this.sessionId = null;
+    delete this.apiClient.defaults.headers.common['Authorization'];
+    void AsyncStorage.removeItem('chatSessionId');
+  }
+
   setAuthToken(token: string): void {
     const tokenChanged = this.sessionToken !== token;
     if (tokenChanged) {

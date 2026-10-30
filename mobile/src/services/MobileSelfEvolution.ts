@@ -275,6 +275,7 @@ export class MobileSelfEvolution {
       JSON.stringify(active.filter(i => i !== index))
     );
 
+    await this.syncEvolutionToUnifiedState();
     return '登録を解除しました: ' + history[index].request;
   }
   static async getFeatureStatus(index: number): Promise<string> {

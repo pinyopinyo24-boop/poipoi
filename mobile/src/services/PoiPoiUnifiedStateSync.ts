@@ -112,12 +112,14 @@ export function updateMobilePoiPoiState(
   record: PoiPoiStateRecord
 ): Promise<PoiPoiUnifiedState> {
   return locked(async () => {
+    const expectedKey = await storageKey();
     const current = await readLocal();
+    if (await storageKey() !== expectedKey) throw new Error('Account changed while reading state');
     const merged = mergePoiPoiState(current, {
       version: 1,
       records: [record],
     });
-    await saveLocal(merged);
+    await saveLocal(merged, expectedKey);
     return merged;
   });
 }

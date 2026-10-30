@@ -434,7 +434,7 @@ export const chatRouter = router({
       return { ...session, messages: session.messages.filter((message: { userId: string }) => message.userId === userId) };
     }),
 
-  syncHistory: publicProcedure
+  syncHistory: protectedProcedure
     .input(z.object({
       conversations: z.array(z.object({
         id: z.string().trim().min(1).max(200),
@@ -449,7 +449,7 @@ export const chatRouter = router({
       })).max(10),
     }))
     .mutation(async ({ ctx, input }) => {
-      const userId = String(ctx.user?.id ?? "mobile");
+      const userId = String(ctx.user.id);
       const repository = (await import("./repositories/ChatRepository")).getSharedChatRepository();
       const syncedMemories: Array<{ id: string; category: "memory"; origin: "android"; updatedAt: number; value: string }> = [];
       for (const conversation of input.conversations) {
