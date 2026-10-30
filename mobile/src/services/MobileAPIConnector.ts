@@ -164,7 +164,12 @@ export class MobileAPIConnector {
 
   async executeUnifiedTool(name: 'reason' | 'analyzeCost' | 'memory' | 'excel' | 'pdf' | 'presentation' | 'exportPresentation' | 'codePreview' | 'analyzeDocument' | 'analyzeMultipleDocuments' | 'createPresentationFromAnalysis' | 'createPresentationFromDocuments' | 'listOfficePresentations' | 'deleteOfficePresentation' | 'listOfficeDocuments' | 'deleteOfficeDocument' | 'uploadDocument', input: Record<string, unknown>): Promise<APIResponse> {
     try {
-      const response = await this.apiClient.post('/api/trpc/unifiedTools.' + name, { json: input });
+      const readOnly = name === 'listOfficePresentations' || name === 'listOfficeDocuments';
+      const response = readOnly
+        ? await this.apiClient.get('/api/trpc/unifiedTools.' + name, {
+            params: { input: JSON.stringify({ json: input }) },
+          })
+        : await this.apiClient.post('/api/trpc/unifiedTools.' + name, { json: input });
       return { success: true, data: this.getTrpcData(response.data) };
     } catch (error) {
       return this.handleError(error, 'Unified tool request failed');
