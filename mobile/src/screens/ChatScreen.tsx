@@ -1197,6 +1197,13 @@ export default function ChatScreen() {
         }
       }
 
+      if (!response?.success && input.trim().startsWith('/資料PPT ')) {
+        response = {
+          success: true,
+          data: { message: 'PowerPointの作成・保存にはPC版PoiPoiへの接続とログインが必要です。PC接続を確認して再実行してください。' },
+        };
+      }
+
       if (!response?.success) {
         response = {
           success: true,
