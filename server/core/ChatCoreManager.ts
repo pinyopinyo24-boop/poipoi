@@ -134,7 +134,7 @@ export class ChatCoreManager {
             await syncUserPoiPoiUnifiedState(userId, {
               version: 1,
               records: [{
-                id: 'correction-' + previousAssistant.id,
+                id: 'correction-' + (await import('node:crypto')).createHash('sha256').update(previousUser.content.normalize('NFKC').trim().toLowerCase()).digest('hex'),
                 category: 'learning',
                 origin: 'pc',
                 updatedAt: Date.now(),

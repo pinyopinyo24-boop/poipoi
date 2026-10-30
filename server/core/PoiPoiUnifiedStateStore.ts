@@ -114,8 +114,26 @@ export async function searchUserPoiPoiMemories(
       : []),
   ])].slice(0, 40);
   if (!terms.length) return [];
+  const latest = new Map<string, number>();
+  for (const record of state.records) {
+    if (record.category !== 'learning' || !record.id.startsWith('correction-')) continue;
+    try {
+      const item = JSON.parse(record.value);
+      if (typeof item.question !== 'string') continue;
+      const key = item.question.normalize('NFKC').trim().toLowerCase();
+      latest.set(key, Math.max(latest.get(key) ?? 0, record.updatedAt));
+    } catch { /* legacy correction */ }
+  }
   return state.records
     .filter(record => (record.category === 'memory' || record.category === 'learning') && !record.id.startsWith('az:'))
+    .filter(record => {
+      if (record.category !== 'learning' || !record.id.startsWith('correction-')) return true;
+      try {
+        const item = JSON.parse(record.value);
+        if (typeof item.question !== 'string') return true;
+        return record.updatedAt >= (latest.get(item.question.normalize('NFKC').trim().toLowerCase()) ?? 0);
+      } catch { return true; }
+    })
     .map(record => {
       let searchable = record.value;
       if (record.id.startsWith('conversation-')) {
