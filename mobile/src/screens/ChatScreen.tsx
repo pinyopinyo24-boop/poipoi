@@ -43,6 +43,7 @@ import { Keyboard,
 import { CameraView, useCameraPermissions } from 'expo-camera';
 import { useRef } from 'react';
 import * as FileSystem from 'expo-file-system';
+import * as Sharing from 'expo-sharing';
 import { VoiceInputUI } from '../components/VoiceInputUI';
 import { MobileAPIConnector, ChatRequest, ChatResponse } from "../services/MobileAPIConnector";
 import Constants from "expo-constants";
@@ -1157,6 +1158,13 @@ export default function ChatScreen() {
             await FileSystem.writeAsStringAsync(destination, fileBase64, {
               encoding: FileSystem.EncodingType.Base64,
             });
+            if (await Sharing.isAvailableAsync()) {
+              await Sharing.shareAsync(destination, {
+                mimeType: 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+                dialogTitle: 'PoiPoi PowerPointを共有',
+                UTI: 'org.openxmlformats.presentationml.presentation',
+              });
+            }
             response = {
               success: true,
               data: { message: 'PowerPointを端末内に保存しました。\\n' + destination },
