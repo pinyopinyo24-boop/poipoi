@@ -318,7 +318,16 @@ export class ChatCoreManager {
                         ' / 訂正: ' + item.correction.slice(0, 350);
                     } catch { /* legacy text */ }
                   }
-                  return '- ' + record.value.slice(0, 600).replace(/[\r\n]+/g, ' ');
+                  if (record.id.startsWith('conversation-')) {
+                    try {
+                      const item = JSON.parse(record.value) as { role?: string; content?: string };
+                      if (item.role === 'user' && typeof item.content === 'string') {
+                        return '- ユーザーが以前述べた内容: ' + item.content.slice(0, 500).replace(/[\\r\\n]+/g, ' ');
+                      }
+                      return '- 過去の会話（AI回答・未確認情報）: ' + record.value.slice(0, 300).replace(/[\\r\\n]+/g, ' ');
+                    } catch { /* older memory format */ }
+                  }
+                  return '- ' + record.value.slice(0, 600).replace(/[\\r\\n]+/g, ' ');
                 }).join('\n'),
             });
           }

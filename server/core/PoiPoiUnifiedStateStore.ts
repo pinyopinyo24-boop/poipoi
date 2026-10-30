@@ -118,6 +118,13 @@ export async function searchUserPoiPoiMemories(
     .filter(record => (record.category === 'memory' || record.category === 'learning') && !record.id.startsWith('az:'))
     .map(record => {
       let searchable = record.value;
+      if (record.id.startsWith('conversation-')) {
+        try {
+          const item = JSON.parse(record.value) as { role?: string; content?: string };
+          if (item.role !== 'user' || typeof item.content !== 'string') return { record, score: 0 };
+          searchable = item.content;
+        } catch { return { record, score: 0 }; }
+      }
       if (record.category === 'learning' && record.id.startsWith('correction-')) {
         try {
           const item = JSON.parse(record.value) as { question?: string };
