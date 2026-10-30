@@ -87,7 +87,13 @@ export const chatRouter = router({
         // All explicit tools share the authenticated unified router.
         const command = input.message.trim();
         const codeRequest = /^(?:PoiPoiコードエージェント|コードエージェント)[：:\s]+(?:実装|修正|変更|作成|追加|改修)/u.test(command);
-        const toolRequest = command.match(/^PoiPoiツール[：:\s]+(分析|原価|製造記録|製造一覧|資料作成|コード確認|コード適用|Excel|PDF|資料分析|複数資料|PPT出力|製造分析)[：:\s]+([\s\S]+)$/u);
+        const explicitToolRequest = command.match(/^PoiPoiツール[：:\s]+(分析|原価|製造記録|製造一覧|資料作成|コード確認|コード適用|Excel|PDF|資料分析|複数資料|PPT出力|製造分析)[：:\s]+([\s\S]+)$/u);
+        // Natural-language read-only discovery uses the same authenticated tool API.
+        // Mutating operations remain explicit and require their existing approvals.
+        const naturalManufacturingList = /^(?:製造(?:記録|履歴|データ)?|生産(?:記録|履歴|データ)?)(?:の)?(?:一覧|リスト)(?:を)?(?:見せて|表示して|教えて|確認したい|出して)[。！!]?$/u.test(command);
+        const toolRequest = explicitToolRequest ?? (naturalManufacturingList
+          ? ['製造一覧', '製造一覧', ''] as RegExpMatchArray
+          : null);
         if (codeRequest || toolRequest || /^PoiPoiツール[：:\s]+製造一覧\s*$/u.test(command)) {
           if (!ctx.user) {
             throw new TRPCError({ code: 'UNAUTHORIZED', message: 'ツール利用にはログインが必要です' });
