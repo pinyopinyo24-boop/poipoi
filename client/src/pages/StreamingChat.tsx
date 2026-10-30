@@ -29,6 +29,8 @@ export default function StreamingChat() {
   const accountId = user ? String(user.id) : "guest";
   const [historyAccount, setHistoryAccount] = useState(accountId);
   const lastConversationKey = "poipoi_last_conversation_v1:" + historyAccount;
+  const deleteServerSession = trpc.chat.deleteSession.useMutation();
+  const deletedIds = useRef(new Set<string>());
   const upload = trpc.unifiedTools.uploadDocument.useMutation();
   const exportDocument = trpc.unifiedTools.exportDocument.useMutation();
   const requestAccount = useRef(accountId);
@@ -66,7 +68,19 @@ export default function StreamingChat() {
   const [, navigate] = useLocation();
 
   const openConversation = (id: string) => { const c = conversations.find(x => x.id === id); if (!c || isLoading) return; localStorage.setItem(lastConversationKey, id); setConversationId(id); setMessages(c.messages.map(m => ({ ...m, timestamp: new Date(m.timestamp) }))); setActiveTab("chat"); };
-  const deleteConversation = (id: string) => { if (!window.confirm("この会話を削除しますか？")) return; const next = conversations.filter(c => c.id !== id); setConversations(next); saveConversations(next, historyAccount); if (conversationId === id) { localStorage.removeItem(lastConversationKey); setConversationId(null); setMessages([]); setInput(""); } };
+  const deleteConversation = async (id: string) => {
+    if (isLoading || historyAccount !== accountId || !window.confirm('この会話を削除しますか？')) return;
+    const deletingAccount = accountId;
+    try {
+      await deleteServerSession.mutateAsync({ userId: String(user?.id ?? 'mobile'), sessionId: id, confirm: 'DELETE_SESSION' });
+      if (requestAccount.current !== deletingAccount) return;
+      deletedIds.current.add(id);
+      const next = conversations.filter(conversation => conversation.id !== id);
+      setConversations(next); saveConversations(next, historyAccount);
+      if (conversationId === id) { localStorage.removeItem(lastConversationKey); setConversationId(null); setMessages([]); setInput(''); }
+      await serverHistoryUtils.chat.getSessions.invalidate();
+    } catch (error) { if (requestAccount.current === deletingAccount) setFileError(error instanceof Error ? error.message : String(error)); }
+  };
   const renameConversation = (id: string) => { const c = conversations.find(x => x.id === id); if (!c) return; const title = window.prompt("新しい会話タイトル", c.title)?.trim(); if (!title) return; const next = conversations.map(x => x.id === id ? { ...x, title } : x); setConversations(next); saveConversations(next, historyAccount); };
   const startNewConversation = () => { if (isLoading) return; const c = createConversation(); setConversations(prev => { const next = [c, ...prev]; return next; }); localStorage.setItem(lastConversationKey, c.id); setConversationId(c.id); setMessages([]); setInput(""); setActiveTab("chat"); };
   const persistChatMessage = (id: string, message: Message) => { setConversations(prev => { const next = prev.map(c => c.id !== id ? c : { ...c, title: c.title === "新しいチャット" && message.role === "user" ? message.content.slice(0, 30) : c.title, updatedAt: new Date().toISOString(), messages: [...c.messages, { id: message.id, role: message.role, content: message.content, timestamp: message.timestamp.toISOString(), type: message.type, metadata: message.metadata }] }); return next; }); };
@@ -77,6 +91,7 @@ export default function StreamingChat() {
     const current = next.find(item => item.id === lastId);
     setConversations(next); setConversationId(current?.id ?? null);
     setMessages(current?.messages.map(message => ({ ...message, timestamp: new Date(message.timestamp) })) ?? []);
+    deletedIds.current.clear();
     setInput(''); setMemoryResults([]); setFileError(''); setHistoryAccount(accountId);
   }, [accountId, historyAccount, authLoading]);
   useEffect(() => {
@@ -103,6 +118,7 @@ export default function StreamingChat() {
       setConversations(prev => {
         const merged = new Map(prev.map(c => [c.id, c]));
         for (const { session, messages } of results) {
+          if (deletedIds.current.has(session.id)) continue;
           const existing = merged.get(session.id);
           const items = new Map((existing?.messages ?? []).map(m => [m.id, m]));
           for (const m of messages) {

@@ -51,3 +51,13 @@ that the Windows PC has received or successfully run this code.
 Source discovery/application is bounded to five source files per proposal. The
 business task loop is bounded to twelve decisions. These limits and unsupported
 operations are reported rather than presented as completed work.
+
+## Confirmed deletion follow-up
+
+PC verification confirmed two-turn live conversation context. Its cleanup exposed
+a deletion approval stub that always rejected the request. The deletion endpoint
+now accepts explicit `DELETE_SESSION` confirmation, validates ownership, and makes
+confirmed repeats idempotent. Without confirmation, the prior approval gate stays
+in place. The PC delete button sends confirmation after its existing dialog.
+Fifty-nine focused tests passed, including preservation after an unconfirmed or
+cross-account deletion attempt and cleanup of an anonymous verification session.

@@ -608,16 +608,20 @@ export const chatRouter = router({
       z.object({
         userId: z.string(),
         sessionId: z.string(),
+        confirm: z.literal('DELETE_SESSION').optional(),
       })
     )
     .mutation(async ({ ctx, input }) => {
       const userId = String(ctx.user?.id ?? "mobile");
       const manager = getChatCoreManager();
       const session = await (await import('./repositories/ChatRepository')).getSharedChatRepository().getSession(input.sessionId);
+      // A confirmed repeat deletion is safe and idempotent; another owner's
+      // existing conversation must still be rejected.
+      if (!session && input.confirm === 'DELETE_SESSION') return { success: true };
       if (!session || session.userId !== userId) {
         throw new TRPCError({ code: 'NOT_FOUND', message: 'チャットセッションが見つかりません' });
       }
-      return manager.deleteSession(userId, input.sessionId);
+      return manager.deleteSession(userId, input.sessionId, input.confirm);
     }),
 
   getUserSessions: publicProcedure

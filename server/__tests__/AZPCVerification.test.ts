@@ -180,6 +180,26 @@ describe('AZ PC integration with controlled model responses', () => {
     await expect(unifiedToolsRouter.createCaller({ ...ctx(user), user: null }).analyzeCost({ estimated: 1, actual: 2, quantity: 1 })).rejects.toThrow();
     await expect(unifiedToolsRouter.createCaller(ctx(user, 'user')).codePreview({ request: 'プログラム修正' })).rejects.toThrow('Administrator');
   });
+  it('requires explicit confirmation and removes an owned conversation and messages', async () => {
+    const caller = chatRouter.createCaller(ctx(user));
+    const session = await caller.createSession({ userId: String(user), title: 'Delete fixture' });
+    const repository = getSharedChatRepository();
+    await repository.saveMessage({ id: randomUUID(), userId: String(user), role: 'user', content: 'temporary', timestamp: Date.now() }, session.id);
+    await expect(caller.deleteSession({ userId: String(user), sessionId: session.id })).rejects.toThrow('not approved');
+    expect(await repository.getSession(session.id)).not.toBeNull();
+    await expect(chatRouter.createCaller(ctx(user + 900)).deleteSession({ userId: String(user), sessionId: session.id, confirm: 'DELETE_SESSION' })).rejects.toThrow();
+    expect(await repository.getSession(session.id)).not.toBeNull();
+    expect(await caller.deleteSession({ userId: String(user), sessionId: session.id, confirm: 'DELETE_SESSION' })).toEqual({ success: true });
+    expect(await repository.getSession(session.id)).toBeNull();
+    expect(await repository.getMessages(session.id)).toEqual([]);
+    expect(await caller.deleteSession({ userId: String(user), sessionId: session.id, confirm: 'DELETE_SESSION' })).toEqual({ success: true });
+  });
+  it('cleans up an anonymous verification conversation only after explicit confirmation', async () => {
+    const guest = chatRouter.createCaller({ ...ctx(user), user: null });
+    const session = await guest.createSession({ userId: 'mobile', title: 'Verification fixture' });
+    expect(await guest.deleteSession({ userId: 'mobile', sessionId: session.id, confirm: 'DELETE_SESSION' })).toEqual({ success: true });
+    expect(await getSharedChatRepository().getSession(session.id)).toBeNull();
+  });
   it('blocks reading another account conversation via the PC bridge', async () => {
     const id = 'verify-' + randomUUID();
     await streamingRouter.createCaller(ctx(user)).chat({ conversationId: id, message: '私の名前は太郎です' });
