@@ -14,7 +14,7 @@ export async function replyWithLocalIdentity(message: string, fallback: () => Pr
   }
   if (/^(?:私|わたし|僕|俺)の名前(?:は|って)?[？?]$/u.test(text)) {
     const state = await getMobilePoiPoiState();
-    const name = state.records.find(r => r.id === 'az:user-name')?.value;
+    const name = state.records.find(r => r.id === 'az:user-name' && r.category === 'memory')?.value;
     return name ? 'あなたの名前は「' + name + '」です。' : 'あなたの名前はまだ登録されていません。何とお呼びすればよいですか？';
   }
   const rename = text.match(/^(?:あなたの名前|AIの名前|AZの呼び名)(?:は|を)\s*[「『"]?(.{1,40}?)[」』"]?\s*(?:です|だよ|にして|に変更して|に変えて|と呼んで|にしてください)[。！!]*$/u);

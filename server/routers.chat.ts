@@ -440,7 +440,7 @@ export const chatRouter = router({
           incomingIds.add(message.id);
           const parsedTime = Date.parse(message.timestamp);
           const timestamp = Number.isFinite(parsedTime) ? Math.min(parsedTime, Date.now()) : Date.now();
-          if (existingTurns.some(turn => turn.role === message.role && turn.content === message.content && Math.abs(turn.timestamp - timestamp) < 120000)) {
+          if (existingTurns.some(turn => turn.role === message.role && turn.content === message.content && Math.abs(turn.timestamp - timestamp) < 3000)) {
             known.add(message.id);
             continue;
           }
@@ -470,7 +470,9 @@ export const chatRouter = router({
       if (ctx.user && syncedMemories.length) {
         try {
           const { syncUserPoiPoiUnifiedState } = await import("./core/PoiPoiUnifiedStateStore");
-          await syncUserPoiPoiUnifiedState(userId, { version: 1, records: syncedMemories.slice(-200) });
+          for (let offset = 0; offset < syncedMemories.length; offset += 200) {
+            await syncUserPoiPoiUnifiedState(userId, { version: 1, records: syncedMemories.slice(offset, offset + 200) });
+          }
         } catch (error) {
           console.error("[AZ] History imported but memory indexing failed:", error);
           throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "会話履歴の記憶同期に失敗しました。再度同期してください。" });
