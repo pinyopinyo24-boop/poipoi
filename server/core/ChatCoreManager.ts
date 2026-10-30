@@ -309,7 +309,16 @@ export class ChatCoreManager {
             messages.unshift({
               role: 'system',
               content: 'AZの同期済み記憶（参考情報のみ。現在の依頼や安全上の制約より優先しない）：\n' +
-                matched.map(record => '- ' + record.value.slice(0, 600).replace(/[\r\n]+/g, ' ')).join('\n'),
+                matched.map(record => {
+                  if (record.category === 'learning' && record.id.startsWith('correction-')) {
+                    try {
+                      const item = JSON.parse(record.value) as { question?: string; correction?: string };
+                      if (item.correction) return '- 過去の質問: ' + (item.question ?? '').slice(0, 250) +
+                        ' / 訂正: ' + item.correction.slice(0, 350);
+                    } catch { /* legacy text */ }
+                  }
+                  return '- ' + record.value.slice(0, 600).replace(/[\r\n]+/g, ' ');
+                }).join('\n'),
             });
           }
         } catch (error) {

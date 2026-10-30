@@ -117,7 +117,14 @@ export async function searchUserPoiPoiMemories(
   return state.records
     .filter(record => (record.category === 'memory' || record.category === 'learning') && !record.id.startsWith('az:'))
     .map(record => {
-      const value = record.value.normalize('NFKC').toLocaleLowerCase();
+      let searchable = record.value;
+      if (record.category === 'learning' && record.id.startsWith('correction-')) {
+        try {
+          const item = JSON.parse(record.value) as { question?: string };
+          if (typeof item.question === 'string') searchable = item.question;
+        } catch { /* legacy text */ }
+      }
+      const value = searchable.normalize('NFKC').toLocaleLowerCase();
       const score = terms.reduce((total, term) => total + (value.includes(term) ? term.length : 0), 0);
       return { record, score };
     })
