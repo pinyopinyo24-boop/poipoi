@@ -15,7 +15,7 @@ describe('MobileAPIConnector', () => {
   let connector: MobileAPIConnector;
 
   beforeEach(() => {
-    connector = new MobileAPIConnector('http://192.168.1.7:3000');
+    connector = new MobileAPIConnector('http://127.0.0.1:3000');
   });
 
   afterEach(() => {
@@ -24,9 +24,9 @@ describe('MobileAPIConnector', () => {
 
   // === 初期化テスト ===
   describe('Initialization', () => {
-    it('should create connector with default base URL', () => {
-      const conn = new MobileAPIConnector();
-      expect(conn).toBeDefined();
+    it('should reject missing or invalid PC URL', () => {
+      expect(() => new MobileAPIConnector('')).toThrow();
+      expect(() => new MobileAPIConnector('not-a-url')).toThrow();
     });
 
     it('should create connector with custom base URL', () => {

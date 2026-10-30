@@ -90,7 +90,8 @@ export class MobileAPIConnector {
   private retryDelay: number = 1000;
 
   constructor(baseURL: string) {
-    if (!/^https?:\/\/[^\s/]+(?::\d{1,5})?\/?$/.test(baseURL)) {
+    if (!/^https?:\/\/[a-zA-Z0-9.-]+(?::\d{1,5})?(?:\/[^\s?#]*)?$/.test(baseURL) ||
+        (/^http:\/\//i.test(baseURL) && !/^http:\/\/(?:localhost|127\.0\.0\.1|10\.\d{1,3}\.\d{1,3}\.\d{1,3}|192\.168\.\d{1,3}\.\d{1,3}|172\.(?:1[6-9]|2\d|3[01])\.\d{1,3}\.\d{1,3})(?::\d{1,5})?(?:\/|$)/i.test(baseURL))) {
       throw new Error('PC接続先URLが不正です');
     }
     this.baseURL = baseURL;

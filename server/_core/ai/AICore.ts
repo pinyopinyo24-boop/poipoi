@@ -273,9 +273,6 @@ export async function initializeAICore(config?: Partial<AICoreConfig>): Promise<
   }
 
   const defaultConfig: AICoreConfig = {
-    enableChatGPT: false,
-    enableGemini: false,
-    primaryProvider: 'local',
     enableLogging: process.env.NODE_ENV !== 'production',
     ...config,
     primaryProvider: 'local',

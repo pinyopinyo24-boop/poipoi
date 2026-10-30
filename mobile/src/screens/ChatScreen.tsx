@@ -473,7 +473,12 @@ export default function ChatScreen() {
         const url = (await AsyncStorage.getItem('POIPOI_PC_URL'))
           || Constants.expoConfig?.extra?.apiBaseUrl;
 
-        if (typeof url !== 'string' || !url.trim()) return;
+        if (typeof url !== 'string' || !url.trim()) {
+          previouslyReachable = false;
+          setIsConnected(false);
+          setIsAuthenticated(false);
+          return;
+        }
 
         const reachable = await Promise.race([
           fetch(`${url.replace(/\/$/, '')}/api/health`)
@@ -487,6 +492,7 @@ export default function ChatScreen() {
         if (!reachable) {
           previouslyReachable = false;
           setIsConnected(false);
+          setIsAuthenticated(false);
           return;
         }
 
@@ -496,14 +502,15 @@ export default function ChatScreen() {
         if (!active) return;
         if (await AsyncStorage.getItem('POIPOI_PC_DISCONNECTED') === '1') return;
 
+        const authenticated = await connector.checkAuthentication();
         setApiConnector(connector);
-        setIsAuthenticated(await connector.checkAuthentication());
-        setSessionId(connector.getSessionId() || undefined);
+        setIsAuthenticated(authenticated);
+        setSessionId(authenticated ? connector.getSessionId() || undefined : undefined);
         setIsConnected(true);
         const justReconnected = !previouslyReachable;
         previouslyReachable = true;
         if (justReconnected) void checkMobileUpdate(url);
-        if (!justReconnected && Date.now() - lastSyncAt < 60000) return;
+        if (!authenticated || (!justReconnected && Date.now() - lastSyncAt < 60000)) return;
         lastSyncAt = Date.now();
         void synchronizeMobilePoiPoiState(url)
           .then(async () => {
@@ -519,7 +526,11 @@ export default function ChatScreen() {
             console.warn('[PoiPoi] PC・Android自己進化同期失敗:', error);
           });
       } catch (error) {
-        if (active) setIsConnected(false);
+        if (active) {
+          previouslyReachable = false;
+          setIsConnected(false);
+          setIsAuthenticated(false);
+        }
       } finally {
         checking = false;
       }
@@ -952,7 +963,7 @@ export default function ChatScreen() {
         if (command === '/PCヘルプ') {
           Alert.alert(
             'PoiPoi PC接続',
-            '/PC接続 http://192.168.1.6:3000\n' +
+            '/PC接続 http://192.168.1.100:3000\n' +
             '/PC再接続\n' +
             '/PC状態\n' +
             '/PC切断\n\n' +
@@ -1093,7 +1104,7 @@ export default function ChatScreen() {
           url.length > 2048
         ) {
           throw new Error(
-            '接続先を指定してください。例: /PC接続 http://192.168.1.6:3000'
+            '接続先を指定してください。例: /PC接続 http://192.168.1.100:3000'
           );
         }
 
