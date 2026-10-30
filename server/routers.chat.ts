@@ -89,7 +89,7 @@ export const chatRouter = router({
         // All explicit tools share the authenticated unified router.
         const command = input.message.trim();
         const codeRequest = /^(?:PoiPoiコードエージェント|コードエージェント)[：:\s]+(?:実装|修正|変更|作成|追加|改修)/u.test(command);
-        const explicitToolRequest = command.match(/^PoiPoiツール[：:\s]+(分析|原価|製造記録|製造一覧|資料作成|コード確認|コード適用|Excel|PDF|資料分析|複数資料|PPT出力|製造分析)[：:\s]+([\s\S]+)$/u);
+        const explicitToolRequest = command.match(/^PoiPoiツール[：:\s]+(分析|原価|製造記録|製造一覧|資料作成|コード確認|コード適用|Excel|PDF|資料分析|複数資料|PPT出力|製造分析|予定追加)[：:\s]+([\s\S]+)$/u);
         // Natural-language read-only discovery uses the same authenticated tool API.
         // Mutating operations remain explicit and require their existing approvals.
         const naturalManufacturingList = /^(?:製造(?:記録|履歴|データ)?|生産(?:記録|履歴|データ)?)(?:の)?(?:一覧|リスト)(?:を)?(?:見せて|表示して|教えて|確認したい|出して)[。！!]?$/u.test(command);
@@ -116,10 +116,27 @@ export const chatRouter = router({
                 ? '在庫一覧'
                 : null
           : null;
+        const scheduleRead = !explicitToolRequest && /(?:予定|スケジュール)/u.test(command) &&
+          /(?:今日|明日|今後|来週|今週|週末|一覧|確認|見せて|教えて|何が|ある|表示|整理)/u.test(command) &&
+          !/(?:追加|登録|削除|変更|更新|移動|取り消し)/u.test(command);
+        const naturalManufacturingAnalysis = !explicitToolRequest && /(?:製造|生産|原価|工程|差異|利益|在庫)/u.test(command) &&
+          /(?:計算|分析|比較|算出)/u.test(command) &&
+          /(?:見積|予定原価)/u.test(command) && /(?:実際|実績原価)/u.test(command) &&
+          /(?:数量|個数|生産数)/u.test(command);
+        const manufacturingNumbers = naturalManufacturingAnalysis ? {
+          estimatedUnitCost: Number(estimatedMatch?.[1]),
+          actualUnitCost: Number(actualMatch?.[1]),
+          quantity: Number(quantityMatch?.[1]),
+        } : null;
+        const naturalManufacturingArgs = manufacturingNumbers &&
+          Object.values(manufacturingNumbers).every(Number.isFinite) &&
+          manufacturingNumbers.estimatedUnitCost >= 0 &&
+          manufacturingNumbers.actualUnitCost >= 0 && manufacturingNumbers.quantity > 0
+          ? manufacturingNumbers : null;
         const toolRequest = explicitToolRequest ?? (naturalManufacturingList
           ? ['製造一覧', '製造一覧', ''] as RegExpMatchArray
           : naturalCostArgs ? ['原価', '原価', JSON.stringify(naturalCostArgs)] as RegExpMatchArray : null);
-        if (codeRequest || toolRequest || naturalTool || /^PoiPoiツール[：:\s]+製造一覧\s*$/u.test(command)) {
+        if (codeRequest || toolRequest || naturalTool || scheduleRead || naturalManufacturingArgs || /^PoiPoiツール[：:\s]+製造一覧\s*$/u.test(command)) {
           if (!ctx.user) {
             throw new TRPCError({ code: 'UNAUTHORIZED', message: 'ツール利用にはログインが必要です' });
           }
@@ -132,7 +149,18 @@ export const chatRouter = router({
           const { unifiedToolsRouter } = await import('./routers/unifiedTools');
           const caller = unifiedToolsRouter.createCaller(ctx);
           let result: unknown;
-          if (naturalTool === '資料一覧') {
+          if (scheduleRead) {
+            const { scheduleMemoryRouter } = await import('./routers/schedule-memory');
+            const scheduleCaller = scheduleMemoryRouter.createCaller(ctx);
+            if (/(?:今日)/u.test(command)) result = await scheduleCaller.getToday();
+            else if (/(?:明日)/u.test(command)) {
+              const date = new Date(Date.now() + 9 * 3600000 + 86400000).toISOString().slice(0, 10);
+              result = await scheduleCaller.getByDate({ date });
+            } else if (/(?:今後|来週|週末|今週)/u.test(command)) result = await scheduleCaller.getUpcoming();
+            else result = await scheduleCaller.getAll();
+          } else if (naturalManufacturingArgs) {
+            result = await caller.analyzeManufacturing(naturalManufacturingArgs);
+          } else if (naturalTool === '資料一覧') {
             result = await caller.listOfficeDocuments();
           } else if (naturalTool === 'PPT一覧') {
             result = await caller.listOfficePresentations();
@@ -180,6 +208,16 @@ export const chatRouter = router({
               reorderLevel: z.number().nonnegative().optional(), unitPrice: z.number().nonnegative().optional(),
             }).parse(JSON.parse(toolRequest[2]));
             result = await caller.analyzeManufacturing(args);
+          } else if (toolRequest?.[1] === '予定追加') {
+            const { scheduleMemoryRouter } = await import('./routers/schedule-memory');
+            const args = z.object({
+              title: z.string().min(1).max(200),
+              description: z.string().optional(),
+              scheduledDate: z.string().regex(/^\\d{4}-\\d{2}-\\d{2}$/),
+              startTime: z.string().regex(/^\\d{2}:\\d{2}$/).optional(),
+              endTime: z.string().regex(/^\\d{2}:\\d{2}$/).optional(),
+            }).parse(JSON.parse(toolRequest[2]));
+            result = await scheduleMemoryRouter.createCaller(ctx).addSchedule(args);
           } else if (toolRequest?.[1] === '原価') {
             const args = z.object({ estimated: z.number().finite(), actual: z.number().finite(), quantity: z.number().positive().finite() }).parse(JSON.parse(toolRequest![2]));
             result = await caller.analyzeCost(args);
