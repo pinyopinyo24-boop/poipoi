@@ -103,14 +103,24 @@ export async function searchUserPoiPoiMemories(
   userId: string, query: string, limit = 8
 ): Promise<PoiPoiUnifiedState['records']> {
   const state = await getUserPoiPoiUnifiedState(userId);
-  const terms = query.toLocaleLowerCase().split(/\s+/u).filter(term => term.length > 1).slice(0, 20);
+  const normalized = query.normalize('NFKC').toLocaleLowerCase().trim();
+  if (!normalized) return [];
+  const words = normalized.match(/[\\p{Script=Han}\\p{Script=Hiragana}\\p{Script=Katakana}]+|[a-z0-9]+/gu) ?? [];
+  // Japanese sentences have no spaces: include overlapping fragments for recall.
+  const terms = [...new Set([
+    ...words.filter(word => word.length >= 2),
+    ...words.flatMap(word => word.length >= 4
+      ? Array.from({ length: word.length - 1 }, (_, i) => word.slice(i, i + 2))
+      : []),
+  ])].slice(0, 40);
   if (!terms.length) return [];
   return state.records
     .filter(record => record.category === 'memory' || record.category === 'learning')
-    .map(record => ({
-      record,
-      score: terms.reduce((score, term) => score + (record.value.toLocaleLowerCase().includes(term) ? 1 : 0), 0),
-    }))
+    .map(record => {
+      const value = record.value.normalize('NFKC').toLocaleLowerCase();
+      const score = terms.reduce((total, term) => total + (value.includes(term) ? term.length : 0), 0);
+      return { record, score };
+    })
     .filter(item => item.score > 0)
     .sort((a, b) => b.score - a.score || b.record.updatedAt - a.record.updatedAt)
     .slice(0, Math.max(1, Math.min(limit, 20)))
