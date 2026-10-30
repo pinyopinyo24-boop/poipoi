@@ -303,11 +303,26 @@ export default function ChatScreen() {
       } else {
         setSessionId(previousSessionId || undefined);
       }
-      if (documentOwnerRef.current !== String(authUser.id)) {
-        analyzedDocumentsRef.current = [];
-        lastDocumentAnalysisRef.current = '';
+      const nextOwner = String(authUser.id);
+      const nextOfficeKey = 'POIPOI_OFFICE_SESSION_V1:' + baseURL.replace(/\/$/, '') + ':' + nextOwner;
+      analyzedDocumentsRef.current = [];
+      lastDocumentAnalysisRef.current = '';
+      documentOwnerRef.current = nextOwner;
+      officeSessionKeyRef.current = nextOfficeKey;
+      try {
+        const stored = await AsyncStorage.getItem(nextOfficeKey);
+        if (stored) {
+          const parsed = JSON.parse(stored);
+          if (Array.isArray(parsed?.files) && parsed.files.length <= 6 &&
+              parsed.files.every((x: any) => x && typeof x.file === 'string' &&
+                typeof x.name === 'string' && (x.type === 'pdf' || x.type === 'xlsx'))) {
+            analyzedDocumentsRef.current = parsed.files;
+            lastDocumentAnalysisRef.current = typeof parsed.analysis === 'string' ? parsed.analysis : '';
+          }
+        }
+      } catch (storageError) {
+        console.warn('Office作業状態を復元できませんでした:', storageError);
       }
-      documentOwnerRef.current = String(authUser.id);
       setIsConnected(true);
       setIsAuthenticated(true);
       setLoginPassword('');
@@ -573,6 +588,7 @@ export default function ChatScreen() {
       if (typeof answer !== 'string' || !answer.trim()) throw new Error('解析結果が空です');
       analyzedDocumentsRef.current = uploadedFiles;
       lastDocumentAnalysisRef.current = answer;
+      await saveOfficeSession().catch(error => console.warn('Office作業状態を保存できませんでした:', error));
       const now = Date.now();
       setMessages(prev => [...prev,
         { id: 'file-' + now, text: '📎 ' + uploadedFiles.map(x => x.name).join('、'), isUser: true, timestamp: now },
@@ -722,7 +738,15 @@ export default function ChatScreen() {
   const analyzedDocumentsRef = React.useRef<Array<{ file: string; type: 'pdf' | 'xlsx'; name: string }>>([]);
   const lastDocumentAnalysisRef = React.useRef('');
   const documentOwnerRef = React.useRef('');
-  const officeCommand = (value: string) => /^\\/資料質問\\s|^\\/資料PPT(?:\\s|$)/.test(value);
+  const officeSessionKeyRef = React.useRef('');
+  const officeCommand = (value: string) => /^\/資料質問\s|^\/資料PPT(?:\s|$)/.test(value);
+  const saveOfficeSession = async () => {
+    if (!officeSessionKeyRef.current) return;
+    await AsyncStorage.setItem(officeSessionKeyRef.current, JSON.stringify({
+      files: analyzedDocumentsRef.current,
+      analysis: lastDocumentAnalysisRef.current,
+    }));
+  };
 
   const handleSend = async () => {
     const command = input.trim();
@@ -988,6 +1012,10 @@ export default function ChatScreen() {
           setApiConnector(null);
           setIsConnected(false);
           setIsAuthenticated(false);
+          documentOwnerRef.current = '';
+          officeSessionKeyRef.current = '';
+          analyzedDocumentsRef.current = [];
+          lastDocumentAnalysisRef.current = '';
           setSessionId(undefined);
           setChatSessions([]);
           setShowHistory(false);
@@ -1184,6 +1212,7 @@ export default function ChatScreen() {
             const answer = (analyzed.data as { answer?: unknown }).answer;
             if (typeof answer !== 'string' || !answer.trim()) throw new Error('回答がありません');
             lastDocumentAnalysisRef.current = answer;
+            await saveOfficeSession().catch(error => console.warn('Office作業状態を保存できませんでした:', error));
             response = { success: true, data: { message: answer } };
           } else if (input.trim().startsWith('/資料PPT ')) {
             const request = input.trim().slice('/資料PPT '.length).trim();
