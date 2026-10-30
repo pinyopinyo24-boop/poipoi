@@ -18,6 +18,6 @@ module.exports = {
       ...app.expo.extra?.eas,
       projectId: "3d840495-8cd2-4f5f-8965-1f7c28a34401",
     },
-    apiBaseUrl: app.expo.extra.apiBaseUrl,
+    apiBaseUrl: process.env.EXPO_PUBLIC_API_URL?.trim() || app.expo.extra.apiBaseUrl || '',
   },
 };

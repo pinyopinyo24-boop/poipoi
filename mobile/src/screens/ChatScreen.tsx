@@ -1444,7 +1444,7 @@ export default function ChatScreen() {
       if (apiConnector && isConnected) {
         try {
           const localAnswer = await replyWithLocalIdentity(input, () => AndroidLocalAI.sendMessage(input));
-          setIsConnected(false);
+          // AI fallback does not imply a disconnected PC; health checks own this state.
           setMessages(prev => [...prev, {
             id: (Date.now() + 1).toString(),
             text: localAnswer,

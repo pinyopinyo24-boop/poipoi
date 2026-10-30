@@ -197,7 +197,7 @@ export class AndroidLocalAI {
     try {
       const completion = context.completion({
         messages,
-        n_predict: 128,
+        n_predict: 512,
         temperature: 0.7,
         stop: ['<|im_end|>', '<|endoftext|>'],
       });

@@ -49,7 +49,7 @@
                                  ]
                              ],
                  "extra":  {
-                               "apiBaseUrl":  "http://192.168.1.6:3000",
+                               "apiBaseUrl":  "",
                                "apiTimeout":  30000,
                                "buildNumber":  "1",
                                "releaseChannel":  "beta"
