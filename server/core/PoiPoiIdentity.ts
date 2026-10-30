@@ -1,5 +1,6 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
+import { getUserPoiPoiUnifiedState, syncUserPoiPoiUnifiedState } from "./PoiPoiUnifiedStateStore";
 
 const identityFile = path.resolve(process.cwd(), "data", "poipoi-identity.json");
 
@@ -75,6 +76,27 @@ export class PoiPoiIdentity {
     fs.renameSync(temp, identityFile);
     return value;
   }
+  // Identity is also stored in the account-scoped shared state so Android and PC
+  // can converge without sharing another user's name or preferences.
+  static async syncAccountIdentity(userId: string): Promise<void> {
+    const state = await getUserPoiPoiUnifiedState(userId);
+    const latest = (id: string) => state.records.find(r => r.category === "memory" && r.id === id);
+    const ai = latest("az:ai-name");
+    const user = latest("az:user-name");
+    if (ai?.value.trim()) this.setAIName(userId, ai.value);
+    if (user?.value.trim()) this.setUserName(userId, user.value);
+    const updates = [];
+    if (!ai && this.getAIName(userId) !== "AZ") updates.push({
+      id: "az:ai-name", category: "memory" as const, origin: "pc" as const,
+      value: this.getAIName(userId), updatedAt: Date.now(),
+    });
+    if (!user && this.getUserName(userId)) updates.push({
+      id: "az:user-name", category: "memory" as const, origin: "pc" as const,
+      value: this.getUserName(userId)!, updatedAt: Date.now(),
+    });
+    if (updates.length) await syncUserPoiPoiUnifiedState(userId, { version: 1, records: updates });
+  }
+
   static getSystemPrompt(userId?: string): string {
     return [
       `あなたはPoiPoiのAIコアAZです。AIの名前は「${userId ? this.getAIName(userId) : this.getName()}」です。`,

@@ -134,8 +134,12 @@ export class AndroidLocalAI {
     // Read the latest synchronized memory and accepted learning before every reply.
     // Keep the model usable offline if storage is unavailable.
     let recalled = '';
+    let aiName = 'AZ';
+    let userName = '未登録';
     try {
       const state = await getMobilePoiPoiState();
+      aiName = state.records.find(r => r.id === 'az:ai-name' && r.category === 'memory')?.value.trim() || 'AZ';
+      userName = state.records.find(r => r.id === 'az:user-name' && r.category === 'memory')?.value.trim() || '未登録';
       const normalized = (s: string) => s.normalize('NFKC').toLowerCase().replace(/[\s、。,.!?！？・]+/g, '');
       const query = normalized(message);
       const latestByAnswer = new Map<string, (typeof state.records)[number]>();
@@ -183,7 +187,7 @@ export class AndroidLocalAI {
     const messages: ChatTurn[] = [
       {
         role: 'system',
-        content: 'あなたはPoiPoi AIです。日本語で正確かつ簡潔に回答してください。' + (recalled ? '\n過去に確認済みの学習・記憶:\n' + recalled : ''),
+        content: `あなたはPoiPoiのAIコアAZです。AIの名前は「${aiName}」です。ユーザーの名前は「${userName}」です。\n「私の名前」はユーザーの名前、「あなたの名前」はAIの名前を意味します。未登録の名前は推測しないでください。\n内部AIモデルの名前を自分の名前として名乗らないでください。通常のチャットでは自然な日本語で正確かつ簡潔に回答してください。` + (recalled ? '\n過去に確認済みの学習・記憶:\n' + recalled : ''),
       },
       ...this.history.slice(-10),
       { role: 'user', content: message },

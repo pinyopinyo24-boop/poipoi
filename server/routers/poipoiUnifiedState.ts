@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { mergePoiPoiState } from '../core/PoiPoiUnifiedState';
+import { PoiPoiIdentity } from '../core/PoiPoiIdentity';
 import { protectedProcedure, router } from '../_core/trpc';
 import {
   getUserPoiPoiUnifiedState,
@@ -29,6 +30,7 @@ const isOwner = (id: string) =>
 export const poipoiUnifiedStateRouter = router({
   get: protectedProcedure.query(async ({ ctx }) => {
     const id = String(ctx.user.id);
+    await PoiPoiIdentity.syncAccountIdentity(id);
     const personal = await getUserPoiPoiUnifiedState(id);
     if (!isOwner(id)) return personal;
     return mergePoiPoiState(personal, await getPoiPoiUnifiedState());
@@ -39,6 +41,7 @@ export const poipoiUnifiedStateRouter = router({
     .mutation(async ({ ctx, input }) => {
       const id = String(ctx.user.id);
       const personal = await syncUserPoiPoiUnifiedState(id, input);
+      await PoiPoiIdentity.syncAccountIdentity(id);
       if (!isOwner(id)) return personal;
       const global = await syncPoiPoiUnifiedState(personal);
       return syncUserPoiPoiUnifiedState(id, global);
