@@ -235,9 +235,6 @@ export class APIKeyManager {
 # OpenAI API
 OPENAI_API_KEY=sk-...
 
-# Gemini API
-GEMINI_API_KEY=...
-
 # Claude API
 CLAUDE_API_KEY=sk-ant-...
 
@@ -258,7 +255,7 @@ CLAUDE_API_KEY=sk-ant-...
     const warnings: string[] = [];
 
     // Check for required providers
-    const requiredProviders = ['openai', 'gemini'];
+    const requiredProviders: string[] = [];
 
     for (const provider of requiredProviders) {
       if (!this.hasAPIKey(provider)) {

@@ -3,7 +3,7 @@
  * 隍・焚AI繝励Ο繝舌う繝繝ｼ邂｡逅・
  */
 
-export type AIProvider = 'openai' | 'claude' | 'gemini' | 'local';
+export type AIProvider = 'openai' | 'claude' | 'local';
 
 export interface ProviderConfig {
   provider: AIProvider;
@@ -81,18 +81,6 @@ export class AIProviderManager {
         temperature: 0.7,
         enabled: !!process.env.CLAUDE_API_KEY,
         priority: 2,
-        timeout: 30000,
-        retryCount: 3,
-      },
-      {
-        provider: 'gemini',
-        apiKey: process.env.GEMINI_API_KEY || '',
-        apiUrl: process.env.GEMINI_API_URL || 'https://generativelanguage.googleapis.com',
-        model: 'gemini-pro',
-        maxTokens: 4096,
-        temperature: 0.7,
-        enabled: !!process.env.GEMINI_API_KEY,
-        priority: 3,
         timeout: 30000,
         retryCount: 3,
       },
@@ -267,7 +255,6 @@ export class AIProviderManager {
     const stats: Record<AIProvider, any> = {
       openai: { requestCount: 0, successCount: 0, failureCount: 0, totalTokens: 0, totalDuration: 0 },
       claude: { requestCount: 0, successCount: 0, failureCount: 0, totalTokens: 0, totalDuration: 0 },
-      gemini: { requestCount: 0, successCount: 0, failureCount: 0, totalTokens: 0, totalDuration: 0 },
       local: { requestCount: 0, successCount: 0, failureCount: 0, totalTokens: 0, totalDuration: 0 },
     };
 
@@ -377,7 +364,6 @@ export class AIProviderManager {
     const results: Record<AIProvider, any> = {
       openai: { healthy: false },
       claude: { healthy: false },
-      gemini: { healthy: false },
       local: { healthy: false },
     };
 
@@ -450,23 +436,6 @@ export class AIProviderManager {
 
     if (!config) {
       throw new Error("利用可能なAI Providerがありません");
-    }
-
-    if (config.provider === "gemini") {
-      const { GeminiProvider } = await import("../_core/ai/providers/GeminiProvider");
-      const provider = new GeminiProvider(config.apiKey);
-
-      const response = await provider.invoke(messages as any[], {
-        model: config.model,
-        maxTokens: config.maxTokens,
-        temperature: config.temperature,
-      });
-
-      if (!response?.content?.trim()) {
-        throw new Error("Geminiから空の応答が返されました");
-      }
-
-      return response.content;
     }
 
     if (config.provider === "local") {

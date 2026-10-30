@@ -49,18 +49,6 @@ const providers: ProviderInfo[] = [
     icon: '🧠',
   },
   {
-    id: 'gemini',
-    name: 'Google Gemini',
-    model: 'Gemini Pro',
-    status: 'healthy',
-    responseTime: 800,
-    costPerToken: 0.000015,
-    maxTokens: 32768,
-    features: ['高速', 'マルチモーダル', 'リアルタイム'],
-    description: '最速のレスポンス。リアルタイム処理に最適。',
-    icon: '⚡',
-  },
-  {
     id: 'local',
     name: 'ローカルAI',
     model: 'Ollama',
@@ -75,12 +63,9 @@ const providers: ProviderInfo[] = [
 ];
 
 export default function AIProviderSelector() {
-  const [selectedProvider, setSelectedProvider] = useState('openai');
+  const [selectedProvider, setSelectedProvider] = useState('local');
   const [compareMode, setCompareMode] = useState(false);
-  const [selectedForComparison, setSelectedForComparison] = useState<string[]>([
-    'openai',
-    'claude',
-  ]);
+  const [selectedForComparison, setSelectedForComparison] = useState<string[]>(['local']);
 
   const getStatusColor = (status: string) => {
     switch (status) {

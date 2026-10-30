@@ -5,7 +5,6 @@
 
 import { IAIProvider, AIProviderType, AIProviderStatus } from './providers/AIProvider';
 import { ChatGPTProvider } from './providers/ChatGPTProvider';
-import { GeminiProvider } from './providers/GeminiProvider';
 import { LocalAIProvider } from './providers/LocalAIProvider';
 import { AgentManager, AgentManagerConfig, WorkflowStep, WorkflowResult } from './AgentManager';
 import { BaseAgent, AgentType, AgentStatus, AgentExecutionResult } from './agents/BaseAgent';
@@ -15,7 +14,6 @@ import { failsafeService } from '../../ai/FailsafeService';
 
 export interface AICoreConfig {
   enableChatGPT: boolean;
-  enableGemini: boolean;
   primaryProvider: AIProviderType;
   enableLogging: boolean;
 }
@@ -276,7 +274,6 @@ export async function initializeAICore(config?: Partial<AICoreConfig>): Promise<
     enableLogging: process.env.NODE_ENV !== 'production',
     ...config,
     primaryProvider: 'local',
-    enableGemini: false,
     enableChatGPT: false,
   };
 
