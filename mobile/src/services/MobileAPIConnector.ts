@@ -123,7 +123,7 @@ export class MobileAPIConnector {
     try {
       const sessionToken = await AsyncStorage.getItem('sessionToken');
       const sessionId = await AsyncStorage.getItem('chatSessionId');
-      this.sessionId = sessionId;
+      this.sessionId = sessionToken ? sessionId : null;
       
       if (sessionToken) {
         this.sessionId = sessionId;

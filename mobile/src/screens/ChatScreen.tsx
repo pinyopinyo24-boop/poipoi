@@ -93,10 +93,24 @@ export default function ChatScreen() {
   }, []);
 
   const POIPOI_LOCAL_CHAT_V1 = 'POIPOI_LOCAL_CHAT_V1';
+  const chatKey = async () => {
+    const token = await AsyncStorage.getItem('sessionToken');
+    if (!token) return POIPOI_LOCAL_CHAT_V1;
+    let hash = 2166136261;
+    for (const char of token) hash = Math.imul(hash ^ char.charCodeAt(0), 16777619);
+    return POIPOI_LOCAL_CHAT_V1 + ':' + (hash >>> 0).toString(16);
+  };
+  const currentChatKey = useRef<string | null>(null);
+  const historyEpoch = useRef(0);
 
   useEffect(() => {
-    localHistoryLoad.current = AsyncStorage.getItem(POIPOI_LOCAL_CHAT_V1)
-      .then(value => {
+    const epoch = ++historyEpoch.current;
+    localHistoryLoad.current = chatKey().then(async key => {
+      const value = await AsyncStorage.getItem(key);
+      if (epoch !== historyEpoch.current) return null;
+      currentChatKey.current = key;
+      return value;
+    }).then(value => {
         if (value) {
           const saved = JSON.parse(value);
           if (Array.isArray(saved)) setMessages(saved);
@@ -113,10 +127,12 @@ export default function ChatScreen() {
 
   useEffect(() => {
     if (!localHistoryReady) return;
-    AsyncStorage.setItem(
-      POIPOI_LOCAL_CHAT_V1,
-      JSON.stringify(messages)
-    ).catch(console.warn);
+    const key = currentChatKey.current;
+    const epoch = historyEpoch.current;
+    if (key) chatKey().then(active => {
+      if (active === key && epoch === historyEpoch.current)
+        return AsyncStorage.setItem(key, JSON.stringify(messages));
+    }).catch(console.warn);
   }, [messages, localHistoryReady]);
   const [input, setInput] = useState("");
   const [isLoading, setIsLoading] = useState(false);
@@ -290,6 +306,9 @@ export default function ChatScreen() {
         throw new Error(result?.error?.message || 'ログインに失敗しました');
       }
       const previousSessionId = apiConnector.getSessionId();
+      const epoch = ++historyEpoch.current;
+      if (currentChatKey.current) await AsyncStorage.setItem(currentChatKey.current, JSON.stringify(messagesRef.current));
+      await AsyncStorage.setItem('sessionToken', token);
       apiConnector.setAuthToken(token);
       const authResponse = await fetch(`${baseURL.replace(/\/$/, '')}/api/trpc/auth.me`, {
         headers: { Authorization: `Bearer ${token}` },
@@ -325,6 +344,19 @@ export default function ChatScreen() {
       } catch (storageError) {
         console.warn('Office作業状態を復元できませんでした:', storageError);
       }
+      const key = await chatKey();
+      const cached = await AsyncStorage.getItem(key);
+      if (historyEpoch.current !== epoch) throw new Error('Account switched');
+      let restored: Message[] = [];
+      try {
+        const parsed: unknown = cached ? JSON.parse(cached) : [];
+        if (Array.isArray(parsed)) restored = parsed.filter((m): m is Message =>
+          !!m && typeof m.id === 'string' && typeof m.text === 'string' &&
+          typeof m.isUser === 'boolean' && typeof m.timestamp === 'number');
+      } catch (error) { console.warn('Chat history cache:', error); }
+      currentChatKey.current = key;
+      lastSyncedConversationRef.current = '';
+      setMessages(restored);
       setIsConnected(true);
       setIsAuthenticated(true);
       setLoginPassword('');
