@@ -305,7 +305,10 @@ export const chatRouter = router({
             const { syncUserPoiPoiUnifiedState } = await import('./core/PoiPoiUnifiedStateStore');
             await syncUserPoiPoiUnifiedState(userId, {
               version: 1,
-              records: [{ id: 'az:user-name', category: 'memory', value: name, updatedAt: Date.now(), origin: 'pc' }],
+              records: [
+                { id: 'az:user-name', category: 'memory', value: name, updatedAt: Date.now(), origin: 'pc' },
+                { id: 'az:pending-name', category: 'memory', value: '', updatedAt: Date.now() + 1, origin: 'pc' },
+              ],
             });
           }
           directAnswer = `あなたの名前を「${name}」として覚えました。`;
@@ -315,7 +318,10 @@ export const chatRouter = router({
             const { syncUserPoiPoiUnifiedState } = await import('./core/PoiPoiUnifiedStateStore');
             await syncUserPoiPoiUnifiedState(userId, {
               version: 1,
-              records: [{ id: 'az:ai-name', category: 'memory', value: aiName, updatedAt: Date.now(), origin: 'pc' }],
+              records: [
+                { id: 'az:ai-name', category: 'memory', value: aiName, updatedAt: Date.now(), origin: 'pc' },
+                { id: 'az:pending-name', category: 'memory', value: '', updatedAt: Date.now() + 1, origin: 'pc' },
+              ],
             });
           }
           directAnswer = `AIの名前を「${aiName}」に変更しました。`;

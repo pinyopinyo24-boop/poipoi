@@ -136,7 +136,11 @@ export async function searchUserPoiPoiMemories(
       return { record, score };
     })
     .filter(item => item.score > 0)
-    .sort((a, b) => b.score - a.score || (b.record.category === 'learning' ? 1 : 0) - (a.record.category === 'learning' ? 1 : 0) || b.record.updatedAt - a.record.updatedAt)
+    .sort((a, b) => {
+      // Explicit user corrections outrank older conversation snippets on the same topic.
+      const correction = (record: typeof a.record) => record.category === 'learning' && record.id.startsWith('correction-') ? 1 : 0;
+      return correction(b.record) - correction(a.record) || b.score - a.score || b.record.updatedAt - a.record.updatedAt;
+    })
     .slice(0, Math.max(1, Math.min(limit, 20)))
     .map(item => item.record);
 }

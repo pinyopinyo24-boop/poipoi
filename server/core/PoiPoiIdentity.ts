@@ -38,7 +38,7 @@ export class PoiPoiIdentity {
 
     fs.mkdirSync(path.dirname(identityFile), { recursive: true });
 
-    const temp = identityFile + ".tmp";
+    const temp = identityFile + "." + process.pid + "." + Date.now() + "." + Math.random().toString(36).slice(2) + ".tmp";
     fs.writeFileSync(temp, JSON.stringify({ ...this.read(), name: value }, null, 2), "utf8");
     fs.renameSync(temp, identityFile);
 
@@ -53,7 +53,7 @@ export class PoiPoiIdentity {
     if (!value || value.length > 40) throw new Error("名前は1～40文字で指定してください");
     const current = this.read();
     fs.mkdirSync(path.dirname(identityFile), { recursive: true });
-    const temp = identityFile + "." + process.pid + "." + Date.now() + ".tmp";
+    const temp = identityFile + "." + process.pid + "." + Date.now() + "." + Math.random().toString(36).slice(2) + ".tmp";
     fs.writeFileSync(temp, JSON.stringify({ ...current, aiNames: { ...current.aiNames, [userId]: value } }, null, 2), "utf8");
     fs.renameSync(temp, identityFile);
     return value;
@@ -70,7 +70,7 @@ export class PoiPoiIdentity {
     if (!value || value.length > 40) throw new Error("名前は1～40文字で指定してください");
     const current = this.read();
     fs.mkdirSync(path.dirname(identityFile), { recursive: true });
-    const temp = identityFile + "." + process.pid + "." + Date.now() + ".tmp";
+    const temp = identityFile + "." + process.pid + "." + Date.now() + "." + Math.random().toString(36).slice(2) + ".tmp";
     fs.writeFileSync(temp, JSON.stringify({ ...current, userNames: { ...current.userNames, [userId]: value } }, null, 2), "utf8");
     fs.renameSync(temp, identityFile);
     return value;

@@ -9,6 +9,7 @@ export async function replyWithLocalIdentity(message: string, fallback: () => Pr
   if (userRename) {
     const name = userRename[1].trim();
     await updateMobilePoiPoiState({ id: 'az:user-name', category: 'memory', value: name, updatedAt: Date.now(), origin: 'android' });
+    await updateMobilePoiPoiState({ id: 'az:pending-name', category: 'memory', value: '', updatedAt: Date.now() + 1, origin: 'android' });
     return 'あなたの名前を「' + name + '」として覚えました。';
   }
   if (/^(?:私|わたし|僕|俺)の名前(?:は|って)?[？?]$/u.test(text)) {
@@ -20,6 +21,7 @@ export async function replyWithLocalIdentity(message: string, fallback: () => Pr
   if (rename && rename[1].trim().length <= 40) {
     const name = rename[1].trim();
     await updateMobilePoiPoiState({ id: 'az:ai-name', category: 'memory', value: name, updatedAt: Date.now(), origin: 'android' });
+    await updateMobilePoiPoiState({ id: 'az:pending-name', category: 'memory', value: '', updatedAt: Date.now() + 1, origin: 'android' });
     return 'AIの名前を「' + name + '」に変更しました。';
   }
   if (text === '名前は？' || text === 'あなたの名前は？' || text === 'AZの名前は？') {
