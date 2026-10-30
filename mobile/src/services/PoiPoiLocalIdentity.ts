@@ -6,6 +6,9 @@ const USER_KEY = 'POIPOI_USER_NAME';
 
 export async function replyWithLocalIdentity(message: string, fallback: () => Promise<string>): Promise<string> {
   const text = message.trim();
+  if (/^(?:これからは|今後は)?名前は[「『"]?.{1,40}?(?:です|だよ|にして)[。！!]*$/u.test(text)) {
+    return '変更するのは、あなたの名前ですか？ それともAIの名前ですか？';
+  }
   const userRename = text.match(/^(?:私の名前は|わたしの名前は|僕の名前は|俺の名前は|私の名前を|私を)[「『"]?(.{1,40}?)[」』"]?(?:です|だよ|にして|と呼んで|にしてください)[。！!]*$/u);
   if (userRename) {
     const name = userRename[1].trim();
