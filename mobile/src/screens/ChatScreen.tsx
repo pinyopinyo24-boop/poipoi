@@ -567,7 +567,7 @@ export default function ChatScreen() {
       const now = Date.now();
       setMessages(prev => [...prev,
         { id: 'file-' + now, text: '📎 ' + uploadedFiles.map(x => x.name).join('、'), isUser: true, timestamp: now },
-        { id: 'analysis-' + now, text: answer + '\\n\\n追加質問は「/資料質問 質問内容」で送信できます。', isUser: false, timestamp: now },
+        { id: 'analysis-' + now, text: answer + '\n\n追加質問は「/資料質問 質問内容」で送信できます。', isUser: false, timestamp: now },
       ]);
     } catch (error) {
       Alert.alert('資料解析エラー', error instanceof Error ? error.message : '資料を解析できませんでした');
@@ -1217,7 +1217,7 @@ export default function ChatScreen() {
             }
             response = {
               success: true,
-              data: { message: 'PowerPointを端末内に保存しました。\\n' + destination },
+              data: { message: 'PowerPointを端末内に保存しました。\n' + destination },
             };
           } else if (input.trim().startsWith('/計画 ')) {
             const planned = await apiConnector.planAndExecute(input.trim().slice('/計画 '.length));
@@ -1247,7 +1247,7 @@ export default function ChatScreen() {
         } catch (error) {
           console.warn('サーバー通信失敗:', error);
           if (input.trim().startsWith('/資料PPT ') || input.trim().startsWith('/資料質問 ')) {
-            response = { success: true, data: { message: error instanceof Error ? error.message : 'PowerPoint作成に失敗しました' } };
+            response = { success: true, data: { message: error instanceof Error ? error.message : '資料処理に失敗しました' } };
           } else {
             setIsConnected(false);
             response = undefined;
@@ -1258,7 +1258,7 @@ export default function ChatScreen() {
       if (!response?.success && (input.trim().startsWith('/資料PPT ') || input.trim().startsWith('/資料質問 '))) {
         response = {
           success: true,
-          data: { message: 'PowerPointの作成・保存にはPC版PoiPoiへの接続とログインが必要です。PC接続を確認して再実行してください。' },
+          data: { message: '資料の解析・PowerPoint作成にはPC版PoiPoiへの接続とログインが必要です。PC接続を確認して再実行してください。' },
         };
       }
 

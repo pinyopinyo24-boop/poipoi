@@ -16,12 +16,12 @@ async function resolveUpload(file: string, extension: string, userId: string): P
   const userRoot = path.resolve(root, 'documents', userKey);
   const requested = path.resolve(root, file);
   if (!requested.startsWith(userRoot + path.sep)) throw new Error('Document is not owned by current user');
-  const full = await realpath(path.resolve(root, file));
-  if (!full.startsWith(root + path.sep) || path.extname(full).toLowerCase() !== extension) {
+  const full = await realpath(requested);
+  if (!full.startsWith(userRoot + path.sep) || path.extname(full).toLowerCase() !== extension) {
     throw new Error('Invalid uploaded file path');
   }
   const info = await stat(full);
-  if (!info.isFile() || info.size > 100 * 1024 * 1024) throw new Error('Upload exceeds allowed size');
+  if (!info.isFile() || info.size > 10 * 1024 * 1024) throw new Error('Upload exceeds allowed size');
   return full;
 }
 
