@@ -1,6 +1,7 @@
 import * as React from 'react';
 import { synchronizeMobilePoiPoiState } from '../services/PoiPoiUnifiedStateSync';
 import * as Linking from 'expo-linking';
+import * as Updates from 'expo-updates';
 function extractAIMessage(value: unknown): string {
   if (typeof value !== "string") {
     return value == null ? "応答がありません" : JSON.stringify(value);
@@ -400,6 +401,23 @@ export default function ChatScreen() {
 
   const checkMobileUpdate = async (baseURL: string) => {
     try {
+      // OTA applies only to compatible native builds with a configured update endpoint.
+      // Never replace native code or trigger an APK build from an OTA check.
+      if (!__DEV__ && Updates.isEnabled) {
+        try {
+          const ota = await Updates.checkForUpdateAsync();
+          if (ota.isAvailable) {
+            await Updates.fetchUpdateAsync();
+            Alert.alert('PoiPoiアップデート', 'アプリの更新を取得しました。再起動して適用しますか？', [
+              { text: 'あとで', style: 'cancel' },
+              { text: '再起動', onPress: () => { void Updates.reloadAsync(); } },
+            ]);
+            return;
+          }
+        } catch (otaError) {
+          console.warn('[PoiPoi] OTA更新確認失敗:', otaError);
+        }
+      }
       const response = await fetch(`${baseURL.replace(/\/$/, '')}/api/mobile-update`);
       if (!response.ok) return;
 
@@ -1334,7 +1352,8 @@ export default function ChatScreen() {
           if (officeCommand(input.trim())) {
             response = { success: true, data: { message: error instanceof Error ? error.message : '資料処理に失敗しました' } };
           } else {
-            setIsConnected(false);
+            // An application/API error does not prove the PC network is offline.
+            // Keep the connection status for the periodic health check to decide.
             response = undefined;
           }
         }

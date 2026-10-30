@@ -89,7 +89,10 @@ export class MobileAPIConnector {
   private maxRetries: number = 3;
   private retryDelay: number = 1000;
 
-  constructor(baseURL: string = 'http://192.168.1.6:3000') {
+  constructor(baseURL: string) {
+    if (!/^https?:\/\/[^\s/]+(?::\d{1,5})?\/?$/.test(baseURL)) {
+      throw new Error('PC接続先URLが不正です');
+    }
     this.baseURL = baseURL;
     this.apiClient = axios.create({
       baseURL,
