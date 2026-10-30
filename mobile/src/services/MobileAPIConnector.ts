@@ -470,10 +470,16 @@ export class MobileAPIConnector {
    * 認可失敗時の処理
    */
   private async handleUnauthorized(): Promise<void> {
+    const expiredToken = this.sessionToken;
+    if (!expiredToken) return;
     this.sessionToken = null;
-    // 認証情報のみ削除し、端末内の会話は保持する
-    await AsyncStorage.removeItem('sessionToken');
-    delete this.apiClient.defaults.headers.common['Authorization'];
+    this.sessionId = null;
+    // Keep local conversation cache, but never reuse a revoked session.
+    if (await AsyncStorage.getItem('sessionToken') === expiredToken) {
+      await AsyncStorage.removeItem('sessionToken');
+      await AsyncStorage.removeItem('chatSessionId');
+    }
+    if (!this.sessionToken) delete this.apiClient.defaults.headers.common['Authorization'];
   }
 
   private async createChatSession(): Promise<string> {
@@ -510,13 +516,13 @@ export class MobileAPIConnector {
     this.sessionToken = token;
     this.apiClient.defaults.headers.common['Authorization'] = `Bearer ${token}`;
     void (async () => {
-      if (tokenChanged) {
+      if (tokenChanged && this.sessionToken === token) {
         await AsyncStorage.removeItem('chatSessionId');
       }
       if (this.sessionToken === token) {
         await AsyncStorage.setItem('sessionToken', token);
       }
-    })();
+    })().catch(error => console.warn('[PoiPoi] Token persistence failed:', error));
   }
 
   /**

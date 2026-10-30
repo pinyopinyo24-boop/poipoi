@@ -116,7 +116,7 @@ export default function ChatScreen() {
           if (Array.isArray(saved)) setMessages(saved);
         }
       })
-      .catch(console.warn).finally(() => setLocalHistoryReady(true));
+      .catch(console.warn).finally(() => { if (epoch === historyEpoch.current) setLocalHistoryReady(true); });
   }, []);
 
   const [messages, setMessages] = useState<Message[]>([
@@ -226,6 +226,8 @@ export default function ChatScreen() {
 
       try {
         const current = messagesRef.current;
+        const activeKey = currentChatKey.current;
+        if (!activeKey || activeKey !== await chatKey()) return;
         const activeSessionId = apiConnector.getSessionId();
         const signature = JSON.stringify({
           sessionId: activeSessionId,
@@ -235,7 +237,7 @@ export default function ChatScreen() {
         if (signature !== lastSyncedConversationRef.current) {
           const success = await apiConnector.syncMobileConversations(current);
           if (!success) throw new Error('PCへの会話同期に失敗しました');
-          if (cancelled) return;
+          if (cancelled || activeKey !== currentChatKey.current || activeKey !== await chatKey()) return;
           lastSyncedConversationRef.current = signature;
         }
 
@@ -243,7 +245,7 @@ export default function ChatScreen() {
         if (!sessionId || cancelled) return;
 
         const result = await apiConnector.getChatHistory(sessionId);
-        if (!result.success || !result.data || cancelled) return;
+        if (!result.success || !result.data || cancelled || activeKey !== currentChatKey.current || activeKey !== await chatKey()) return;
 
         const incoming = result.data
           .filter(m => m && typeof m.id === 'string' && typeof m.content === 'string')
@@ -308,6 +310,7 @@ export default function ChatScreen() {
       const previousSessionId = apiConnector.getSessionId();
       const epoch = ++historyEpoch.current;
       if (currentChatKey.current) await AsyncStorage.setItem(currentChatKey.current, JSON.stringify(messagesRef.current));
+      currentChatKey.current = null;
       await AsyncStorage.setItem('sessionToken', token);
       apiConnector.setAuthToken(token);
       const authResponse = await fetch(`${baseURL.replace(/\/$/, '')}/api/trpc/auth.me`, {
@@ -357,6 +360,7 @@ export default function ChatScreen() {
       currentChatKey.current = key;
       lastSyncedConversationRef.current = '';
       setMessages(restored);
+      messagesRef.current = restored;
       setIsConnected(true);
       setIsAuthenticated(true);
       setLoginPassword('');
