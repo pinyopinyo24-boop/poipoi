@@ -571,9 +571,12 @@ export class MobileAPIConnector {
       if (history.length === 0) return true;
 
       const sessionId = this.sessionId || await this.createChatSession();
+      const tokenAtStart = this.sessionToken;
+      if (!tokenAtStart) return false;
 
       // Upload all turns in bounded batches; never silently discard older history.
       for (let offset = 0; offset < history.length; offset += 200) {
+        if (this.sessionToken !== tokenAtStart || this.sessionId !== sessionId) return false;
         const batch = history.slice(offset, offset + 200);
         const syncResponse = await this.apiClient.post('/api/trpc/chat.syncHistory', {
           json: {
@@ -590,6 +593,7 @@ export class MobileAPIConnector {
             }],
           },
         });
+        if (this.sessionToken !== tokenAtStart || this.sessionId !== sessionId) return false;
         if (this.getTrpcData<{ success: boolean }>(syncResponse.data)?.success !== true) return false;
       }
 

@@ -207,6 +207,9 @@ export function synchronizeMobilePoiPoiState(
     const merged = mergePoiPoiState(local, remote);
 
     let confirmedStateForSave: PoiPoiUnifiedState | undefined;
+    if (await AsyncStorage.getItem('sessionToken') !== token || await storageKey() !== initialKey) {
+      throw new Error('PoiPoi account changed during state sync');
+    }
     if (merged.records.some(record =>
       !remote.records.some(existing =>
         existing.id === record.id &&
@@ -224,6 +227,9 @@ export function synchronizeMobilePoiPoiState(
 
       let confirmation: Awaited<ReturnType<typeof fetch>>;
       try {
+        if (await AsyncStorage.getItem('sessionToken') !== token || await storageKey() !== initialKey) {
+          throw new Error('PoiPoi account changed before confirmation');
+        }
         confirmation = await fetch(
           `${base}/api/trpc/poipoiUnifiedState.sync`,
           {
