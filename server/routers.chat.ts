@@ -312,7 +312,7 @@ export const chatRouter = router({
         const response = await manager.processMessage(
           userId,
           input.sessionId,
-          `${PoiPoiIdentity.getSystemPrompt(userId)}\n\n${mobileHistoryPrefix}${originalMessage}`
+          `${mobileHistoryPrefix}${originalMessage}`
         );
 
         // Persist a bounded, per-user conversation summary for tool and agent context.
