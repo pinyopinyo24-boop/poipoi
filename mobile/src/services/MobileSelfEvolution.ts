@@ -660,7 +660,7 @@ export class MobileSelfEvolution {
       item < proposals.length &&
       proposals[item].status === 'approved' &&
       typeof designs[item] === 'string' &&
-      designs[item].length > 0
+      (designs[item] as string).length > 0
     )) {
       throw new Error('有効化データが不正です');
     }
