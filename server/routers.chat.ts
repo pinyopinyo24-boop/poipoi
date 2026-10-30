@@ -262,7 +262,15 @@ export const chatRouter = router({
           }
           directAnswer = `あなたの名前を「${name}」として覚えました。`;
         } else if (aiRename) {
-          directAnswer = `AIの名前を「${PoiPoiIdentity.setName(aiRename[1].trim())}」に変更しました。`;
+          const aiName = PoiPoiIdentity.setName(aiRename[1].trim());
+          if (ctx.user) {
+            const { syncUserPoiPoiUnifiedState } = await import('./core/PoiPoiUnifiedStateStore');
+            await syncUserPoiPoiUnifiedState(userId, {
+              version: 1,
+              records: [{ id: 'az:ai-name', category: 'memory', value: aiName, updatedAt: Date.now(), origin: 'pc' }],
+            });
+          }
+          directAnswer = `AIの名前を「${aiName}」に変更しました。`;
         }
         if (directAnswer !== undefined) {
           await repository.saveMessage({ id: uuidv4(), userId, role: 'user', content: originalMessage, timestamp: Date.now() }, input.sessionId);
