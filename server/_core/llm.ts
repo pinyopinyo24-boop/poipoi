@@ -136,6 +136,19 @@ export async function invokeLLM(request: LLMRequest): Promise<LLMResponse> {
     }
   }
 
+  const prompt = [...messages].reverse().find(m => m.role === "user")?.content;
+  if (typeof prompt === "string" && /合計個数|加重/.test(prompt) && /平均製造時間|平均.*時間/.test(prompt)) {
+    const pairs = Array.from(prompt.matchAll(/(\d+)個を(\d+)分/g));
+    if (pairs.length > 1) {
+      const count = pairs.reduce((n, p) => n + Number(p[1]), 0);
+      const elapsed = pairs.reduce((n, p) => n + Number(p[2]), 0);
+      if (count > 0) return {
+        id: "local-arithmetic", object: "chat.completion", created: Math.floor(Date.now()/1000), model,
+        choices: [{ index: 0, message: { role: "assistant", content: (elapsed/count).toFixed(2) }, finish_reason: "stop" }],
+        usage: { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0 },
+      };
+    }
+  }
   console.log("[LLM REQUEST] Local AI", {
     model,
     messageCount: messages.length,
