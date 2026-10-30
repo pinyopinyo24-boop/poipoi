@@ -18,7 +18,7 @@ export async function replyWithLocalIdentity(message: string, fallback: () => Pr
     const name = state.records.find(r => r.id === 'az:user-name')?.value || await AsyncStorage.getItem(USER_KEY);
     return name ? 'あなたの名前は「' + name + '」です。' : 'あなたの名前はまだ登録されていません。何とお呼びすればよいですか？';
   }
-  const rename = text.match(/^(?:(?:これからは|今後は|あなたの)\s*)?(?:名前|呼び名)(?:は|を)\s*[「『"]?(.{1,40}?)[」』"]?\s*(?:です|だよ|にして|に変更して|に変えて|と呼んで|にしてください)[。！!]*$/u);
+  const rename = text.match(/^(?:あなたの名前|AIの名前|AZの呼び名)(?:は|を)\s*[「『"]?(.{1,40}?)[」』"]?\s*(?:です|だよ|にして|に変更して|に変えて|と呼んで|にしてください)[。！!]*$/u);
   if (rename && rename[1].trim().length <= 40) {
     const name = rename[1].trim();
     await AsyncStorage.setItem(KEY, name);
