@@ -91,11 +91,17 @@ export const chatRouter = router({
         // Natural-language read-only discovery uses the same authenticated tool API.
         // Mutating operations remain explicit and require their existing approvals.
         const naturalManufacturingList = /^(?:製造(?:記録|履歴|データ)?|生産(?:記録|履歴|データ)?)(?:の)?(?:一覧|リスト)(?:を)?(?:見せて|表示して|教えて|確認したい|出して)[。！!]?$/u.test(command);
-        const naturalCostRequest = /(?:原価|差異)/u.test(command) && /(?:計算|比較|分析|差異)/u.test(command)
-          ? command.match(/(?:見積(?:もり)?(?:単価|原価)?)[：:\s]*(\d+(?:\.\d+)?)\s*円?[\s、,。;；]+(?:実際(?:単価|原価)?)[：:\s]*(\d+(?:\.\d+)?)\s*円?[\s、,。;；]+(?:数量|個数|生産数)[：:\s]*(\d+(?:\.\d+)?)\s*個?/u)
-          : null;
-        const naturalCostArgs = naturalCostRequest
-          ? { estimated: Number(naturalCostRequest[1]), actual: Number(naturalCostRequest[2]), quantity: Number(naturalCostRequest[3]) }
+        // Extract explicitly labeled amounts in any order; never infer missing values.
+        const costIntent = /(?:原価|差異)/u.test(command) && /(?:計算|比較|分析|差異)/u.test(command);
+        const estimatedMatch = command.match(/(?:見積(?:もり)?(?:単価|原価)?|予定原価)[：:=\s]*(\d+(?:\.\d+)?)\s*円?/u);
+        const actualMatch = command.match(/(?:実際(?:単価|原価)?|実績原価)[：:=\s]*(\d+(?:\.\d+)?)\s*円?/u);
+        const quantityMatch = command.match(/(?:数量|個数|生産数)[：:=\s]*(\d+(?:\.\d+)?)\s*個?/u);
+        const naturalCostArgs = costIntent && estimatedMatch && actualMatch && quantityMatch
+          ? {
+              estimated: Number(estimatedMatch[1]),
+              actual: Number(actualMatch[1]),
+              quantity: Number(quantityMatch[1]),
+            }
           : null;
         const toolRequest = explicitToolRequest ?? (naturalManufacturingList
           ? ['製造一覧', '製造一覧', ''] as RegExpMatchArray
