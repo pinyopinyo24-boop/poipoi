@@ -23,7 +23,7 @@ function getChatCoreManager(): ChatCoreManager {
     const memoryManager = {
       saveConversation: async (userId: string, messages: Array<{ id: string; role: string; content: string }>) => {
         const { syncUserPoiPoiUnifiedState } = await import('./core/PoiPoiUnifiedStateStore');
-        const records = messages.map(message => ({
+        const records = messages.filter(message => message.role === 'user' && message.content.trim()).map(message => ({
           id: 'conversation-' + message.id,
           category: 'memory' as const,
           origin: 'pc' as const,

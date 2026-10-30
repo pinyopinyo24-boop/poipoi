@@ -68,6 +68,7 @@ export class ChatRepository {
     const sessionMessages = this.messages.get(key) || [];
     if (sessionMessages.some(existing => existing.id === message.id)) return;
     sessionMessages.push(message);
+    sessionMessages.sort((a, b) => a.timestamp - b.timestamp || a.id.localeCompare(b.id));
     this.messages.set(key, sessionMessages);
     if (session) {
       session.updatedAt = Math.max(session.updatedAt || 0, message.timestamp);

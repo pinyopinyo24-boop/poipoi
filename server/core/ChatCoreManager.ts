@@ -198,7 +198,7 @@ export class ChatCoreManager {
     // 6. 郢晢ｽ｡郢晢ｽ｢郢晢ｽｪ邵ｺ・ｫ闔ｨ螟奇ｽｩ・ｱ郢ｧ蜑・ｽｿ譎擾ｽｭ繝ｻ
     if (this.memoryManager && typeof (this.memoryManager as any).saveConversation === 'function') {
       try {
-        await (this.memoryManager as any).saveConversation(userId, [userMsg, assistantMsg]);
+        await (this.memoryManager as any).saveConversation(userId, [userMsg]);
       } catch (error) {
         console.warn('[PoiPoi] Conversation memory save failed:', error);
       }
