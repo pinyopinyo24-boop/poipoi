@@ -43,12 +43,16 @@ export class ChatRepository {
   private persist(): void {
     
     fs.mkdirSync(path.dirname(this.storagePath), { recursive: true });
-    const tmp = this.storagePath + ".tmp";
-    fs.writeFileSync(tmp, JSON.stringify({
-      sessions: [...this.sessions],
-      messages: [...this.messages]
-    }));
-    fs.renameSync(tmp, this.storagePath);
+    const tmp = `${this.storagePath}.${process.pid}.${Date.now()}.${Math.random().toString(36).slice(2)}.tmp`;
+    try {
+      fs.writeFileSync(tmp, JSON.stringify({
+        sessions: [...this.sessions],
+        messages: [...this.messages]
+      }));
+      fs.renameSync(tmp, this.storagePath);
+    } finally {
+      if (fs.existsSync(tmp)) fs.unlinkSync(tmp);
+    }
   }
 
   /**
@@ -97,7 +101,10 @@ export class ChatRepository {
     if (existing && existing.userId !== session.userId) {
       throw new Error('Chat session owner mismatch');
     }
-    this.sessions.set(session.id, session);
+    this.sessions.set(session.id, {
+      ...session,
+      messageCount: this.messages.get(session.id)?.length ?? session.messageCount,
+    });
     this.persist();
   }
 
