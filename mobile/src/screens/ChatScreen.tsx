@@ -1164,8 +1164,12 @@ export default function ChatScreen() {
           }
         } catch (error) {
           console.warn('サーバー通信失敗:', error);
-          setIsConnected(false);
-          response = undefined;
+          if (input.trim().startsWith('/資料PPT ')) {
+            response = { success: true, data: { message: error instanceof Error ? error.message : 'PowerPoint作成に失敗しました' } };
+          } else {
+            setIsConnected(false);
+            response = undefined;
+          }
         }
       }
 
