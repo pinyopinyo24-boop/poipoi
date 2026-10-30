@@ -14,6 +14,7 @@ describe("Schedule Database Helpers", () => {
     vi.mocked(getDb).mockResolvedValue({
       insert: () => ({ values: async () => [{ insertId: 1 }] }),
       select: () => ({ from: () => ({ where: async () => [] }) }),
+      delete: () => ({ where: async () => ({ affectedRows: 0 }) }),
       update: () => ({ set: () => ({ where: async () => ({ affectedRows: 1 }) }) }),
     } as any);
   });
