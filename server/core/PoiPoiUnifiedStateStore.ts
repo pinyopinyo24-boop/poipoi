@@ -141,7 +141,7 @@ export function syncUserPoiPoiUnifiedState(userId: string, incoming: PoiPoiUnifi
     const merged = mergePoiPoiState(await readScoped(file), incoming);
     if (merged.records.length > 10000) throw new Error('PoiPoi state exceeds sync limit');
     await fs.mkdir(path.dirname(file), { recursive: true });
-    const temporary = file + '.' + process.pid + '.' + Date.now() + '.tmp';
+    const temporary = file + '.' + process.pid + '.' + Date.now() + '.' + Math.random().toString(36).slice(2) + '.tmp';
     try {
       await fs.writeFile(temporary, serializePoiPoiState(merged), 'utf8');
       await fs.rename(temporary, file);
