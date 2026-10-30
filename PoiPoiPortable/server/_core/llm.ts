@@ -1,4 +1,3 @@
-import { enrichPromptWithLearning } from "../core/LearningContextIntegration";
 /**
  * PoiPoi local Ollama LLM integration.
  */
@@ -122,17 +121,6 @@ export async function invokeLLM(request: LLMRequest): Promise<LLMResponse> {
     : process.env.LOCAL_CHAT_MODEL || process.env.LOCAL_CODER_MODEL || "qwen2.5-coder:7b");
 
   const messages = [...(request.messages || [])];
-  const userIndex = messages.findLastIndex(message => message.role === "user");
-  if (userIndex >= 0 && !request.response_format) {
-    const userMessage = messages[userIndex];
-    if (typeof userMessage.content === "string") {
-      messages[userIndex] = {
-        ...userMessage,
-        content: userMessage.content.startsWith('Past examples:') ? userMessage.content : await enrichPromptWithLearning(process.cwd(), userMessage.content),
-      };
-    }
-  }
-
   console.log("[LLM REQUEST] Local AI", {
     model,
     messageCount: messages.length,
