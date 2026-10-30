@@ -18,18 +18,10 @@ describe('LocalAIProvider', () => {
   it('should invoke local endpoint', async () => {
     const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(
       new Response(JSON.stringify({
-        id: 'local-test',
-        choices: [
-          {
-            message: { content: 'ローカルAIテスト成功' },
-            finish_reason: 'stop',
-          },
-        ],
-        usage: {
-          prompt_tokens: 10,
-          completion_tokens: 20,
-          total_tokens: 30,
-        },
+        model: 'qwen2.5-coder:7b',
+        message: { role: 'assistant', content: 'ローカルAIテスト成功' },
+        prompt_eval_count: 10,
+        eval_count: 20,
       }), { status: 200 })
     );
 
@@ -44,7 +36,7 @@ describe('LocalAIProvider', () => {
     expect(result.usage?.totalTokens).toBe(30);
 
     expect(fetchMock).toHaveBeenCalledWith(
-      'http://localhost:8000/v1/chat/completions',
+      'http://localhost:11434/api/chat',
       expect.objectContaining({ method: 'POST' })
     );
   });
