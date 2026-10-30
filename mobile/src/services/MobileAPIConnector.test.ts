@@ -27,10 +27,11 @@ describe('MobileAPIConnector', () => {
     it('should reject missing or invalid PC URL', () => {
       expect(() => new MobileAPIConnector('')).toThrow();
       expect(() => new MobileAPIConnector('not-a-url')).toThrow();
+      expect(() => new MobileAPIConnector('http://custom.api.com')).toThrow();
     });
 
     it('should create connector with custom base URL', () => {
-      const conn = new MobileAPIConnector('http://custom.api.com');
+      const conn = new MobileAPIConnector('https://pc.example.com');
       expect(conn).toBeDefined();
     });
 

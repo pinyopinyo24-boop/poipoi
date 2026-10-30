@@ -468,7 +468,12 @@ export default function ChatScreen() {
       if (!active || checking) return;
       checking = true;
       try {
-        if (await AsyncStorage.getItem('POIPOI_PC_DISCONNECTED') === '1') return;
+        if (await AsyncStorage.getItem('POIPOI_PC_DISCONNECTED') === '1') {
+          previouslyReachable = false;
+          setIsConnected(false);
+          setIsAuthenticated(false);
+          return;
+        }
 
         const url = (await AsyncStorage.getItem('POIPOI_PC_URL'))
           || Constants.expoConfig?.extra?.apiBaseUrl;
@@ -728,7 +733,7 @@ export default function ChatScreen() {
           }
         }
         setIsAuthenticated(authenticated);
-        if (connected && savedSessionId) {
+        if (connected && authenticated && savedSessionId) {
           const sessions = await connector.getChatSessions();
           if (sessions.success && sessions.data?.some(s => s.id === savedSessionId)) {
 
@@ -1025,9 +1030,10 @@ export default function ChatScreen() {
           await AsyncStorage.setItem('POIPOI_PC_URL', reconnectURL);
           await AsyncStorage.removeItem('POIPOI_PC_DISCONNECTED');
           setApiConnector(connector);
-          setIsAuthenticated(await connector.checkAuthentication());
+          const authenticated = await connector.checkAuthentication();
+          setIsAuthenticated(authenticated);
           setIsConnected(true);
-          setSessionId(connector.getSessionId() || undefined);
+          setSessionId(authenticated ? connector.getSessionId() || undefined : undefined);
           setInput('');
 
           Alert.alert('PoiPoi', 'PCへの再接続が完了しました。');
@@ -1123,9 +1129,10 @@ export default function ChatScreen() {
         await AsyncStorage.removeItem('POIPOI_PC_DISCONNECTED');
 
         setApiConnector(connector);
-        setIsAuthenticated(await connector.checkAuthentication());
+        const authenticated = await connector.checkAuthentication();
+        setIsAuthenticated(authenticated);
         setIsConnected(true);
-        setSessionId(connector.getSessionId() || undefined);
+        setSessionId(authenticated ? connector.getSessionId() || undefined : undefined);
         setInput('');
 
         Alert.alert(

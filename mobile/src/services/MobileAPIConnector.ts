@@ -94,9 +94,9 @@ export class MobileAPIConnector {
         (/^http:\/\//i.test(baseURL) && !/^http:\/\/(?:localhost|127\.0\.0\.1|10\.\d{1,3}\.\d{1,3}\.\d{1,3}|192\.168\.\d{1,3}\.\d{1,3}|172\.(?:1[6-9]|2\d|3[01])\.\d{1,3}\.\d{1,3})(?::\d{1,5})?(?:\/|$)/i.test(baseURL))) {
       throw new Error('PC接続先URLが不正です');
     }
-    this.baseURL = baseURL;
+    this.baseURL = baseURL.replace(/\/+$/, '');
     this.apiClient = axios.create({
-      baseURL,
+      baseURL: this.baseURL,
       timeout: 190000,
       headers: {
         'Content-Type': 'application/json',
@@ -406,7 +406,6 @@ export class MobileAPIConnector {
       // ローカルセッション情報をクリア
       if (id === this.sessionId) {
         this.sessionId = null;
-        this.sessionToken = null;
         await AsyncStorage.removeItem('chatSessionId');
         await LocalCacheService.clearChatHistory(id);
       }
