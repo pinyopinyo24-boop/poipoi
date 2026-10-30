@@ -107,7 +107,7 @@ export class ChatCoreManager {
       /^(?:正しくは|正解は|訂正[：:]?|違います[。\s]*正しくは|それは違います[。\s]*正しくは)[、,：:\s]*([\s\S]{1,3000})$/u
     );
     if (correctionMatch?.[1]?.trim()) {
-      const turns = (context?.messages ?? []) as ChatMessage[];
+      const turns = ((context as typeof context & { messages?: ChatMessage[] }).messages ?? []);
       const lastAssistantIndex = turns.findLastIndex(m => m.role === 'assistant');
       const previousAssistant = turns[lastAssistantIndex];
       const previousUser = lastAssistantIndex > 0
@@ -235,7 +235,7 @@ export class ChatCoreManager {
       }
       // Include recent real turns so follow-up questions and corrections retain context.
       const previous = await this.chatRepository.getMessages(sessionId, 24);
-      const messages = previous
+      const messages: Array<{ role: 'user' | 'assistant' | 'system'; content: string }> = previous
         .filter((m) => m.role === 'user' || m.role === 'assistant')
         .slice(-24)
         .map((m) => ({ role: m.role, content: m.content }));
