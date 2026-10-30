@@ -277,7 +277,7 @@ export const chatRouter = router({
           const syncedName = (await getUserPoiPoiUnifiedState(userId)).records.find(
             record => record.id === 'az:user-name' && record.category === 'memory'
           );
-          if (syncedName?.value && !PoiPoiIdentity.getUserName(userId)) {
+          if (syncedName?.value && PoiPoiIdentity.getUserName(userId) !== syncedName.value) {
             PoiPoiIdentity.setUserName(userId, syncedName.value);
           }
           const syncedAI = (await getUserPoiPoiUnifiedState(userId)).records.find(
