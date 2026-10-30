@@ -2,7 +2,14 @@
  * STEP 51.5 - Poipoi Chat Core v1.0 テストスイート
  */
 
-import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { describe, it, expect, beforeEach, afterAll, vi } from 'vitest';
+import { rmSync } from 'node:fs';
+const fixtureRoot = vi.hoisted(() => {
+  const directory = process.cwd() + '/node_modules/.cache/az-regression-test-' + Date.now() + '-' + Math.random().toString(36).slice(2);
+  vi.spyOn(process, 'cwd').mockReturnValue(directory);
+  return directory;
+});
+afterAll(() => { vi.restoreAllMocks(); rmSync(fixtureRoot, { recursive: true, force: true }); });
 import { ChatCoreManager, ChatMessage, ChatSession } from '../core/ChatCoreManager';
 import { ChatService } from '../services/ChatService';
 import { MessageProcessingService } from '../services/MessageProcessingService';
@@ -529,8 +536,11 @@ describe('ContextAwarenessService', () => {
 describe('ChatRepository', () => {
   let chatRepository: ChatRepository;
 
-  beforeEach(() => {
+  beforeEach(async () => {
     chatRepository = new ChatRepository();
+    // Persistence is intentional; each case must explicitly start with clean fixture data.
+    await chatRepository.clearAllMessages();
+    await chatRepository.clearAllSessions();
   });
 
   it('should save and retrieve message', async () => {

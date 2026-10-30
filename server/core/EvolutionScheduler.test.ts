@@ -1,4 +1,11 @@
-import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, afterAll, vi } from 'vitest';
+import { rmSync } from 'node:fs';
+const fixtureRoot = vi.hoisted(() => {
+  const directory = process.cwd() + '/node_modules/.cache/az-regression-test-' + Date.now() + '-' + Math.random().toString(36).slice(2);
+  vi.spyOn(process, 'cwd').mockReturnValue(directory);
+  return directory;
+});
+afterAll(() => { vi.restoreAllMocks(); rmSync(fixtureRoot, { recursive: true, force: true }); });
 import { EvolutionScheduler, SchedulerStatus } from './EvolutionScheduler';
 import { SelfEvolutionWorkflow } from './SelfEvolutionWorkflow';
 import { SelfImprovementManager } from './SelfImprovementManager';
@@ -39,6 +46,16 @@ describe('EvolutionScheduler', () => {
   let diagSecEngine: SecurityEngine;
   let learnSecEngine: SecurityEngine;
   let userId: string;
+
+  // Existing execution/rollback assertions exercise the explicitly approved
+  // simulation path. A timer-triggered cycle must remain simulation-only.
+  async function triggerApprovedMockCycle() {
+    const workflow = SelfEvolutionWorkflow.getInstance();
+    const simulation = await workflow.runSimulation(userId);
+    const history = vi.spyOn(workflow, 'getHistory').mockReturnValue([simulation]);
+    try { return await scheduler.applyApprovedSimulation(userId, simulation.workflowId); }
+    finally { history.mockRestore(); }
+  }
 
   beforeEach(async () => {
     // Singleton リセット
@@ -121,6 +138,19 @@ describe('EvolutionScheduler', () => {
       const result = await scheduler.triggerOnce(userId);
       expect(result.outcome).toBe('skipped');
       expect(result.error).toContain('auto_cycle is disabled');
+    });
+
+    it('keeps enabled timer cycles read-only until the exact simulation is approved', async () => {
+      await applier.apply(userId,
+        { id: 'enable-review', source: 'diagnosis', title: 'Enable', description: 'Test', priority: 'low', estimatedImpact: 10, createdAt: Date.now() },
+        'self_improvement.enable_auto_cycle', true);
+      const apply = vi.spyOn(applier, 'applyBatch');
+      try {
+        const result = await scheduler.triggerOnce(userId);
+        expect(result.outcome).toBe('simulation_only');
+        expect(result.changesApplied).toBe(0);
+        expect(apply).not.toHaveBeenCalled();
+      } finally { apply.mockRestore(); }
     });
 
     it('should NOT skip when auto_cycle is enabled', async () => {
@@ -401,7 +431,7 @@ describe('EvolutionScheduler', () => {
         summary: '[Simulation] mock',
       });
 
-      await scheduler.triggerOnce(userId);
+      await triggerApprovedMockCycle();
 
       spy.mockRestore();
       simSpy.mockRestore();
@@ -591,7 +621,7 @@ describe('EvolutionScheduler', () => {
         summary: '[Execution] mock',
       });
 
-      const result = await scheduler.triggerOnce(userId);
+      const result = await triggerApprovedMockCycle();
 
       simSpy.mockRestore();
       execSpy.mockRestore();
@@ -684,7 +714,7 @@ describe('EvolutionScheduler', () => {
         summary: '[Execution] mock no-success',
       });
 
-      const result = await scheduler.triggerOnce(userId);
+      const result = await triggerApprovedMockCycle();
 
       simSpy.mockRestore();
       execSpy.mockRestore();
@@ -802,7 +832,7 @@ describe('EvolutionScheduler', () => {
         summary: '[Execution] mock rbf2',
       });
 
-      await scheduler.triggerOnce(userId);
+      await triggerApprovedMockCycle();
 
       applierSpy.mockRestore();
       simSpy.mockRestore();

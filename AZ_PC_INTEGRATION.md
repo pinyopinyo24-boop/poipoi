@@ -29,10 +29,24 @@ available, including the streaming response contract and image command.
 
 ## Validation status
 
-Only source reading and diff/whitespace inspection were performed for this change.
-No dependency installation, type checker, tests, build, running server, restart,
-PC access or Android-device synchronization check was performed. GitHub changes
-are not evidence that the Windows PC has received or successfully run this code.
+On the 315a075 source plus the follow-up fixes, 185 focused tests passed in an
+isolated Linux worktree (zero failures). The tests cover the chat core, persistent
+memory, learning, approval gating and fourteen PC integration scenarios. The
+integration model responses are controlled fixtures, not real Ollama responses.
+Generated XLSX and PPTX files were reopened with independent libraries. Japanese
+PDF text was extracted both through the application parser and Poppler.
+
+Verification found and fixed a name-recall request being mistaken for a rename,
+and missing local Japanese CMap/font resource configuration in PDF parsing.
+Regression tests now exercise approved parameter application explicitly, while
+checking that scheduled cycles cannot grant themselves approval. Repository tests
+clear fixture data between cases so persisted IDs cannot contaminate later runs.
+
+No application build, running PC server, PC restart, source-code application,
+Windows PC access or Android-device synchronization check was performed. Live
+Ollama response quality, the user's schedule database and approved source
+application remain unverified. Passing these isolated tests is not confirmation
+that the Windows PC has received or successfully run this code.
 
 Source discovery/application is bounded to five source files per proposal. The
 business task loop is bounded to twelve decisions. These limits and unsupported

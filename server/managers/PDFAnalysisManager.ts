@@ -1,3 +1,4 @@
+import { createPDFParser } from './services/PDFParser';
 /**
  * PDFAnalysisManager
  * PDF ファイルの解析とテキスト抽出
@@ -33,9 +34,8 @@ export class PDFAnalysisManager {
    */
   async parsePDF(filePath: string): Promise<PDFAnalysisResult | null> {
     try {
-      const { PDFParse } = await import('pdf-parse');
       const { readFile } = await import('node:fs/promises');
-      const parser = new PDFParse({ data: new Uint8Array(await readFile(filePath)) });
+      const parser = createPDFParser(new Uint8Array(await readFile(filePath)));
       let extracted;
       try { extracted = await parser.getText(); }
       finally { await parser.destroy(); }

@@ -4,7 +4,7 @@
 
 import PptxGenJS from 'pptxgenjs';
 import * as XLSX from 'xlsx';
-import { PDFParse } from 'pdf-parse';
+import { createPDFParser } from './PDFParser';
 
 export interface PresentationExportResult {
   success: boolean;
@@ -75,7 +75,7 @@ export class PowerPointGenerationService {
       throw new Error('有効なPDFファイルではありません');
     }
 
-    const parser = new PDFParse({ data: new Uint8Array(buffer) });
+    const parser = createPDFParser(new Uint8Array(buffer));
 
     let text = '';
     try {

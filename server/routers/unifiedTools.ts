@@ -1,3 +1,4 @@
+import { createPDFParser } from '../managers/services/PDFParser';
 import { router, protectedProcedure } from '../_core/trpc';
 import { z } from 'zod';
 import ExcelJS from 'exceljs';
@@ -63,8 +64,7 @@ async function extractOfficeEvidence(file: string, type: 'xlsx' | 'pdf', limit: 
     return { content: raw.slice(0, limit), truncated: raw.length > limit ||
       parsed.sheets.some(sheet => sheet.data.length > 35) };
   }
-  const { PDFParse } = await import('pdf-parse');
-  const parser = new PDFParse({ data: new Uint8Array(await readFile(file)) });
+  const parser = createPDFParser(new Uint8Array(await readFile(file)));
   try {
     const extracted = await parser.getText();
     return { content: extracted.text.slice(0, limit), truncated: extracted.text.length > limit };
@@ -232,8 +232,7 @@ export const unifiedToolsRouter = router({
   pdf: protectedProcedure.input(z.object({ file: z.string().min(1).max(500) }))
     .mutation(async ({ input, ctx }) => {
       const file = await resolveUpload(input.file, '.pdf', String(ctx.user.id));
-      const { PDFParse } = await import('pdf-parse');
-      const parser = new PDFParse({ data: new Uint8Array(await readFile(file)) });
+          const parser = createPDFParser(new Uint8Array(await readFile(file)));
       try {
         const extracted = await parser.getText();
         return { pageCount: extracted.total, text: extracted.text.slice(0, 30000),

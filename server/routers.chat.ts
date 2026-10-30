@@ -369,10 +369,10 @@ export const chatRouter = router({
         let directAnswer: string | undefined;
         if (/^(?:これからは|今後は)?名前は[「『"]?.{1,40}?(?:です|だよ|にして)[。！!]*$/u.test(originalMessage)) {
           directAnswer = '変更するのは、あなたの名前ですか？ それともAIの名前ですか？';
-        } else if (/^(?:私|わたし|僕|俺)の名前(?:は|って)?[？?]$/u.test(originalMessage)) {
+        } else if (/^(?:私|わたし|僕|俺)の名前(?:は|って|を)?(?:[？?]|(?:教えて(?:ください)?|何(?:ですか)?|なん(?:ですか|だっけ)?|覚えて(?:いますか|る)?)[？?。！!]*)$/u.test(originalMessage)) {
           const name = PoiPoiIdentity.getUserName(userId);
           directAnswer = name ? `あなたの名前は「${name}」です。` : 'あなたの名前はまだ登録されていません。何とお呼びすればよいですか？';
-        } else if (/^(?:あなた|AI|AZ)の名前(?:は|って)?[？?]$/u.test(originalMessage) || /^名前は[？?]$/u.test(originalMessage)) {
+        } else if (/^(?:あなた|AI|AZ)の名前(?:は|って|を)?(?:[？?]|(?:教えて(?:ください)?|何(?:ですか)?|なん(?:ですか|だっけ)?)[？?。！!]*)$/u.test(originalMessage) || /^名前は[？?]$/u.test(originalMessage)) {
           directAnswer = `私の名前は「${PoiPoiIdentity.getAIName(userId)}」です。`;
         } else if (userRename) {
           const name = PoiPoiIdentity.setUserName(userId, userRename[1].trim());

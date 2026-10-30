@@ -12,11 +12,22 @@ export function createTextPDF(title: string, paragraphs: string[]): Buffer {
   const hex = (text: string) => {
     const buffer = Buffer.from(text, 'utf16le'); buffer.swap16(); return buffer.toString('hex').toUpperCase();
   };
+  const codes = [...new Set(rows.join('').split('').map(character => hex(character)))];
+  const mappings: string[] = [];
+  for (let start = 0; start < codes.length; start += 100) {
+    const batch = codes.slice(start, start + 100);
+    mappings.push(batch.length + ' beginbfchar\n' + batch.map(code => '<' + code + '> <' + code + '>').join('\n') + '\nendbfchar');
+  }
+  const unicodeMap = '/CIDInit /ProcSet findresource begin\n12 dict begin\nbegincmap\n' +
+    '/CIDSystemInfo << /Registry (Adobe) /Ordering (UCS) /Supplement 0 >> def\n' +
+    '/CMapName /AZUnicode def\n/CMapType 2 def\n1 begincodespacerange\n<0000> <FFFF>\nendcodespacerange\n' +
+    mappings.join('\n') + '\nendcmap\nCMapName currentdict /CMap defineresource pop\nend\nend\n';
   const objects: string[] = [
     '<< /Type /Catalog /Pages 2 0 R >>', '',
-    '<< /Type /Font /Subtype /Type0 /BaseFont /HeiseiKakuGo-W5 /Encoding /UniJIS-UTF16-H /DescendantFonts [4 0 R] >>',
+    '<< /Type /Font /Subtype /Type0 /BaseFont /HeiseiKakuGo-W5 /Encoding /UniJIS-UTF16-H /DescendantFonts [4 0 R] /ToUnicode 6 0 R >>',
     '<< /Type /Font /Subtype /CIDFontType0 /BaseFont /HeiseiKakuGo-W5 /CIDSystemInfo << /Registry (Adobe) /Ordering (Japan1) /Supplement 6 >> /DW 1000 /FontDescriptor 5 0 R >>',
     '<< /Type /FontDescriptor /FontName /HeiseiKakuGo-W5 /Flags 4 /FontBBox [-92 -250 1010 922] /ItalicAngle 0 /Ascent 880 /Descent -120 /CapHeight 700 /StemV 80 >>',
+    '<< /Length ' + Buffer.byteLength(unicodeMap) + ' >>\nstream\n' + unicodeMap + 'endstream',
   ];
   const pageIds: number[] = [];
   for (const page of pages) {
