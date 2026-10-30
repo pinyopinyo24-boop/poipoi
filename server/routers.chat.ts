@@ -235,6 +235,16 @@ export const chatRouter = router({
         // AI and user identity are distinct, including corrections.
         const userRename = originalMessage.match(/^(?:私の名前は|わたしの名前は|僕の名前は|俺の名前は|私の名前を|私を)[「『"]?(.{1,40}?)[」』"]?(?:です|だよ|にして|と呼んで|にしてください)?[。！!]*$/u);
         const aiRename = originalMessage.match(/^(?:あなたの名前|AIの名前|AZの呼び名)(?:を|は)[ \\t]*[「『"]?(.{1,40}?)[」』"]?[ \\t]*(?:にして|に変更して|に変えて|です|だよ|と呼んで|にしてください)[。！!]*$/u);
+        // Reconcile the Android identity record without overwriting a newer PC identity.
+        if (ctx.user) {
+          const { getUserPoiPoiUnifiedState } = await import('./core/PoiPoiUnifiedStateStore');
+          const syncedName = (await getUserPoiPoiUnifiedState(userId)).records.find(
+            record => record.id === 'az:user-name' && record.category === 'memory'
+          );
+          if (syncedName?.value && !PoiPoiIdentity.getUserName(userId)) {
+            PoiPoiIdentity.setUserName(userId, syncedName.value);
+          }
+        }
         let directAnswer: string | undefined;
         if (/^(?:私|わたし|僕|俺)の名前(?:は|って)?[？?]$/u.test(originalMessage)) {
           const name = PoiPoiIdentity.getUserName(userId);
@@ -242,7 +252,15 @@ export const chatRouter = router({
         } else if (/^(?:あなた|AI|AZ)の名前(?:は|って)?[？?]$/u.test(originalMessage) || /^名前は[？?]$/u.test(originalMessage)) {
           directAnswer = `私の名前は「${PoiPoiIdentity.getName()}」です。`;
         } else if (userRename) {
-          directAnswer = `あなたの名前を「${PoiPoiIdentity.setUserName(userId, userRename[1].trim())}」として覚えました。`;
+          const name = PoiPoiIdentity.setUserName(userId, userRename[1].trim());
+          if (ctx.user) {
+            const { syncUserPoiPoiUnifiedState } = await import('./core/PoiPoiUnifiedStateStore');
+            await syncUserPoiPoiUnifiedState(userId, {
+              version: 1,
+              records: [{ id: 'az:user-name', category: 'memory', value: name, updatedAt: Date.now(), origin: 'pc' }],
+            });
+          }
+          directAnswer = `あなたの名前を「${name}」として覚えました。`;
         } else if (aiRename) {
           directAnswer = `AIの名前を「${PoiPoiIdentity.setName(aiRename[1].trim())}」に変更しました。`;
         }

@@ -22,10 +22,12 @@ export async function replyWithLocalIdentity(message: string, fallback: () => Pr
   if (rename && rename[1].trim().length <= 40) {
     const name = rename[1].trim();
     await AsyncStorage.setItem(KEY, name);
+    await updateMobilePoiPoiState({ id: 'az:ai-name', category: 'memory', value: name, updatedAt: Date.now(), origin: 'android' });
     return '名前を「' + name + '」に変更しました。';
   }
   if (text === '名前は？' || text === 'あなたの名前は？' || text === 'AZの名前は？') {
-    const name = await AsyncStorage.getItem(KEY);
+    const state = await getMobilePoiPoiState();
+    const name = state.records.find(r => r.id === 'az:ai-name')?.value || await AsyncStorage.getItem(KEY);
     return '私の名前は「' + (name || 'AZ') + '」です。';
   }
   return fallback();
