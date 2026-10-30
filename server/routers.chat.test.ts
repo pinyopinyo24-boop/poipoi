@@ -9,6 +9,7 @@ import { getSharedChatRepository } from './repositories/ChatRepository';
 describe('Chat Router', () => {
   beforeEach(async () => {
     vi.clearAllMocks();
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: true, text: async () => JSON.stringify({ model: 'qwen2.5-coder:7b', message: { role: 'assistant', content: 'テスト応答' }, prompt_eval_count: 10, eval_count: 5 }) }));
     const repository = getSharedChatRepository();
     await repository.saveSession({
       id: 'session-1', userId: 'user-123', title: 'Test session',
