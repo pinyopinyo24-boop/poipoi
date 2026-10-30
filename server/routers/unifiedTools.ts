@@ -14,6 +14,7 @@ async function resolveUpload(file: string, extension: string, userId: string): P
   const root = await realpath(path.resolve(process.cwd(), 'uploads'));
   const userKey = createHash('sha256').update(userId).digest('hex').slice(0, 24);
   const userRoot = path.resolve(root, 'documents', userKey);
+  // Only files uploaded into the authenticated user's document directory may be read.
   const requested = path.resolve(root, file);
   if (!requested.startsWith(userRoot + path.sep)) throw new Error('Document is not owned by current user');
   const full = await realpath(requested);

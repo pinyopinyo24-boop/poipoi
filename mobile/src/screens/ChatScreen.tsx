@@ -303,6 +303,11 @@ export default function ChatScreen() {
       } else {
         setSessionId(previousSessionId || undefined);
       }
+      if (documentOwnerRef.current !== String(authUser.id)) {
+        analyzedDocumentsRef.current = [];
+        lastDocumentAnalysisRef.current = '';
+      }
+      documentOwnerRef.current = String(authUser.id);
       setIsConnected(true);
       setIsAuthenticated(true);
       setLoginPassword('');
@@ -529,6 +534,9 @@ export default function ChatScreen() {
         throw new Error('資料解析にはPC版への接続とログインが必要です');
       }
       setIsAnalyzingImage(true);
+      // Reset old selection before a new upload; partial failures must not reuse old evidence.
+      analyzedDocumentsRef.current = [];
+      lastDocumentAnalysisRef.current = '';
       const uploadedFiles: Array<{ file: string; type: 'pdf' | 'xlsx'; name: string }> = [];
       for (const item of result.assets) {
         const type: 'pdf' | 'xlsx' | null = item.name.toLowerCase().endsWith('.xlsx') ? 'xlsx'
@@ -564,6 +572,7 @@ export default function ChatScreen() {
       const answer = (analyzed.data as { answer?: unknown }).answer;
       if (typeof answer !== 'string' || !answer.trim()) throw new Error('解析結果が空です');
       analyzedDocumentsRef.current = uploadedFiles;
+      lastDocumentAnalysisRef.current = answer;
       const now = Date.now();
       setMessages(prev => [...prev,
         { id: 'file-' + now, text: '📎 ' + uploadedFiles.map(x => x.name).join('、'), isUser: true, timestamp: now },
@@ -711,6 +720,9 @@ export default function ChatScreen() {
 
   const pcConnectionBusyRef = React.useRef(false);
   const analyzedDocumentsRef = React.useRef<Array<{ file: string; type: 'pdf' | 'xlsx'; name: string }>>([]);
+  const lastDocumentAnalysisRef = React.useRef('');
+  const documentOwnerRef = React.useRef('');
+  const officeCommand = (value: string) => /^\\/資料質問\\s|^\\/資料PPT(?:\\s|$)/.test(value);
 
   const handleSend = async () => {
     const command = input.trim();
@@ -1169,15 +1181,18 @@ export default function ChatScreen() {
             if (!analyzed.success || !analyzed.data || typeof analyzed.data !== 'object') {
               throw new Error(analyzed.error || '追加質問の解析に失敗しました');
             }
-            response = { success: true, data: { message: (analyzed.data as { answer?: string }).answer || '回答がありません' } };
+            const answer = (analyzed.data as { answer?: unknown }).answer;
+            if (typeof answer !== 'string' || !answer.trim()) throw new Error('回答がありません');
+            lastDocumentAnalysisRef.current = answer;
+            response = { success: true, data: { message: answer } };
           } else if (input.trim().startsWith('/資料PPT ')) {
             const request = input.trim().slice('/資料PPT '.length).trim();
             const split = request.indexOf('｜');
-            if (split < 1 || split === request.length - 1) {
-              throw new Error('使い方: /資料PPT タイトル｜分析結果');
+            const title = (split >= 0 ? request.slice(0, split) : request).trim();
+            const analysis = (split >= 0 ? request.slice(split + 1) : lastDocumentAnalysisRef.current).trim();
+            if (!title || !analysis) {
+              throw new Error('先にPDF・Excel資料を解析するか「/資料PPT タイトル｜分析結果」を入力してください');
             }
-            const title = request.slice(0, split).trim();
-            const analysis = request.slice(split + 1).trim();
             const created = await apiConnector.executeUnifiedTool('createPresentationFromAnalysis', {
               title, analysis,
             });
@@ -1246,7 +1261,7 @@ export default function ChatScreen() {
           }
         } catch (error) {
           console.warn('サーバー通信失敗:', error);
-          if (input.trim().startsWith('/資料PPT ') || input.trim().startsWith('/資料質問 ')) {
+          if (officeCommand(input.trim())) {
             response = { success: true, data: { message: error instanceof Error ? error.message : '資料処理に失敗しました' } };
           } else {
             setIsConnected(false);
@@ -1255,7 +1270,7 @@ export default function ChatScreen() {
         }
       }
 
-      if (!response?.success && (input.trim().startsWith('/資料PPT ') || input.trim().startsWith('/資料質問 '))) {
+      if (!response?.success && officeCommand(input.trim())) {
         response = {
           success: true,
           data: { message: '資料の解析・PowerPoint作成にはPC版PoiPoiへの接続とログインが必要です。PC接続を確認して再実行してください。' },
