@@ -244,6 +244,12 @@ export const chatRouter = router({
           if (syncedName?.value && !PoiPoiIdentity.getUserName(userId)) {
             PoiPoiIdentity.setUserName(userId, syncedName.value);
           }
+          const syncedAI = (await getUserPoiPoiUnifiedState(userId)).records.find(
+            record => record.id === 'az:ai-name' && record.category === 'memory'
+          );
+          if (syncedAI?.value && PoiPoiIdentity.getName() === 'AZ') {
+            PoiPoiIdentity.setName(syncedAI.value);
+          }
         }
         let directAnswer: string | undefined;
         if (/^(?:私|わたし|僕|俺)の名前(?:は|って)?[？?]$/u.test(originalMessage)) {
