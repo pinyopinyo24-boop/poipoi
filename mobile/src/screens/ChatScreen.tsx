@@ -1134,9 +1134,33 @@ export default function ChatScreen() {
             const created = await apiConnector.executeUnifiedTool('createPresentationFromAnalysis', {
               title, analysis,
             });
-            response = created.success
-              ? { success: true, data: { message: 'PowerPoint資料をPC版に作成しました。\\n' + JSON.stringify(created.data, null, 2) } }
-              : created;
+            if (!created.success || !created.data || typeof created.data !== 'object') {
+              throw new Error(created.error || 'PowerPoint作成に失敗しました');
+            }
+            const presentationId = (created.data as { id?: unknown }).id;
+            if (typeof presentationId !== 'string' || !presentationId) {
+              throw new Error('PowerPointの作成IDが取得できませんでした');
+            }
+            const exported = await apiConnector.executeUnifiedTool('exportPresentation', { id: presentationId });
+            if (!exported.success || !exported.data || typeof exported.data !== 'object') {
+              throw new Error(exported.error || 'PowerPointの出力に失敗しました');
+            }
+            const fileBase64 = (exported.data as { base64?: unknown }).base64;
+            if (typeof fileBase64 !== 'string' || !fileBase64 || fileBase64.length > 28_000_000) {
+              throw new Error('PowerPointファイルが空、または保存上限を超えています');
+            }
+            if (!FileSystem.documentDirectory) {
+              throw new Error('端末のファイル保存領域が利用できません');
+            }
+            const safeTitle = title.replace(/[\\/:*?"<>|\\x00-\\x1f]/g, '_').slice(0, 60) || 'PoiPoi';
+            const destination = FileSystem.documentDirectory + safeTitle + '-' + Date.now() + '.pptx';
+            await FileSystem.writeAsStringAsync(destination, fileBase64, {
+              encoding: FileSystem.EncodingType.Base64,
+            });
+            response = {
+              success: true,
+              data: { message: 'PowerPointを端末内に保存しました。\\n' + destination },
+            };
           } else if (input.trim().startsWith('/計画 ')) {
             const planned = await apiConnector.planAndExecute(input.trim().slice('/計画 '.length));
             response = planned.success
