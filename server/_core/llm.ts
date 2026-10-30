@@ -55,6 +55,7 @@ export type ToolChoiceExplicit = {
 export type ToolChoice = ToolChoicePrimitive | ToolChoiceByName | ToolChoiceExplicit;
 
 export type LLMRequest = {
+  userId?: string;
   model?: string;
   messages: Message[];
   tools?: Tool[];
@@ -121,7 +122,10 @@ export async function invokeLLM(request: LLMRequest): Promise<LLMResponse> {
     ? process.env.LOCAL_CODER_MODEL || "qwen2.5-coder:7b"
     : process.env.LOCAL_CHAT_MODEL || process.env.LOCAL_CODER_MODEL || "qwen2.5-coder:7b");
 
+  const { PoiPoiIdentity } = await import("../core/PoiPoiIdentity");
   const messages = [
+    ...(request.messages.some(message => message.role === 'system' && typeof message.content === 'string' && message.content.includes('あなたはPoiPoiのAIコアAZです。'))
+      ? [] : [{ role: "system" as const, content: PoiPoiIdentity.getSystemPrompt(request.userId) }]),
     { role: "system" as const, content: "For numeric questions, compute carefully: first extract all numbers with units, write the equation internally, calculate, then verify by reversing the operation. Per-unit time = elapsed minutes / quantity (example: 75 minutes / 60 parts = 1.25 minutes per part, NOT 0.8). Combined per-unit time = sum of all elapsed minutes / sum of all quantities, NOT an average of unrelated ratios. Total cost variance = (actual unit cost - estimated unit cost) * quantity (example: (168 - 150) * 30 = 18 * 30 = 540, NOT 420). Do not accept an incorrect value supplied by the question; recompute it. Never claim a file, tool action or synchronization succeeded without a confirmed successful result. Follow the requested answer format exactly; output digits only when requested." },
     ...(request.messages || []),
   ];
@@ -131,13 +135,13 @@ export async function invokeLLM(request: LLMRequest): Promise<LLMResponse> {
     if (typeof userMessage.content === "string") {
       messages[userIndex] = {
         ...userMessage,
-        content: userMessage.content.startsWith('Past examples:') ? userMessage.content : await enrichPromptWithLearning(process.cwd(), userMessage.content),
+        content: userMessage.content.startsWith('Past examples:') ? userMessage.content : await enrichPromptWithLearning(process.cwd(), userMessage.content, request.userId),
       };
     }
   }
 
   const prompt = [...messages].reverse().find(m => m.role === "user")?.content;
-  if (typeof prompt === "string" && /合計個数|加重/.test(prompt) && /平均製造時間|平均.*時間/.test(prompt)) {
+  if (!request.response_format && typeof prompt === "string" && /合計個数|加重/.test(prompt) && /平均製造時間|平均.*時間/.test(prompt)) {
     const pairs = Array.from(prompt.matchAll(/(\d+)個を(\d+)分/g));
     if (pairs.length > 1) {
       const count = pairs.reduce((n, p) => n + Number(p[1]), 0);
@@ -167,6 +171,7 @@ export async function invokeLLM(request: LLMRequest): Promise<LLMResponse> {
         messages,
         stream: false,
         options: {
+          num_ctx: Math.max(4096, Math.min(32768, Number(process.env.LOCAL_AI_CONTEXT_SIZE) || 32768)),
           ...(request.temperature !== undefined ? { temperature: request.temperature } : {}),
           ...(request.top_p !== undefined ? { top_p: request.top_p } : {}),
           ...(request.max_tokens !== undefined ? { num_predict: request.max_tokens } : {}),

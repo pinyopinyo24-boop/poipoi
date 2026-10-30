@@ -1,3 +1,4 @@
+import { createTextPDF } from './services/PDFReportService';
 /**
  * PoiPoi PresentationAIManager
  * プレゼンテーション管理・AI生成・エクスポート
@@ -207,8 +208,10 @@ export class PresentationAIManager {
   }
 
   exportPDF(presentationId: string): Buffer | null {
-    if (!this.presentations.has(presentationId)) return null;
-    throw new Error('PDFエクスポートエンジンが構成されていません。PPTXまたはJSONで出力してください');
+    const presentation = this.presentations.get(presentationId);
+    if (!presentation) return null;
+    this.recordHistory('export-pdf', presentationId);
+    return createTextPDF(presentation.title, presentation.slides.flatMap(slide => [slide.title, slide.content, '']));
   }
 
   exportJSON(presentationId: string): string | null {

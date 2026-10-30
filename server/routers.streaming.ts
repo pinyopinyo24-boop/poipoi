@@ -28,11 +28,12 @@ export const streamingRouter = router({
     .input(
       z.object({
         message: z.string(),
+        messageId: z.string().min(1).max(200).optional(),
         conversationId: z.string().optional(),
         history: z.array(z.object({role:z.enum(["user","assistant"]),content:z.string()})).max(20).optional(),
       })
     )
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
       if (input.message.toLowerCase().startsWith("/imagine ")) {
         const prompt = input.message.substring(9).trim();
 
@@ -76,6 +77,34 @@ export const streamingRouter = router({
             Buffer.from(svgImage).toString("base64"),
           prompt,
         };
+      }
+
+      // Keep the streaming response contract and existing PC UI while sharing
+      // the same AZ core, identity, memory and authenticated tools as other clients.
+      if (!input.message.toLowerCase().startsWith('/imagine ')) {
+        const { getSharedChatRepository } = await import('./repositories/ChatRepository');
+        const { chatRouter } = await import('./routers.chat');
+        const { randomUUID, createHash } = await import('node:crypto');
+        const repository = getSharedChatRepository();
+        const userId = String(ctx.user?.id ?? 'mobile');
+        const conversationId = input.conversationId || 'conversation_' + randomUUID();
+        const existing = await repository.getSession(conversationId);
+        if (existing && existing.userId !== userId) throw new Error('この会話は別アカウントのものです。新しい会話を開始してください。');
+        if (!existing) {
+          await repository.saveSession({ id: conversationId, userId, title: input.message.slice(0, 80),
+            createdAt: Date.now(), updatedAt: Date.now(), messageCount: 0 });
+          // Import this conversation's supplied real history once, before the first AZ turn.
+          for (const [index, turn] of (input.history ?? []).entries()) {
+            await repository.saveMessage({
+              id: 'legacy-' + createHash('sha256').update(conversationId + ':' + index + ':' + turn.role + ':' + turn.content).digest('hex'),
+              userId, role: turn.role, content: turn.content, timestamp: Date.now() - ((input.history?.length ?? 0) - index) * 1000,
+            }, conversationId);
+          }
+        }
+        const response = await chatRouter.createCaller(ctx).processMessage({ userId, sessionId: conversationId, message: input.message, messageId: input.messageId });
+        const text = response.message.content;
+        return { conversationId, tokens: [text], fullText: text, tokenCount: 1, isImage: false,
+          messageId: response.message.id, metadata: 'metadata' in response.message ? response.message.metadata : undefined };
       }
 
       const codeRequest =

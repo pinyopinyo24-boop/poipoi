@@ -9,6 +9,7 @@ import { v4 as uuidv4 } from 'uuid';
 
 let chatCoreManager: ChatCoreManager | null = null;
 const chatQualityService = new ChatQualityService();
+const activeChatTurns = new Set<string>();
 
 function getChatCoreManager(): ChatCoreManager {
   if (!chatCoreManager) {
@@ -75,6 +76,7 @@ export const chatRouter = router({
         userId: z.string(),
         sessionId: z.string(),
         message: z.string(),
+        messageId: z.string().min(1).max(200).optional(),
         context: z.object({
           poipoiConversation: z.array(z.object({
             role: z.enum(['user', 'assistant']),
@@ -85,7 +87,22 @@ export const chatRouter = router({
       })
     )
     .mutation(async ({ ctx, input }) => {
+      const turnKey = String(ctx.user?.id ?? 'mobile') + ':' + input.sessionId;
+      if (activeChatTurns.has(turnKey)) throw new TRPCError({ code: 'CONFLICT', message: 'この会話は処理中です。完了を待ってください。' });
+      activeChatTurns.add(turnKey);
       try {
+        if (input.messageId) {
+          const repository = (await import('./repositories/ChatRepository')).getSharedChatRepository();
+          const session = await repository.getSession(input.sessionId);
+          if (session?.userId === String(ctx.user?.id ?? 'mobile')) {
+            const previous = await repository.getMessages(input.sessionId, 100000);
+            const cached = previous.find(turn => turn.role === 'assistant' && turn.metadata?.replyTo === input.messageId);
+            if (cached) return { message: cached, session, relatedMemories: [], reasoning: 'Previously completed turn' };
+            if (previous.some(turn => turn.role === 'user' && turn.id === input.messageId)) {
+              throw new TRPCError({ code: 'CONFLICT', message: 'この指示には中断した実行記録があります。実行記録を確認してから、新しい指示で続行してください。' });
+            }
+          }
+        }
         // All explicit tools share the authenticated unified router.
         const command = input.message.trim();
         const codeRequest = /^(?:PoiPoiコードエージェント|コードエージェント)[：:\s]+(?:実装|修正|変更|作成|追加|改修)/u.test(command);
@@ -136,6 +153,27 @@ export const chatRouter = router({
         const toolRequest = explicitToolRequest ?? (naturalManufacturingList
           ? ['製造一覧', '製造一覧', ''] as RegExpMatchArray
           : naturalCostArgs ? ['原価', '原価', JSON.stringify(naturalCostArgs)] as RegExpMatchArray : null);
+        // Natural language goes through an actual bounded tool loop, not an LLM
+        // description of work. Explicit legacy commands retain their API contract.
+        if (ctx.user && !explicitToolRequest && !codeRequest) {
+          const { shouldRunAZTask, runAZTask } = await import('./core/AZTaskRunner');
+          const repository = (await import('./repositories/ChatRepository')).getSharedChatRepository();
+          const session = await repository.getSession(input.sessionId);
+          if (!session || session.userId !== String(ctx.user.id)) {
+            throw new TRPCError({ code: 'NOT_FOUND', message: 'チャットセッションが見つかりません' });
+          }
+          const history = await repository.getMessages(input.sessionId, 12);
+          if (shouldRunAZTask(command, history.map(turn => turn.content))) {
+            const userId = String(ctx.user.id);
+            await repository.saveMessage({ id: input.messageId ?? uuidv4(), userId, role: 'user', content: command, timestamp: Date.now() }, input.sessionId);
+            const task = await runAZTask(ctx, input.sessionId, command);
+            const message = { id: uuidv4(), userId, role: 'assistant' as const,
+              content: task.answer, timestamp: Date.now(), metadata: { task, replyTo: input.messageId } };
+            await repository.saveMessage(message, input.sessionId);
+            return { message, session: (await repository.getSession(input.sessionId))!,
+              relatedMemories: [], reasoning: 'AZ verified tool results' };
+          }
+        }
         if (codeRequest || toolRequest || naturalTool || scheduleRead || naturalManufacturingArgs || /^PoiPoiツール[：:\s]+製造一覧\s*$/u.test(command)) {
           if (!ctx.user) {
             throw new TRPCError({ code: 'UNAUTHORIZED', message: 'ツール利用にはログインが必要です' });
@@ -146,6 +184,7 @@ export const chatRouter = router({
           if (!session || session.userId !== userId) {
             throw new TRPCError({ code: 'NOT_FOUND', message: 'チャットセッションが見つかりません' });
           }
+          await repository.saveMessage({ id: input.messageId ?? uuidv4(), userId, role: 'user', content: command, timestamp: Date.now() }, input.sessionId);
           const { unifiedToolsRouter } = await import('./routers/unifiedTools');
           const caller = unifiedToolsRouter.createCaller(ctx);
           let result: unknown;
@@ -173,14 +212,14 @@ export const chatRouter = router({
             }
             const args = z.object({
               previewId: z.string().uuid(),
-              confirm: z.literal('APPLY_AND_VERIFY'),
+              confirm: z.enum(['APPLY_ONLY', 'APPLY_AND_VERIFY']),
             }).parse(JSON.parse(toolRequest[2]));
             result = await caller.applyCodePreview(args);
           } else if (codeRequest || toolRequest?.[1] === 'コード確認') {
             if (ctx.user.role !== 'admin') {
               throw new TRPCError({ code: 'FORBIDDEN', message: 'コード変更機能は管理者のみ利用できます' });
             }
-            result = await caller.codePreview({ request: codeRequest ? command : toolRequest![2] });
+            result = await caller.codePreview({ request: codeRequest ? command : toolRequest![2], sessionId: input.sessionId });
           } else if (toolRequest?.[1] === '分析') {
             result = await caller.reason({ prompt: toolRequest[2] });
           } else if (toolRequest?.[1] === 'Excel') {
@@ -213,9 +252,9 @@ export const chatRouter = router({
             const args = z.object({
               title: z.string().min(1).max(200),
               description: z.string().optional(),
-              scheduledDate: z.string().regex(/^\\d{4}-\\d{2}-\\d{2}$/),
-              startTime: z.string().regex(/^\\d{2}:\\d{2}$/).optional(),
-              endTime: z.string().regex(/^\\d{2}:\\d{2}$/).optional(),
+              scheduledDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+              startTime: z.string().regex(/^\d{2}:\d{2}$/).optional(),
+              endTime: z.string().regex(/^\d{2}:\d{2}$/).optional(),
             }).parse(JSON.parse(toolRequest[2]));
             result = await scheduleMemoryRouter.createCaller(ctx).addSchedule(args);
           } else if (toolRequest?.[1] === '原価') {
@@ -236,19 +275,16 @@ export const chatRouter = router({
           } else {
             throw new TRPCError({ code: 'BAD_REQUEST', message: '未対応のツールです' });
           }
-          const timestamp = Date.now();
-          const toolUserId = uuidv4();
-          await repository.saveMessage({ id: toolUserId, userId, role: 'user', content: command, timestamp }, input.sessionId);
           const message = {
-            id: uuidv4(), userId, role: 'assistant' as const,
+            id: uuidv4(), userId, role: 'assistant' as const, metadata: { replyTo: input.messageId },
             content: toolRequest?.[1] === 'PPT出力'
               ? JSON.stringify({ status: 'generated', format: 'pptx', note: 'Retrieve the file via unifiedTools.exportPresentation; binary data is not stored in chat.' })
               : (codeRequest || toolRequest?.[1] === 'コード確認')
                 ? JSON.stringify({
                     previewId: (result as { previewId?: string }).previewId,
                     expiresInSeconds: (result as { expiresInSeconds?: number }).expiresInSeconds,
-                    changes: (result as { changes?: Array<{ path: string; baseHash?: string; proposedHash?: string }> }).changes?.map(
-                      change => ({ path: change.path, baseHash: change.baseHash, proposedHash: change.proposedHash })
+                    changes: (result as { changes?: Array<{ path: string; baseHash?: string | null; proposedHash?: string; content?: string; previousContent?: string; operation?: string }> }).changes?.map(
+                      change => ({ ...change })
                     ),
                     applied: false,
                     tested: false,
@@ -258,6 +294,7 @@ export const chatRouter = router({
                   ? JSON.stringify({
                       success: (result as { success?: boolean }).success === true,
                       tested: (result as { tested?: boolean }).tested === true,
+                      typeChecked: (result as { typeChecked?: boolean }).typeChecked === true,
                       error: (result as { error?: string }).error,
                     })
                   : JSON.stringify(result, null, 2).slice(0, 20000),
@@ -365,8 +402,8 @@ export const chatRouter = router({
           directAnswer = `AIの名前を「${aiName}」に変更しました。`;
         }
         if (directAnswer !== undefined) {
-          await repository.saveMessage({ id: uuidv4(), userId, role: 'user', content: originalMessage, timestamp: Date.now() }, input.sessionId);
-          const message = { id: uuidv4(), userId, role: 'assistant' as const, content: directAnswer, timestamp: Date.now() };
+          await repository.saveMessage({ id: input.messageId ?? uuidv4(), userId, role: 'user', content: originalMessage, timestamp: Date.now() }, input.sessionId);
+          const message = { id: uuidv4(), userId, role: 'assistant' as const, content: directAnswer, timestamp: Date.now(), metadata: { replyTo: input.messageId } };
           await repository.saveMessage(message, input.sessionId);
           return { message, session: existingSession, relatedMemories: [], reasoning: 'AZ identity memory' };
         }
@@ -379,7 +416,8 @@ export const chatRouter = router({
           userId,
           input.sessionId,
           originalMessage,
-          mobileHistory
+          mobileHistory,
+          input.messageId
         );
 
         // Persist a bounded, per-user conversation summary for tool and agent context.
@@ -410,9 +448,32 @@ export const chatRouter = router({
       } catch (error) {
         console.error('Chat processing error:', error);
         throw error;
+      } finally {
+        activeChatTurns.delete(turnKey);
       }
     }),
 
+  getTaskHistory: protectedProcedure.input(z.object({ accountId: z.string() }).optional()).query(async ({ ctx, input }) => {
+    if (input && input.accountId !== String(ctx.user.id)) throw new Error('Account mismatch');
+    const { getAZTaskHistory } = await import('./core/AZTaskRunner');
+    return getAZTaskHistory(String(ctx.user.id));
+  }),
+  searchMemory: publicProcedure.input(z.object({ query: z.string().min(1).max(500), sessionId: z.string().optional() }))
+    .query(async ({ ctx, input }) => {
+      if (ctx.user) {
+        const { searchUserPoiPoiMemories } = await import('./core/PoiPoiUnifiedStateStore');
+        return searchUserPoiPoiMemories(String(ctx.user.id), input.query, 20);
+      }
+      if (!input.sessionId) return [];
+      const repository = (await import('./repositories/ChatRepository')).getSharedChatRepository();
+      const session = await repository.getSession(input.sessionId);
+      if (session && session.userId !== 'mobile') return [];
+      const turns = session ? await repository.getMessages(input.sessionId, 100000) : [];
+      return turns.filter(turn => turn.content.toLowerCase().includes(input.query.toLowerCase())).slice(-20).map(turn => ({
+        id: turn.id, category: 'memory' as const, origin: 'pc' as const, updatedAt: turn.timestamp,
+        value: JSON.stringify({ role: turn.role, content: turn.content }),
+      }));
+    }),
   getSession: publicProcedure
     .input(
       z.object({

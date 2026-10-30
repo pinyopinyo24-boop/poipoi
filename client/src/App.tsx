@@ -28,6 +28,7 @@ import ScheduleMemory from './pages/ScheduleMemory';
 import Settings from './pages/Settings';
 
 import NotFound from "./pages/NotFound";
+import Login from "./pages/Login";
 
 function Router() {
   // make sure to consider if you need authentication for certain routes
@@ -35,6 +36,7 @@ function Router() {
     <Switch>
       
       <Route path={"/"} component={Home} />
+      <Route path="/login" component={Login} />
       {/* <Route path="/agent" component={AIAgent} /> */}
       <Route path="/streaming" component={StreamingChat} />
       <Route path="/api-docs" component={APIDocs} />

@@ -35,6 +35,9 @@ import { agentMemoryRouter } from "./routers/agentMemory";
 import { commanderRouter } from "./routers/commander";
 import { improvementRouter } from "./routers/improvement";
 import { productionRouter } from "./routers/production";
+import { productionRouter as productionManagementRouter } from "./routers.production";
+import { costRouter } from "./routers.cost";
+import { inventoryRouter } from "./routers.inventory";
 import { hybridRouter } from "./routers/hybrid";
 import { syncRouter } from "./routers/sync";
 import { evolutionSchedulerRouter } from "./routers/evolution-scheduler";
@@ -79,6 +82,9 @@ export const appRouter = router({
   commander: commanderRouter,
   improvement: improvementRouter,
   production: productionRouter,
+  productionManagement: productionManagementRouter,
+  cost: costRouter,
+  inventory: inventoryRouter,
   hybrid: hybridRouter,
   sync: syncRouter,
   evolutionScheduler: evolutionSchedulerRouter,

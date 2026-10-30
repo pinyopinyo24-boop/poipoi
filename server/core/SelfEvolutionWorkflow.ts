@@ -38,6 +38,8 @@ export interface SimulationResult {
  * (runExecution 縺瑚ｿ斐☆)
  */
 export interface ExecutionWorkflowResult {
+  codeApplied: false;
+  simulationOnly: true;
   workflowId: string;
   userId: string;
   mode: 'execution';
@@ -158,6 +160,7 @@ export class SelfEvolutionWorkflow {
     if (!approvedSimulation || !this.executionApprovals.get(userId)?.has(approvedSimulation.workflowId)) {
       throw new Error('Explicit approval is required before execution');
     }
+    this.executionApprovals.get(userId)!.delete(approvedSimulation.workflowId);
     const simulationResult = approvedSimulation;
     // simulation 縺ｮ workflowId 縺ｯ繝ｯ繝ｼ繧ｯ繝輔Ο繝ｼID縺ｨ縺ｯ蛻･縺ｫ謖√◆縺帙ｋ
     const simulation: SimulationResult = simulationResult;
@@ -169,6 +172,7 @@ export class SelfEvolutionWorkflow {
     );
 
     const result: ExecutionWorkflowResult = {
+      codeApplied: false, simulationOnly: true,
       workflowId,
       userId,
       mode: 'execution',

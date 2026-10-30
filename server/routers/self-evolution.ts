@@ -350,7 +350,7 @@ Respond in JSON format with: { "insights": ["...", "..."], "recommendations": ["
     .input(z.object({
       proposalId: z.string().uuid(),
       previewId: z.string().uuid(),
-      confirm: z.literal('APPLY_AND_VERIFY'),
+      confirm: z.enum(['APPLY_ONLY', 'APPLY_AND_VERIFY']),
     }))
     .mutation(async ({ ctx, input }) => {
       if (ctx.user.role !== 'admin') throw new Error('Administrator permission required');
@@ -368,7 +368,7 @@ Respond in JSON format with: { "insights": ["...", "..."], "recommendations": ["
         previewId: input.previewId, confirm: input.confirm,
       });
       const next = { ...proposal, status: outcome.success ? 'applied' : 'failed',
-        updatedAt: Date.now(), success: outcome.success, tested: outcome.tested,
+        updatedAt: Date.now(), success: outcome.success, tested: outcome.tested, typeChecked: outcome.typeChecked === true,
         error: outcome.error?.slice(0, 1000) };
       await syncUserPoiPoiUnifiedState(String(ctx.user.id), {
         version: 1, records: [{ id, category: 'evolution', origin: 'pc',
@@ -391,7 +391,7 @@ Respond in JSON format with: { "insights": ["...", "..."], "recommendations": ["
         improvementsGenerated: state.records.filter(record => record.category === 'evolution').length,
         systemOptimization: 'not_verified',
       },
-      nextActions: ['Review proposed changes', 'Approve code preview explicitly'],
+      nextActions: ['Review proposed changes', 'Approve code application and optional type checking separately'],
     };
   }),
 });

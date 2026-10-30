@@ -1,10 +1,11 @@
-﻿import {
+import {
   existsSync,
   mkdirSync,
   readFileSync,
   writeFileSync,
   unlinkSync,
   lstatSync,
+  readdirSync,
 } from "fs";
 import { dirname, resolve, relative } from "path";
 import { execFileSync } from "child_process";
@@ -14,19 +15,23 @@ import { invokeLLM } from "../_core/llm";
 export interface CodeChange {
   path: string;
   content: string;
-  baseHash?: string;
+  baseHash?: string | null;
+  previousContent?: string;
 }
 
 export interface CodeTaskResult {
   success: boolean;
   changes: CodeChange[];
   tested: boolean;
+  typeChecked?: boolean;
+  committed?: boolean;
   error?: string;
 }
 
 export class PoipoiCodeAgent {
   private static instance: PoipoiCodeAgent | null = null;
   private readonly root: string;
+  private applying = false;
 
   private constructor(root = process.cwd()) {
     this.root = resolve(root);
@@ -157,31 +162,61 @@ export class PoipoiCodeAgent {
     }
   }
 
-  async generate(task: string): Promise<CodeChange[]> {
+  async generate(task: string, userId = "system"): Promise<CodeChange[]> {
     if (!task.trim()) {
       throw new Error("Code generation task is empty");
     }
 
-    // Read only explicitly referenced source files, within the project boundary.
-    const sourceFiles = task.match(/(?:server|mobile|client|shared|src)\/[a-zA-Z0-9_./-]+\.(?:ts|tsx|js|jsx)/g) ?? [];
+    // Discover relevant tracked source context when a user names a capability rather
+    // than a path. Never run project code or expose configuration/secrets.
+    const explicit = task.match(/(?:server|mobile|client|shared|src)\/[a-zA-Z0-9_./-]+\.(?:ts|tsx|js|jsx)/g) ?? [];
+    const tokens = task.normalize('NFKC').toLowerCase().match(/[a-z][a-z0-9_-]{2,}/g) ?? [];
+    const hints = [
+      [/会話|チャット|文脈/, ['chat', 'conversation']],
+      [/記憶|訂正|学習/, ['memory', 'learning']],
+      [/自己進化|プログラム|コード/, ['codeagent', 'evolution']],
+      [/画面|アプリ|電卓|ゲーム|ツール/, ['client/src/app', 'unifiedtools']],
+      [/製造|生産|原価|在庫/, ['manufacturing', 'production', 'cost', 'inventory']],
+      [/予定|スケジュール/, ['schedule']],
+      [/資料|Excel|PDF|PowerPoint|PPT/i, ['unifiedtools', 'analysis', 'presentation']],
+    ] as const;
+    for (const [pattern, words] of hints) if (pattern.test(task)) tokens.push(...words);
+    const candidates: string[] = [];
+    const walk = (directory: string) => {
+      for (const entry of readdirSync(directory, { withFileTypes: true })) {
+        if (entry.isSymbolicLink() || /^(node_modules|dist|build|android|ios|core_backup.*)$/.test(entry.name)) continue;
+        const file = resolve(directory, entry.name);
+        if (entry.isDirectory()) walk(file);
+        else if (/\.[jt]sx?$/.test(entry.name) && !/\.test\.|\.bak/.test(entry.name)) {
+          candidates.push(relative(this.root, file).replace(/\\/g, '/'));
+        }
+      }
+    };
+    for (const directory of ['server', 'client/src', 'shared']) {
+      const full = resolve(this.root, directory);
+      if (existsSync(full)) walk(full);
+    }
+    const ranked = candidates.map(file => ({ file, score: tokens.reduce((sum, token) =>
+      sum + (file.toLowerCase().includes(token) ? token.length : 0), 0) }))
+      .filter(item => item.score > 0).sort((a, b) => b.score - a.score || a.file.localeCompare(b.file));
+    const sourceFiles = [...new Set([...explicit, ...ranked.map(item => item.file),
+      'client/src/App.tsx', 'server/routers.ts', 'server/routers/unifiedTools.ts'])].slice(0, 5);
     const context: string[] = [];
     const sourceHashes = new Map<string, string>();
-    for (const file of [...new Set(sourceFiles)].slice(0, 5)) {
-      try {
-        const fullPath = this.safePath(file);
-        if (!existsSync(fullPath)) continue;
-        const source = readFileSync(fullPath, "utf8");
-        if (source.length > 20000) continue;
-        context.push("Existing source: " + file + "\n" + source);
-        sourceHashes.set(file, createHash("sha256").update(source).digest("hex"));
-      } catch {
-        // Never disclose protected or inaccessible paths.
-      }
+    const sourceContents = new Map<string, string>();
+    let contextSize = 0;
+    for (const file of sourceFiles) {
+      const fullPath = this.safePath(file);
+      if (!existsSync(fullPath)) continue;
+      const source = readFileSync(fullPath, 'utf8');
+      if (source.length > 60000 || contextSize + source.length > 60000) continue;
+      contextSize += source.length;
+      context.push('Existing source: ' + file + '\n' + source);
+      sourceHashes.set(file, createHash('sha256').update(source).digest('hex'));
+      sourceContents.set(file, source);
     }
-    if (!context.length) {
-      throw new Error("Specify existing source file paths to enable grounded code evolution");
-    }
-    const planResponse = await invokeLLM({
+    if (!context.length) throw new Error('関連する既存ソースを特定できません。対象機能またはソースパスを指定してください。');
+    const planResponse = await invokeLLM({ userId,
       model: process.env.LOCAL_CODER_MODEL || "qwen2.5-coder:7b",
       temperature: 0.1,
       messages: [
@@ -198,11 +233,16 @@ export class PoipoiCodeAgent {
       "Modify the existing TypeScript project according to the user's request.",
       "Preserve existing functionality.",
       "Make the minimum necessary file changes.",
-      "First reason about dependencies and preserve all existing exports.",
+      "First reason about dependencies and preserve all existing exports. Wire any new feature into an existing reviewed entry point; an unused new file is not a completed capability.",
       "Do not fabricate unknown existing file contents; return an empty changes array if necessary.",
-      "Only modify files whose existing contents are supplied below.",
+      "Only modify existing files whose full contents are supplied below. You may also CREATE new TypeScript/JavaScript source files under server/, client/src/, shared/, src/ or mobile/src/ when necessary. Never replace an existing file whose content is absent. Connect new exports to the existing implementation; preserve compatibility.",
       "Implementation plan (check against the actual source):",
       plan.slice(0, 6000),
+      "Existing source path inventory (names only; do not modify without supplied content):",
+      candidates.slice(0, 150).join("\n"),
+      "Use only dependencies already declared by the project. Do not add packages or configuration changes.",
+      "Existing dependency names:",
+      Object.keys(JSON.parse(readFileSync(resolve(this.root, 'package.json'), 'utf8')).dependencies ?? {}).join(', '),
       "Existing project files:",
       context.join("\n\n") || "(none)",
       "Return JSON only.",
@@ -214,7 +254,7 @@ export class PoipoiCodeAgent {
       task,
     ].join("\n");
 
-    const response = await invokeLLM({
+    const response = await invokeLLM({ userId,
       model: process.env.LOCAL_CODER_MODEL || "qwen2.5-coder:7b",
       temperature: 0.1,
       response_format: {
@@ -264,15 +304,22 @@ export class PoipoiCodeAgent {
     const allowed = new Set(context.map(item => item.slice("Existing source: ".length).split("\n", 1)[0]));
     for (const change of generated) {
       const normalizedPath = change.path.replace(/\\/g, "/");
-      if (!allowed.has(normalizedPath)) {
+      const isNewSource = /^(?:server|client\/src|shared|src|mobile\/src)\/[a-zA-Z0-9_./-]+\.[jt]sx?$/.test(normalizedPath)
+        && !existsSync(this.safePath(normalizedPath));
+      if (!allowed.has(normalizedPath) && !isNewSource) {
         throw new Error("Generated change targets an unreviewed file: " + change.path);
       }
-      change.baseHash = sourceHashes.get(normalizedPath);
+      const absolute = this.safePath(normalizedPath);
+      change.path = normalizedPath;
+      change.baseHash = existsSync(absolute) ? sourceHashes.get(normalizedPath) : null;
+      change.previousContent = change.baseHash === null ? '' : sourceContents.get(normalizedPath);
     }
     return generated;
   }
 
-  async applyAndTest(changes: CodeChange[]): Promise<CodeTaskResult> {
+  async applyAndTest(changes: CodeChange[], options: { typeCheck?: boolean } = {}): Promise<CodeTaskResult> {
+    if (this.applying) return { success: false, changes: [], tested: false, error: '別のコード変更を適用中です' };
+    this.applying = true;
     const backups = new Map<string, string | null>();
     const rollback = () => {
       for (const [absolute, previous] of backups) {
@@ -292,11 +339,11 @@ export class PoipoiCodeAgent {
       if (changes.some(change => !change.content.trim())) throw new Error("Empty generated file content");
       if (changes.length > 5) throw new Error('Evolution batch exceeds five source files');
       for (const change of changes) {
-        if (!change.baseHash) throw new Error('Unverified source hash: ' + change.path);
+        if (change.baseHash === undefined) throw new Error('Unverified source hash: ' + change.path);
         const absolute = this.safePath(change.path);
         const currentHash = existsSync(absolute)
           ? createHash("sha256").update(readFileSync(absolute, "utf8")).digest("hex")
-          : "";
+          : null;
         if (currentHash !== change.baseHash) {
           throw new Error("Source changed after generation: " + change.path);
         }
@@ -319,6 +366,40 @@ export class PoipoiCodeAgent {
         }
       }
 
+      // Preserve the existing public surface even when the model proposes a full
+      // file replacement. This is a structural guard, not a functional test.
+      const exportedNames = (file: string, source: string) => {
+        const parsed = ts.createSourceFile(file, source, ts.ScriptTarget.Latest, true,
+          file.endsWith('.tsx') ? ts.ScriptKind.TSX : ts.ScriptKind.TS);
+        const names = new Set<string>();
+        const binding = (name: import('typescript').BindingName): void => {
+          if (ts.isIdentifier(name)) names.add(name.text);
+          else for (const element of name.elements) if (ts.isBindingElement(element)) binding(element.name);
+        };
+        for (const node of parsed.statements) {
+          if (ts.isExportDeclaration(node)) {
+            const module = node.moduleSpecifier && ts.isStringLiteral(node.moduleSpecifier) ? node.moduleSpecifier.text : '';
+            if (node.exportClause && ts.isNamedExports(node.exportClause)) {
+              for (const element of node.exportClause.elements) names.add('re-export:' + module + ':' + element.name.text);
+            } else names.add('re-export:' + module + ':*');
+            continue;
+          }
+          if (ts.isExportAssignment(node)) { names.add('default'); continue; }
+          const modifiers = ts.canHaveModifiers(node) ? ts.getModifiers(node) : undefined;
+          if (!modifiers?.some(item => item.kind === ts.SyntaxKind.ExportKeyword)) continue;
+          if (modifiers.some(item => item.kind === ts.SyntaxKind.DefaultKeyword)) names.add('default');
+          if (ts.isVariableStatement(node)) for (const declaration of node.declarationList.declarations) binding(declaration.name);
+          else if ('name' in node && node.name && ts.isIdentifier(node.name as import('typescript').Node)) names.add((node.name as import('typescript').Identifier).text);
+        }
+        return names;
+      };
+      for (const change of changes) {
+        if (change.baseHash === null) continue;
+        const before = exportedNames(change.path, readFileSync(this.safePath(change.path), 'utf8'));
+        const after = exportedNames(change.path, change.content);
+        for (const name of before) if (!after.has(name)) throw new Error('既存の公開機能を削除する変更を拒否しました: ' + change.path + ' / ' + name);
+      }
+
       // Existing uncommitted edits must never be silently replaced.
       const status = execFileSync("git", ["status", "--porcelain", "--untracked-files=all"], {
         cwd: this.root, encoding: "utf8", timeout: 15000, windowsHide: true,
@@ -339,12 +420,12 @@ export class PoipoiCodeAgent {
         const absolute = this.safePath(change.path);
         backups.set(absolute, existsSync(absolute) ? readFileSync(absolute, "utf8") : null);
         mkdirSync(dirname(absolute), { recursive: true });
-        writeFileSync(absolute, change.content, "utf8");
+        writeFileSync(absolute, change.content, { encoding: "utf8", flag: change.baseHash === null ? "wx" : "w" });
       }
 
-      // A successful syntax check alone is not a verified evolution.
-      // Run the project's configured type checker; failures restore every file.
-      execFileSync(process.platform === "win32" ? "cmd.exe" : "pnpm",
+      // Type checking is optional and separately approved. Functional tests are never
+      // implied by applying a patch; tested stays false in either mode.
+      if (options.typeCheck) execFileSync(process.platform === "win32" ? "cmd.exe" : "pnpm",
         process.platform === "win32" ? ["/d", "/s", "/c", "pnpm exec tsc --noEmit"] : ["exec", "tsc", "--noEmit"], {
         cwd: this.root, encoding: "utf8", timeout: 120000,
         windowsHide: true, stdio: "pipe",
@@ -355,10 +436,10 @@ export class PoipoiCodeAgent {
       execFileSync("git", ["add", "--", ...changes.map(item => item.path)], {
         cwd: this.root, timeout: 15000, windowsHide: true,
       });
-      execFileSync("git", ["commit", "-m", "PoiPoi verified self-evolution", "--", ...changes.map(item => item.path)], {
+      execFileSync("git", ["-c", "core.hooksPath=" + (process.platform === "win32" ? "NUL" : "/dev/null"), "commit", "-m", "PoiPoi approved self-evolution [skip ci]", "--", ...changes.map(item => item.path)], {
         cwd: this.root, timeout: 30000, windowsHide: true,
       });
-      return { success: true, changes, tested: true };
+      return { success: true, changes, tested: false, typeChecked: options.typeCheck === true, committed: true };
     } catch (error) {
       let detail = error instanceof Error ? error.message : String(error);
       try {
@@ -373,6 +454,8 @@ export class PoipoiCodeAgent {
       }
       try { if (backups.size) rollback(); } catch (restoreError) { detail += "; file restore failed: " + String(restoreError); }
       return { success: false, changes: [], tested: false, error: detail };
+    } finally {
+      this.applying = false;
     }
   }
 

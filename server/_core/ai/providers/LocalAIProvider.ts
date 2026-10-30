@@ -32,16 +32,13 @@ export class LocalAIProvider extends BaseAIProvider {
   async invoke(messages: AIMessage[], options?: AIInvokeOptions): Promise<AIResponse> {
     const requestId = this.generateRequestId();
     const model = options?.model || process.env.LOCAL_CODER_MODEL || 'qwen2.5-coder:7b';
-    const { PoiPoiIdentity } = await import('../../../core/PoiPoiIdentity');
     const response = await invokeLLM({
       model,
+      userId: typeof options?.metadata?.userId === 'string' ? options.metadata.userId : undefined,
       temperature: options?.temperature,
       top_p: options?.topP,
       max_tokens: options?.maxTokens,
-      messages: [
-        { role: 'system', content: PoiPoiIdentity.getSystemPrompt() },
-        ...messages,
-      ],
+      messages,
     });
     const content = response.choices[0]?.message?.content;
     if (!content?.trim()) throw new Error('Local AI returned an empty response');

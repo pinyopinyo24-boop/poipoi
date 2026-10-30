@@ -23,6 +23,8 @@ export type ExecutionStatus = 'success' | 'failure' | 'rolled_back' | 'skipped';
  * 一候補の実行結果
  */
 export interface ExecutionResult {
+  simulated: true;
+  codeApplied: false;
   candidateId: string;
   userId: string;
   status: ExecutionStatus;
@@ -126,6 +128,7 @@ export class ImprovementExecutor {
     }
 
     const result: ExecutionResult = {
+      simulated: true, codeApplied: false,
       candidateId: candidate.id,
       userId,
       status,

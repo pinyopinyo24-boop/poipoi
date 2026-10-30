@@ -1,9 +1,10 @@
-﻿export interface SavedMessage {
+export interface SavedMessage {
   id: string;
   role: "user" | "assistant";
   content: string;
   timestamp: string;
   type?: "text" | "code" | "evolution" | "program";
+  metadata?: Record<string, any>;
 }
 
 export interface SavedConversation {
@@ -15,17 +16,17 @@ export interface SavedConversation {
 
 const STORAGE_KEY = "poipoi_chat_history_v1";
 
-export function loadConversations(): SavedConversation[] {
+export function loadConversations(accountId?: string): SavedConversation[] {
   try {
-    const raw = localStorage.getItem(STORAGE_KEY);
+    const raw = localStorage.getItem(accountId && accountId !== "guest" ? STORAGE_KEY + ":" + accountId : STORAGE_KEY);
     return raw ? JSON.parse(raw) : [];
   } catch {
     return [];
   }
 }
 
-export function saveConversations(conversations: SavedConversation[]): void {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(conversations));
+export function saveConversations(conversations: SavedConversation[], accountId?: string): void {
+  localStorage.setItem(accountId && accountId !== "guest" ? STORAGE_KEY + ":" + accountId : STORAGE_KEY, JSON.stringify(conversations));
 }
 
 export function createConversation(): SavedConversation {

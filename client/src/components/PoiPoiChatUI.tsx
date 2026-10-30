@@ -29,6 +29,7 @@ interface ChatSession {
 
 export const PoiPoiChatUI: React.FC = () => {
   const { user } = useAuth();
+  const mutation = trpc.streaming.chat.useMutation();
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
@@ -76,13 +77,12 @@ export const PoiPoiChatUI: React.FC = () => {
 
     try {
       // ChatCoreを通じてメッセージを送信
-      const mutation = trpc.chat.processMessage.useMutation();
-      const response = await new Promise((resolve, reject) => {
+      const response = await new Promise<{ fullText: string }>((resolve, reject) => {
         mutation.mutate(
           {
-            userId: typeof user.id === 'string' ? user.id : String(user.id || ''),
-            sessionId: currentSessionId,
+            conversationId: currentSessionId,
             message: input,
+            messageId: userMessage.id,
           },
           {
             onSuccess: resolve,
@@ -94,7 +94,7 @@ export const PoiPoiChatUI: React.FC = () => {
       const assistantMessage: Message = {
         id: (response as any).message?.id || `msg-${Date.now().toString()}`,
         role: 'assistant',
-        content: (response as any).message?.content || (response as any).response || '',
+        content: response.fullText || (response as any).response || '',
         timestamp: (response as any).message?.timestamp || Date.now(),
         actions: (response as any).actions,
         insights: (response as any).insights,

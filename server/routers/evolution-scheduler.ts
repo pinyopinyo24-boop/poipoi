@@ -35,6 +35,8 @@ const connector = HeartbeatConnector.getInstance();
 const scheduler = EvolutionScheduler.getInstance();
 
 export const evolutionSchedulerRouter = router({
+  approveSimulation: adminProcedure.input(z.object({ simulationId: z.string().min(1), confirm: z.literal('APPLY_PARAMETERS') }))
+    .mutation(async ({ ctx, input }) => scheduler.applyApprovedSimulation(String(ctx.user.id), input.simulationId)),
   /**
    * Heartbeat コールバックを受信し、自己進化サイクルを実行する。
    *

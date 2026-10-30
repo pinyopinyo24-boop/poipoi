@@ -295,13 +295,21 @@ export class EvolutionScheduler {
   /**
    * サイクルの本体処理
    */
+  public async applyApprovedSimulation(userId: string, simulationId: string): Promise<ScheduledRunResult> {
+    const simulation = this.workflow.getHistory(userId, 1000).find(result => result.workflowId === simulationId);
+    if (!simulation || simulation.mode !== 'simulation') throw new Error('Simulation not found');
+    this.workflow.approveExecution(userId, simulationId);
+    return this.executeOneCycle('approved-' + Date.now(), userId, Date.now(), simulation);
+  }
+
   private async executeOneCycle(
     runId: string,
     userId: string,
-    startedAt: number
+    startedAt: number,
+    approvedSimulation?: SimulationResult
   ): Promise<ScheduledRunResult> {
     // Step 1: シミュレーション
-    const simResult = await this.workflow.runSimulation(userId);
+    const simResult = approvedSimulation ?? await this.workflow.runSimulation(userId);
 
     // ─ 安全条件 3: critical 候補のフィルタリング ─
     // ImprovementExecutor 側で critical+高impact は拒否済みだが、
@@ -324,13 +332,18 @@ export class EvolutionScheduler {
       return this.buildResult(runId, userId, startedAt, 'simulation_only', 0, 0, simResult);
     }
 
+    // Scheduled diagnosis never grants approval to newly generated candidates.
+    // Keep the result reviewable; an administrator must approve this exact simulation.
+    if (!approvedSimulation) return this.buildResult(runId, userId, startedAt, 'simulation_only', 0, 0, simResult);
+
     // Step 2: 実行フェーズ（simulation_only に留まらない場合のみ）
     const execResult = await this.workflow.runExecution(userId, {
       ...simResult,
       approvedCandidates: safeApproved,
     });
 
-    const changesApplied = execResult.execution.succeeded;
+    // Simulation successes are not real applied changes.
+    let changesApplied = 0;
     const rollbacks = execResult.execution.rolledBack;
 
     // ─ 安全条件 6: rollback_failed で即停止 ─
@@ -356,6 +369,7 @@ export class EvolutionScheduler {
       const tasks = this.buildApplyTasks(succeededCandidates);
       if (tasks.length > 0) {
         applyResult = await this.applier.applyBatch(userId, tasks);
+        changesApplied = applyResult.applied;
 
         // rollback_failed が applyBatch でも発生したら即停止
         if (applyResult.rollbackFailed > 0) {

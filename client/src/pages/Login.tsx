@@ -16,6 +16,7 @@ export default function Login() {
   const [email, setEmail] = useState("");
   const [isLoading, setIsLoading] = useState(false);
 
+  const utils = trpc.useUtils();
   const loginMutation = trpc.auth.login.useMutation();
   const registerMutation = trpc.auth.register.useMutation();
 
@@ -30,7 +31,8 @@ export default function Login() {
     try {
       await loginMutation.mutateAsync({ username, password });
       toast.success("ログインしました");
-      setLocation("/");
+      await utils.auth.me.invalidate();
+      setLocation("/streaming");
     } catch (error: any) {
       toast.error(error.message || "ログインに失敗しました");
     } finally {
@@ -54,7 +56,8 @@ export default function Login() {
         email: email || null,
       });
       toast.success("登録しました。自動的にログインします");
-      setLocation("/");
+      await utils.auth.me.invalidate();
+      setLocation("/streaming");
     } catch (error: any) {
       toast.error(error.message || "登録に失敗しました");
     } finally {

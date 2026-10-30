@@ -36,16 +36,18 @@ interface MemoryContext {
 
 export default function PoiPoiBetaChat() {
   const { user } = useAuth();
+  const azChat = trpc.streaming.chat.useMutation();
+  const conversation = useRef("beta_" + crypto.randomUUID());
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [inputValue, setInputValue] = useState('');
-  const [selectedProvider, setSelectedProvider] = useState('openai');
+  const [selectedProvider, setSelectedProvider] = useState('local');
   const [isLoading, setIsLoading] = useState(false);
   const [memory, setMemory] = useState<MemoryContext>({
     totalMessages: 0,
     totalTokens: 0,
     contextWindow: 4096,
-    providers: ['openai', 'claude', 'gemini', 'local'],
-    lastProvider: 'openai',
+    providers: ['local'],
+    lastProvider: 'local',
   });
   const [error, setError] = useState<string | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -81,19 +83,15 @@ export default function PoiPoiBetaChat() {
 
       setMessages(prev => [...prev, userMsg]);
 
-      // Simulate AI response (in production, call actual AI provider)
-      await new Promise(resolve => setTimeout(resolve, 1000));
+      const response = await azChat.mutateAsync({ message: userMessage, messageId: userMsg.id, conversationId: conversation.current,
+        history: messages.slice(-20).map(turn => ({ role: turn.role, content: turn.content })) });
 
       const assistantMsg: ChatMessage = {
         id: `msg_${Date.now()}_assistant`,
         role: 'assistant',
-        content: `Response from ${selectedProvider}: ${userMessage}`,
+        content: response.fullText,
         timestamp: Date.now(),
         provider: selectedProvider,
-        tokens: {
-          input: Math.floor(userMessage.split(' ').length * 1.3),
-          output: Math.floor(Math.random() * 100) + 50,
-        },
       };
 
       setMessages(prev => [...prev, assistantMsg]);
@@ -135,13 +133,14 @@ export default function PoiPoiBetaChat() {
 
   // Clear chat
   const handleClearChat = () => {
+    conversation.current = "beta_" + crypto.randomUUID();
     setMessages([]);
     setMemory({
       totalMessages: 0,
       totalTokens: 0,
       contextWindow: 4096,
-      providers: ['openai', 'claude', 'gemini', 'local'],
-      lastProvider: 'openai',
+      providers: ['local'],
+      lastProvider: 'local',
     });
   };
 
@@ -161,9 +160,6 @@ export default function PoiPoiBetaChat() {
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="openai">OpenAI (GPT-4)</SelectItem>
-              <SelectItem value="claude">Claude 3 Opus</SelectItem>
-              <SelectItem value="gemini">Gemini Pro</SelectItem>
               <SelectItem value="local">ローカルAI</SelectItem>
             </SelectContent>
           </Select>

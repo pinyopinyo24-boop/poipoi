@@ -99,11 +99,11 @@ export class AICore {
   /**
    * Get primary provider
    */
-  async invoke(messages: Parameters<IAIProvider["invoke"]>[0]): Promise<string> {
+  async invoke(messages: Parameters<IAIProvider["invoke"]>[0], options?: Parameters<IAIProvider["invoke"]>[1]): Promise<string> {
     if (!this.initialized || !this.runtimeProvider) {
       throw new Error("AICore is not initialized");
     }
-    const response = await this.runtimeProvider.invoke(messages);
+    const response = await this.runtimeProvider.invoke(messages, options);
     return response.content;
   }
   getPrimaryProvider(): IAIProvider | undefined {

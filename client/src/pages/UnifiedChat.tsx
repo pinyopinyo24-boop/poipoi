@@ -28,6 +28,7 @@ export default function UnifiedChat() {
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   const streamingChat = trpc.streaming.chat.useMutation();
+  const conversationId = useRef("unified_" + crypto.randomUUID());
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -105,6 +106,9 @@ export default function UnifiedChat() {
     try {
       const response = await streamingChat.mutateAsync({
         message: input,
+        messageId: userMessage.id,
+        conversationId: conversationId.current,
+        history: messages.filter(turn => turn.role === "user" || turn.role === "assistant").slice(-20).map(turn => ({ role: turn.role as "user" | "assistant", content: turn.content })),
       });
 
       const assistantMessage: Message = {
