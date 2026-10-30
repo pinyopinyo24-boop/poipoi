@@ -5,7 +5,6 @@
 
 import { IAIProvider, AIProviderType, AIProviderStatus } from './providers/AIProvider';
 import { ChatGPTProvider } from './providers/ChatGPTProvider';
-import { GeminiProvider } from './providers/GeminiProvider';
 import { LocalAIProvider } from './providers/LocalAIProvider';
 import { AgentManager, AgentManagerConfig, WorkflowStep, WorkflowResult } from './AgentManager';
 import { BaseAgent, AgentType, AgentStatus, AgentExecutionResult } from './agents/BaseAgent';
@@ -15,7 +14,6 @@ import { failsafeService } from '../../ai/FailsafeService';
 
 export interface AICoreConfig {
   enableChatGPT: boolean;
-  enableGemini: boolean;
   primaryProvider: AIProviderType;
   enableLogging: boolean;
 }
@@ -40,67 +38,22 @@ export class AICore {
    */
   async initialize(): Promise<void> {
     try {
-      // Initialize providers
-      if (this.config.enableChatGPT) {
-        const apiKey = process.env.OPENAI_API_KEY || '';
-        const isRealMode = !!(apiKey && apiKey !== 'demo-key');
-        if (apiKey) {
-          this.providers.set('chatgpt', new ChatGPTProvider(apiKey));
-          this.connectionMonitor.registerProvider('ChatGPT', isRealMode ? 'real' : 'demo', isRealMode);
-          console.log(`[AICore] ChatGPT provider initialized (${isRealMode ? 'real' : 'demo'} mode)`);
-        } else {
-          console.warn('[AICore] ChatGPT provider skipped - API key not found');
-          this.connectionMonitor.registerProvider('ChatGPT', 'demo', false);
-        }
-      }
-
-      if (this.config.enableGemini) {
-        const apiKey = process.env.GEMINI_API_KEY || '';
-        const isRealMode = !!(apiKey && apiKey !== 'demo-key');
-        if (apiKey) {
-          this.providers.set('gemini', new GeminiProvider(apiKey));
-          this.connectionMonitor.registerProvider('Gemini', isRealMode ? 'real' : 'demo', isRealMode);
-          console.log(`[AICore] Gemini provider initialized (${isRealMode ? 'real' : 'demo'} mode)`);
-        } else {
-          console.warn('[AICore] Gemini provider skipped - API key not found');
-          this.connectionMonitor.registerProvider('Gemini', 'demo', false);
-        }
-      }
-
-      // Get primary provider or use first available
-      // POIPOI_LOCAL_PROVIDER_REGISTERED_V1
-      if (!this.providers.has('local')) {
-        const localProvider = new LocalAIProvider(
-          process.env.LOCAL_AI_URL || 'http://localhost:11434'
-        );
-        this.providers.set('local', localProvider);
-        this.connectionMonitor.registerProvider('Local', 'real', true);
-      }
-      let primaryProvider = this.providers.get(this.config.primaryProvider);
-      if (!primaryProvider && this.providers.size > 0) {
-        console.warn(`[AICore] Primary provider '${this.config.primaryProvider}' not available, using first available`);
-        primaryProvider = Array.from(this.providers.values())[0];
-      }
-
-      if (!primaryProvider) {
-        console.warn('[AICore] No providers configured, using demo mode');
-        // Use Ollama as local fallback
-        primaryProvider = new LocalAIProvider(process.env.LOCAL_AI_URL || 'http://localhost:11434');
-        this.providers.set('local', primaryProvider);
-        this.connectionMonitor.registerProvider('Local', 'real', true);
-      }
+      // PoiPoi runs exclusively on the configured local Ollama provider.
+      // Cloud credentials and caller-supplied provider flags cannot change routing.
+      this.providers.clear();
+      const primaryProvider = new LocalAIProvider(
+        process.env.LOCAL_AI_URL || 'http://localhost:11434'
+      );
+      this.providers.set('local', primaryProvider);
+      this.connectionMonitor.registerProvider('Local', 'real', true);
 
       // Skip validation for demo mode
-      if (process.env.NODE_ENV !== 'development' || process.env.GEMINI_API_KEY || process.env.OPENAI_API_KEY) {
-        const isValid = await primaryProvider.validateConfig();
-        if (!isValid) {
-          console.warn(`[AICore] Primary provider validation failed, continuing in demo mode`);
-        }
+      const isValid = await primaryProvider.validateConfig();
+      if (!isValid) {
+        throw new Error('[AICore] Local provider unavailable');
       }
 
-      const fallbackProviders = Array.from(this.providers.values()).filter(
-        (provider) => provider.getProviderType() !== primaryProvider!.getProviderType(),
-      );
+      const fallbackProviders: IAIProvider[] = [];
       const resilientProvider = new ResilientAIProvider(primaryProvider, fallbackProviders);
       this.runtimeProvider = resilientProvider;
 
@@ -154,21 +107,14 @@ export class AICore {
     return response.content;
   }
   getPrimaryProvider(): IAIProvider | undefined {
-    return this.runtimeProvider || this.providers.get(this.config.primaryProvider);
+    return this.runtimeProvider || this.providers.get('local');
   }
 
   /**
    * Get secondary provider
    */
   getSecondaryProvider(): IAIProvider | undefined {
-    const primaryType = (this.runtimeProvider || this.providers.get(this.config.primaryProvider))?.getProviderType();
-    let secondaryProvider: IAIProvider | undefined;
-    this.providers.forEach((provider, type) => {
-      if (type !== primaryType && !secondaryProvider) {
-        secondaryProvider = provider;
-      }
-    });
-    return secondaryProvider;
+    return undefined;
   }
 
   /**
@@ -286,7 +232,7 @@ export class AICore {
     return {
       initialized: this.initialized,
       providers: Array.from(this.providers.keys()),
-      primaryProvider: this.config.primaryProvider,
+      primaryProvider: 'local',
       agentManager: this.agentManager?.getManagerStatus(),
       connectionStatus: this.connectionMonitor.getConnectionSummary(),
       failsafe: failsafeService.getStatistics(),
@@ -325,19 +271,16 @@ export async function initializeAICore(config?: Partial<AICoreConfig>): Promise<
   }
 
   const defaultConfig: AICoreConfig = {
-    enableChatGPT: !!process.env.OPENAI_API_KEY,
-    enableGemini: !!process.env.GEMINI_API_KEY,
-    primaryProvider: 'local',
     enableLogging: process.env.NODE_ENV !== 'production',
     ...config,
     primaryProvider: 'local',
-    enableGemini: false,
+    enableChatGPT: false,
   };
 
-  globalAICore = new AICore(defaultConfig);
-  await globalAICore.initialize();
-
-  return globalAICore;
+  const candidate = new AICore(defaultConfig);
+  await candidate.initialize();
+  globalAICore = candidate;
+  return candidate;
 }
 
 /**

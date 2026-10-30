@@ -89,11 +89,15 @@ export class MobileAPIConnector {
   private maxRetries: number = 3;
   private retryDelay: number = 1000;
 
-  constructor(baseURL: string = 'http://192.168.1.6:3000') {
-    this.baseURL = baseURL;
+  constructor(baseURL: string) {
+    if (!/^https?:\/\/[a-zA-Z0-9.-]+(?::\d{1,5})?(?:\/[^\s?#]*)?$/.test(baseURL) ||
+        (/^http:\/\//i.test(baseURL) && !/^http:\/\/(?:localhost|127\.0\.0\.1|10\.\d{1,3}\.\d{1,3}\.\d{1,3}|192\.168\.\d{1,3}\.\d{1,3}|172\.(?:1[6-9]|2\d|3[01])\.\d{1,3}\.\d{1,3})(?::\d{1,5})?(?:\/|$)/i.test(baseURL))) {
+      throw new Error('PC接続先URLが不正です');
+    }
+    this.baseURL = baseURL.replace(/\/+$/, '');
     this.apiClient = axios.create({
-      baseURL,
-      timeout: 30000,
+      baseURL: this.baseURL,
+      timeout: 190000,
       headers: {
         'Content-Type': 'application/json',
         'User-Agent': 'PoiPoi-Mobile/1.0',
@@ -119,6 +123,7 @@ export class MobileAPIConnector {
     try {
       const sessionToken = await AsyncStorage.getItem('sessionToken');
       const sessionId = await AsyncStorage.getItem('chatSessionId');
+      this.sessionId = sessionId;
       
       if (sessionToken) {
         this.sessionId = sessionId;
@@ -152,22 +157,58 @@ export class MobileAPIConnector {
   /**
    * チャットメッセージ送信
    */
+  async planAndExecute(request: string): Promise<APIResponse> {
+    try {
+      const response = await this.apiClient.post('/api/trpc/aiAgents.planAndExecute', { json: { request } });
+      return { success: true, data: this.getTrpcData(response.data) };
+    } catch (error) {
+      return this.handleError(error, 'AI workflow failed');
+    }
+  }
+
+  async executeUnifiedTool(name: 'reason' | 'analyzeCost' | 'memory' | 'excel' | 'pdf' | 'presentation' | 'exportPresentation' | 'codePreview' | 'analyzeDocument' | 'analyzeMultipleDocuments' | 'createPresentationFromAnalysis' | 'createPresentationFromDocuments' | 'listOfficePresentations' | 'deleteOfficePresentation' | 'listOfficeDocuments' | 'deleteOfficeDocument' | 'uploadDocument', input: Record<string, unknown>): Promise<APIResponse> {
+    try {
+      const readOnly = name === 'listOfficePresentations' || name === 'listOfficeDocuments';
+      const response = readOnly
+        ? await this.apiClient.get('/api/trpc/unifiedTools.' + name, {
+            params: { input: JSON.stringify({ json: input }) },
+          })
+        : await this.apiClient.post('/api/trpc/unifiedTools.' + name, { json: input });
+      return { success: true, data: this.getTrpcData(response.data) };
+    } catch (error) {
+      return this.handleError(error, 'Unified tool request failed');
+    }
+  }
+
   async sendChatMessage(request: ChatRequest): Promise<APIResponse<ChatResponse>> {
     try {
+      if (!this.sessionToken) {
+        return { success: false, error: 'PCチャットにはログインが必要です', code: 'UNAUTHORIZED' };
+      }
       const sessionId = request.sessionId || this.sessionId || await this.createChatSession();
+      this.sessionId = sessionId;
       const response = await this.apiClient.post('/api/trpc/chat.processMessage', {
         json: { userId: 'mobile', sessionId, message: request.message, context: request.context },
       });
       const data = this.getTrpcData(response.data);
       if (!data?.message) throw new Error('チャット応答がありません');
       const assistantText = typeof data.message === 'string' ? data.message : data.message.content;
-      const prior = await LocalCacheService.getChatHistory(sessionId) as ChatMessage[] | null;
-      const now = Date.now();
-      await LocalCacheService.saveChatHistory(sessionId, [
-        ...(prior || []),
-        { id: `mobile-user-${now}`, role: 'user', content: request.message, timestamp: now },
-        { id: data.message.id || `mobile-assistant-${now}`, role: 'assistant', content: assistantText, timestamp: data.message.timestamp || now },
-      ].slice(-200));
+      if (!assistantText || !assistantText.trim()) throw new Error('AIの回答が空です');
+      if (data.session?.id && data.session.id !== sessionId) {
+        throw new Error('PCから別セッションの回答が返されました');
+      }
+      // A cache write failure must not turn a successful PC AI answer into a local fallback.
+      try {
+        const prior = await LocalCacheService.getChatHistory(sessionId) as ChatMessage[] | null;
+        const now = Date.now();
+        await LocalCacheService.saveChatHistory(sessionId, [
+          ...(prior || []),
+          { id: `mobile-user-${now}`, role: 'user', content: request.message, timestamp: now },
+          { id: typeof data.message === 'string' ? `mobile-assistant-${now}` : data.message.id || `mobile-assistant-${now}`, role: 'assistant', content: assistantText, timestamp: typeof data.message === 'string' ? now : data.message.timestamp || now },
+        ].slice(-200));
+      } catch (cacheError) {
+        console.warn('[PoiPoi] Chat cache unavailable:', cacheError);
+      }
 
       return {
         success: true,
@@ -181,6 +222,20 @@ export class MobileAPIConnector {
   /**
    * チャット履歴取得
    */
+  async submitLearningFeedback(input: {
+    sessionId: string;
+    messageId: string;
+    accepted: boolean;
+    correction?: string;
+  }): Promise<APIResponse<{ success: boolean; learned: boolean }>> {
+    try {
+      const response = await this.apiClient.post('/api/trpc/chat.submitLearningFeedback', { json: input });
+      return { success: true, data: this.getTrpcData(response.data) };
+    } catch (error: any) {
+      return { success: false, error: error?.message || '学習評価の送信に失敗しました' };
+    }
+  }
+
   async getChatHistory(sessionId?: string): Promise<APIResponse<ChatMessage[]>> {
     // POIPOI_PRESERVE_LOCAL_HISTORY
     // PC側の取得処理が失敗しても既存の端末キャッシュは削除しない。
@@ -202,14 +257,31 @@ export class MobileAPIConnector {
       const savedData = await LocalCacheService.getChatHistory(id)
         .catch(() => null) as ChatMessage[] | null;
 
-      const data = serverData.length > 0
-        ? serverData
-        : Array.isArray(savedData) ? savedData : [];
-
+      // Preserve offline turns when the PC has only part of the conversation.
+      // Compare by both ID and nearby matching content because the PC assigns
+      // different IDs to messages it has already processed.
+      const data: ChatMessage[] = [...serverData];
+      const knownIds = new Set(data.map(m => m.id));
+      if (Array.isArray(savedData)) {
+        for (const local of savedData) {
+          if (!local || !local.id || !local.content || knownIds.has(local.id)) continue;
+          const alreadyOnPC = serverData.some(remote =>
+            remote.role === local.role &&
+            remote.content === local.content &&
+            Math.abs(new Date(remote.timestamp).getTime() - new Date(local.timestamp).getTime()) < 120000
+          );
+          if (!alreadyOnPC) {
+            data.push(local);
+            knownIds.add(local.id);
+          }
+        }
+      }
+      data.sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime());
       this.setCache(cacheKey, data);
-
-      if (serverData.length > 0) {
-        await LocalCacheService.saveChatHistory(id, data);
+      try {
+        await LocalCacheService.saveChatHistory(id, data.slice(-200));
+      } catch (cacheError) {
+        console.warn('[PoiPoi] Unable to cache merged chat history:', cacheError);
       }
 
       return {
@@ -219,7 +291,7 @@ export class MobileAPIConnector {
     } catch (error) {
       const id = sessionId || this.sessionId;
       if (id) {
-        const offlineData = await LocalCacheService.getChatHistory(id) as ChatMessage[] | null;
+        const offlineData = await LocalCacheService.getChatHistory(id).catch(() => null) as ChatMessage[] | null;
         if (offlineData) return { success: true, data: offlineData };
       }
       return this.handleError(error, 'Failed to get chat history');
@@ -334,7 +406,6 @@ export class MobileAPIConnector {
       // ローカルセッション情報をクリア
       if (id === this.sessionId) {
         this.sessionId = null;
-        this.sessionToken = null;
         await AsyncStorage.removeItem('chatSessionId');
         await LocalCacheService.clearChatHistory(id);
       }
@@ -498,14 +569,14 @@ export class MobileAPIConnector {
   }>): Promise<boolean> {
     try {
       const history = messages
-        .filter(m => m.id !== '0' && typeof m.text === 'string')
+        .filter(m => m.id !== '0' && typeof m.text === 'string' && m.text.trim() && Number.isFinite(m.timestamp))
         .slice(-200);
 
       if (history.length === 0) return true;
 
       const sessionId = this.sessionId || await this.createChatSession();
 
-      await this.apiClient.post('/api/trpc/chat.syncConversations', {
+      const syncResponse = await this.apiClient.post('/api/trpc/chat.syncHistory', {
         json: {
           conversations: [{
             id: sessionId,
@@ -520,6 +591,7 @@ export class MobileAPIConnector {
           }],
         },
       });
+      if (this.getTrpcData<{ success: boolean }>(syncResponse.data)?.success !== true) return false;
 
       return true;
     } catch (error) {

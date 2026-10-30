@@ -129,8 +129,10 @@ export class SelfImprovementManager {
     );
     const learningResult = await this.learningEngine.completeLearningCycle(userId, learningCycle.id);
 
-    // Step 3: 改善候補を生成
-    const candidates = this.generateCandidates(diagnosticReport, learningResult);
+    // Step 3: 改善候補を生成（過去の実行結果も参照）
+    const { ImprovementExecutor } = await import('./ImprovementExecutor');
+    const executionHistory = ImprovementExecutor.getInstance().getExecutionHistory(userId, 200);
+    const candidates = this.generateCandidates(userId, diagnosticReport, learningResult, executionHistory);
 
     // Step 4: 安全シミュレーションでテスト
     const testResults = this.testCandidates(candidates, diagnosticReport);
@@ -161,8 +163,10 @@ export class SelfImprovementManager {
    * 診断レポート + 学習結果から改善候補を生成
    */
   private generateCandidates(
+    userId: string,
     report: DiagnosticReport,
-    learningResult: LearningResult
+    learningResult: LearningResult,
+    executionHistory: Array<{ candidateId: string; status: string }>
   ): ImprovementCandidate[] {
     const candidates: ImprovementCandidate[] = [];
     const now = Date.now();
@@ -236,6 +240,43 @@ export class SelfImprovementManager {
         estimatedImpact: 15,
         createdAt: now,
       });
+    }
+
+    // Learn from prior candidate simulation outcomes for this user.
+    const previous = this.cycleHistory.filter(c => c.userId === userId).slice(-10);
+    const previousScores = new Map<string, number[]>();
+    for (const cycle of previous) {
+      for (const candidate of cycle.candidates) {
+        const result = cycle.testResults.find(t => t.candidateId === candidate.id);
+        if (!result) continue;
+        const key = candidate.source + ':' + candidate.description;
+        const scores = previousScores.get(key) ?? [];
+        scores.push(result.score);
+        previousScores.set(key, scores);
+      }
+    }
+    for (const candidate of candidates) {
+      const scores = previousScores.get(candidate.source + ':' + candidate.description);
+      if (!scores?.length) continue;
+      const average = scores.reduce((sum, score) => sum + score, 0) / scores.length;
+      candidate.estimatedImpact = Math.max(0, Math.min(100,
+        Math.round(candidate.estimatedImpact * (0.5 + average / 200))
+      ));
+    }
+
+    // Favor candidates with demonstrated successful execution, not just simulation scores.
+    for (const candidate of candidates) {
+      const priorIds = previous.flatMap(cycle =>
+        cycle.candidates.filter(item =>
+          item.source === candidate.source && item.description === candidate.description
+        ).map(item => item.id)
+      );
+      const outcomes = executionHistory.filter(result => priorIds.includes(result.candidateId));
+      if (outcomes.length === 0) continue;
+      const successRate = outcomes.filter(result => result.status === 'success').length / outcomes.length;
+      candidate.estimatedImpact = Math.max(0, Math.min(100,
+        Math.round(candidate.estimatedImpact * (0.5 + successRate / 2))
+      ));
     }
 
     // 影響度の高い順に並べ替え

@@ -2,11 +2,22 @@
  * Schedule Database Helpers - Test Suite
  */
 
-import { describe, it, expect, beforeAll, afterAll } from "vitest";
+import { describe, it, expect, beforeAll, afterAll, vi } from "vitest";
+import { getDb } from "./db";
+
+vi.mock("./db", () => ({ getDb: vi.fn() }));
 import * as scheduleDb from "./db.schedule";
 
 describe("Schedule Database Helpers", () => {
   const testUserId = 1;
+  beforeAll(() => {
+    vi.mocked(getDb).mockResolvedValue({
+      insert: () => ({ values: async () => [{ insertId: 1 }] }),
+      select: () => ({ from: () => ({ where: async () => [] }) }),
+      delete: () => ({ where: async () => ({ affectedRows: 0 }) }),
+      update: () => ({ set: () => ({ where: async () => ({ affectedRows: 1 }) }) }),
+    } as any);
+  });
   const testDate = new Date().toISOString().split("T")[0];
 
   describe("addSchedule", () => {

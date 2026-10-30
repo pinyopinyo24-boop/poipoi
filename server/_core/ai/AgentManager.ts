@@ -45,7 +45,7 @@ export class AgentManager {
   private executionHistory: AgentExecutionResult[] = [];
   private activeWorkflows: Map<string, WorkflowResult> = new Map();
   private executionLogger = getExecutionLogger();
-  private mode: 'demo' | 'real' = 'demo';
+  private mode: 'demo' | 'real' = process.env.DEMO_MODE === 'true' ? 'demo' : 'real';
 
   constructor(config: AgentManagerConfig) {
     this.config = config;
@@ -182,12 +182,13 @@ export class AgentManager {
         if (step.dependsOn && step.dependsOn.length > 0) {
           const previousResults: Record<string, any> = {};
           for (const depType of step.dependsOn) {
-            const depResult = results.find(r => r.agentType === depType);
-            if (depResult) {
-              previousResults[depType] = depResult.output;
+            const depResult = [...results].reverse().find(r => r.agentType === depType);
+            if (!depResult || !depResult.success) {
+              throw new Error('Unmet workflow dependency: ' + depType);
             }
+            previousResults[depType] = depResult.output;
           }
-          step.input.previousResults = previousResults;
+          step.input = { ...step.input, previousResults };
         }
 
         // Execute step
@@ -217,6 +218,9 @@ export class AgentManager {
           );
 
           const stepExecutionTime = Date.now() - stepStartTime;
+          if (!result.success || (result.output && typeof result.output === 'object' && result.output.simulated === true)) {
+            throw new Error('Agent step did not complete real work: ' + step.agentType);
+          }
           this.executionLogger.logAgentCompletion(
             workflowId,
             entryId,
@@ -224,9 +228,9 @@ export class AgentManager {
             stepExecutionTime,
             result.tokensUsed || 0
           );
-
           results.push(result);
           aggregatedResults[step.agentType] = result.output;
+          aggregatedResults['step_' + results.length] = result.output;
           totalTokensUsed += result.tokensUsed || 0;
         } catch (stepError) {
           const stepExecutionTime = Date.now() - stepStartTime;
@@ -251,6 +255,9 @@ export class AgentManager {
 
       const executionTime = Date.now() - startTime;
 
+      if (results.length !== steps.length) {
+        throw new Error('Workflow did not complete every planned step');
+      }
       workflow.status = 'completed';
       workflow.steps = results;
       workflow.aggregatedResults = aggregatedResults;
@@ -273,6 +280,9 @@ export class AgentManager {
 
       workflow.status = 'failed';
       workflow.error = errorMessage;
+      workflow.steps = results;
+      workflow.aggregatedResults = aggregatedResults;
+      workflow.totalTokensUsed = totalTokensUsed;
       workflow.executionTime = executionTime;
 
       // Complete execution logging

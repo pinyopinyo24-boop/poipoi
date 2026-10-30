@@ -1,4 +1,23 @@
 ﻿import { LearningKnowledgeBridge } from "./LearningKnowledgeBridge";
+import { syncPoiPoiUnifiedState, getPoiPoiUnifiedState } from "./PoiPoiUnifiedStateStore";
+import { createHash } from "node:crypto";
+
+async function publishLearning(task: string, solution: string, accepted: boolean, correction?: string): Promise<void> {
+  const normalizedTask = task.normalize("NFKC").trim().toLowerCase();
+  const normalizedSolution = (correction?.trim() || solution).normalize("NFKC").trim();
+  const id = createHash("sha256").update(JSON.stringify([normalizedTask, normalizedSolution])).digest("hex");
+  const records = [{
+    id, category: "learning" as const, origin: "pc" as const, updatedAt: Date.now(),
+    value: JSON.stringify({ task, solution: correction?.trim() || solution, outcome: accepted || !!correction?.trim() ? "success" : "failure", feedback: correction?.trim() }),
+  }];
+  if (correction?.trim() && correction.trim() !== solution) {
+    const rejectedId = createHash("sha256").update(JSON.stringify([normalizedTask, solution.normalize("NFKC").trim()])).digest("hex");
+    records.push({ id: rejectedId, category: "learning" as const, origin: "pc" as const, updatedAt: Date.now(),
+      value: JSON.stringify({ task, solution, outcome: "failure" }) });
+  }
+  await syncPoiPoiUnifiedState({ version: 1, records });
+}
+
 
 export class LearningContextIntegration {
   private readonly knowledge: LearningKnowledgeBridge;
@@ -9,11 +28,23 @@ export class LearningContextIntegration {
 
   async buildContext(message: string, limit = 5): Promise<string> {
     const entries = await this.knowledge.recall(message, limit);
-    if (!entries.length) return "";
+    const shared = await getPoiPoiUnifiedState();
+    const memories = shared.records.filter(record =>
+      record.category === "memory" &&
+      message.length >= 4 &&
+      record.value.includes(message)
+    ).slice(-3);
+    if (!entries.length && !memories.length) return "";
 
+    // Record only accepted examples actually supplied to the AI.
+    await Promise.all(entries.map(e => this.knowledge.recordUsage(e.task)));
     return entries.map((e, i) =>
-      `${i + 1}. Question: ${e.task}\nAnswer: ${e.solution}`
-    ).join("\n\n");
+      `${i + 1}. Question: ${e.task.slice(0, 500)}\nAnswer: ${e.solution.slice(0, 1200)}`
+    ).concat(memories.map(record => `Memory: ${record.value.slice(0, 500)}`)).join("\n\n");
+  }
+
+  async evaluateKnowledge(queries: Array<{ question: string; expectedAnswer: string }>) {
+    return this.knowledge.evaluateRecall(queries);
   }
 
   async recordResult(input: {
@@ -28,6 +59,7 @@ export class LearningContextIntegration {
       outcome: input.success ? "success" : "failure",
       feedback: input.feedback
     });
+    await publishLearning(input.task, input.solution, input.success, input.feedback);
   }
 }
 
@@ -51,18 +83,8 @@ export async function recordLearningFeedback(
 ): Promise<void> {
   if (!task.trim() || !answer.trim()) return;
 
-  const learning = new LearningContextIntegration(process.cwd());
-  const corrected = correction?.trim();
-
-  if (!accepted) {
-    await learning.recordResult({
-      task, solution: answer, success: false, feedback: corrected
-    });
-  }
-
-  if (accepted || corrected) {
-    await learning.recordResult({
-      task, solution: corrected || answer, success: true, feedback: corrected
-    });
-  }
+  await new LearningKnowledgeBridge(process.cwd()).recordFeedback(
+    task, answer, accepted, correction
+  );
+  await publishLearning(task, answer, accepted, correction);
 }

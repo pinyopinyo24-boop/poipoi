@@ -142,7 +142,7 @@ export class SelfLearningEngine {
     }
 
     const cycle = this.learningCycles.get(cycleId);
-    if (!cycle) {
+    if (!cycle || cycle.userId !== userId) {
       throw new Error('Learning cycle not found');
     }
 
@@ -158,6 +158,9 @@ export class SelfLearningEngine {
       metadata: metadata || {},
     };
 
+    if (cycle.status !== LearningCycleStatus.RUNNING) {
+      throw new Error('Cannot record data in a non-running learning cycle');
+    }
     this.learningData.push(dataPoint);
     cycle.dataPoints.push(dataPoint);
 
@@ -175,10 +178,13 @@ export class SelfLearningEngine {
     }
 
     const cycle = this.learningCycles.get(cycleId);
-    if (!cycle) {
+    if (!cycle || cycle.userId !== userId) {
       throw new Error('Learning cycle not found');
     }
 
+    if (cycle.status !== LearningCycleStatus.RUNNING) {
+      throw new Error('Learning cycle is not running');
+    }
     cycle.endTime = Date.now();
     cycle.status = LearningCycleStatus.COMPLETED;
 
@@ -317,18 +323,18 @@ export class SelfLearningEngine {
     const successRate = this.calculateSuccessRate(cycle);
     const failureRate = this.calculateFailureRate(cycle);
 
-    if (failureRate > 0.3) {
-      recommendations.push('High failure rate detected - review error patterns');
+    if (failureRate > 0.3 && cycle.dataPoints.length >= 5) {
+      recommendations.push(`High failure rate (${Math.round(failureRate * 100)}% across ${cycle.dataPoints.length} operations) - review error patterns`);
     }
 
-    if (successRate > 0.8) {
+    if (successRate > 0.8 && cycle.dataPoints.length >= 5) {
       recommendations.push('Strong success pattern - continue current approach');
     }
 
     if (cycle.dataPoints.length > 0) {
       const avgDuration =
         cycle.dataPoints.reduce((sum, d) => sum + d.duration, 0) / cycle.dataPoints.length;
-      if (avgDuration > 1000) {
+      if (cycle.dataPoints.length >= 5 && avgDuration > 1000) {
         recommendations.push('Performance optimization recommended');
       }
     }
@@ -350,7 +356,8 @@ export class SelfLearningEngine {
       throw new Error('User does not have permission to read learning data');
     }
 
-    return this.learningCycles.get(cycleId) || null;
+    const cycle = this.learningCycles.get(cycleId);
+    return cycle?.userId === userId ? cycle : null;
   }
 
   /**

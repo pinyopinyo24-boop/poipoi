@@ -33,23 +33,27 @@ export class PDFAnalysisManager {
    */
   async parsePDF(filePath: string): Promise<PDFAnalysisResult | null> {
     try {
+      const { PDFParse } = await import('pdf-parse');
+      const { readFile } = await import('node:fs/promises');
+      const parser = new PDFParse({ data: new Uint8Array(await readFile(filePath)) });
+      let extracted;
+      try { extracted = await parser.getText(); }
+      finally { await parser.destroy(); }
       // シミュレーション用の実装
       const fileName = filePath.split('/').pop() || 'document.pdf';
       
-      const pages: PDFPage[] = [
-        {
-          pageNumber: 1,
-          text: 'ページ1のコンテンツ',
-          lines: ['ページ1のコンテンツ'],
-        },
-      ];
+      const pages: PDFPage[] = extracted.pages.map((page, index) => ({
+          pageNumber: index + 1,
+          text: page.text,
+          lines: page.text.split('\n'),
+        }));
 
-      const structure = this.extractStructure('ページ1のコンテンツ');
+      const structure = this.extractStructure(extracted.text);
 
       return {
         fileName,
-        pageCount: 1,
-        totalText: 'ページ1のコンテンツ',
+        pageCount: extracted.total,
+        totalText: extracted.text,
         pages,
         metadata: {
           title: fileName,

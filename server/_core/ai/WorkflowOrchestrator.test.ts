@@ -11,7 +11,7 @@ import type { AgentManagerConfig } from './AgentManager';
 import { MemoryIntegrationService } from './MemoryIntegrationService';
 import { ExecutionLogger } from './ExecutionLogger';
 import type { AICore } from './AICore';
-import { GeminiProvider } from './providers/GeminiProvider';
+import { LocalAIProvider } from './providers/LocalAIProvider';
 
 describe('WorkflowOrchestrator', () => {
   let orchestrator: WorkflowOrchestrator;
@@ -25,7 +25,7 @@ describe('WorkflowOrchestrator', () => {
     vi.stubEnv('DEMO_MODE', 'true');
 
     // Initialize mock providers and managers
-    const provider = new GeminiProvider('demo-key');
+    const provider = new LocalAIProvider();
     
     const managerConfig: AgentManagerConfig = {
       primaryProvider: provider,

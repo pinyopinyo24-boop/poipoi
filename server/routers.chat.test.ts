@@ -4,10 +4,18 @@
 
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { chatRouter } from './routers.chat';
+import { getSharedChatRepository } from './repositories/ChatRepository';
 
 describe('Chat Router', () => {
-  beforeEach(() => {
+  beforeEach(async () => {
     vi.clearAllMocks();
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: true, text: async () => JSON.stringify({ model: 'qwen2.5-coder:7b', message: { role: 'assistant', content: 'テスト応答' }, prompt_eval_count: 10, eval_count: 5 }) }));
+    const repository = getSharedChatRepository();
+    await repository.saveSession({
+      id: 'session-1', userId: 'user-123', title: 'Test session',
+      createdAt: Date.now(), updatedAt: Date.now(), messageCount: 0,
+    });
+    await repository.saveSession({ id: 'new-session', userId: 'user-123', title: 'Empty session', createdAt: Date.now(), updatedAt: Date.now(), messageCount: 0 });
   });
 
   describe('processMessage', () => {
@@ -197,12 +205,11 @@ describe('Chat Router', () => {
         session: {},
       } as any);
 
-      const result = await caller.deleteSession({
+      await expect(caller.deleteSession({
         sessionId: 'session-1',
         userId: 'user-123',
-      });
-
-      expect(result.success).toBe(true);
+      })).rejects.toThrow('Session deletion not approved');
+      expect(await getSharedChatRepository().getSession('session-1')).not.toBeNull();
     });
 
     it('should handle non-existent session', async () => {
@@ -320,12 +327,11 @@ describe('Chat Router', () => {
       expect(stats).toBeDefined();
 
       // 5. Delete session
-      const deleteResult = await caller.deleteSession({
+      await expect(caller.deleteSession({
         sessionId: session.id,
         userId: 'user-123',
-      });
-
-      expect(deleteResult.success).toBe(true);
+      })).rejects.toThrow('Session deletion not approved');
+      expect(await getSharedChatRepository().getSession(session.id)).not.toBeNull();
     });
 
     it('should handle multiple sessions', async () => {

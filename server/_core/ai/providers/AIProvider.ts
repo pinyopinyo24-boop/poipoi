@@ -3,7 +3,7 @@
  * Supports provider-agnostic AI operations
  */
 
-export type AIProviderType = 'chatgpt' | 'gemini' | 'local';
+export type AIProviderType = 'chatgpt' | 'local';
 
 export interface AIMessage {
   role: 'system' | 'user' | 'assistant';

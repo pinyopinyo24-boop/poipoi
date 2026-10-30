@@ -115,9 +115,14 @@ export class ImprovementExecutor {
     } catch (err) {
       // Step 3: 失敗時はロールバック
       failureReason = err instanceof Error ? err.message : String(err);
-      await this.rollback(userId, candidate, snapshot);
-      rolledBack = true;
-      status = 'rolled_back';
+      try {
+        await this.rollback(userId, candidate, snapshot);
+        rolledBack = true;
+        status = 'rolled_back';
+      } catch (rollbackError) {
+        status = 'failure';
+        failureReason = `${failureReason}; rollback failed: ${String(rollbackError)}`;
+      }
     }
 
     const result: ExecutionResult = {
@@ -130,10 +135,13 @@ export class ImprovementExecutor {
       executedAt: startedAt,
     };
 
-    // Step 4: 結果を保存
-    await this.saveResult(userId, candidate, result);
-
+    // Store the outcome before forwarding it to learning storage.
     this.executionHistory.push(result);
+    try {
+      await this.saveResult(userId, candidate, result);
+    } catch (storageError) {
+      console.warn('[PoiPoi] Improvement result persistence failed:', storageError);
+    }
     return result;
   }
 
@@ -145,10 +153,37 @@ export class ImprovementExecutor {
     candidates: ImprovementCandidate[]
   ): Promise<ExecutionBatchSummary> {
     const results: ExecutionResult[] = [];
+    let learningCycleId: string | undefined;
+    try {
+      learningCycleId = (await this.learningEngine.startLearningCycle(userId)).id;
+    } catch (error) {
+      console.warn('[PoiPoi] Improvement learning cycle unavailable:', error);
+    }
 
     for (const candidate of candidates) {
       const result = await this.execute(userId, candidate);
       results.push(result);
+      if (learningCycleId) {
+        try {
+          await this.learningEngine.recordDataPoint(
+            userId, learningCycleId,
+            { source: 'improvement', candidateId: candidate.id, title: candidate.title },
+            { status: result.status, rolledBack: result.rolledBack },
+            result.status === 'success' ? 'success' : 'failure',
+            result.durationMs,
+            { priority: candidate.priority, estimatedImpact: candidate.estimatedImpact }
+          );
+        } catch (error) {
+          console.warn('[PoiPoi] Improvement learning data unavailable:', error);
+        }
+      }
+    }
+    if (learningCycleId) {
+      try {
+        await this.learningEngine.completeLearningCycle(userId, learningCycleId);
+      } catch (error) {
+        console.warn('[PoiPoi] Improvement learning completion unavailable:', error);
+      }
     }
 
     const summary: ExecutionBatchSummary = {
@@ -164,7 +199,11 @@ export class ImprovementExecutor {
 
     // バッチサマリーをメモリに保存
     const batchKey = `execution_batch_${userId}_${summary.executedAt}`;
-    this.memoryEngine.setMemory(userId, batchKey, summary);
+    try {
+      this.memoryEngine.setMemory(userId, batchKey, summary);
+    } catch (storageError) {
+      console.warn('[PoiPoi] Improvement batch summary persistence failed:', storageError);
+    }
 
     return summary;
   }
@@ -173,16 +212,20 @@ export class ImprovementExecutor {
    * 実行履歴を取得
    */
   public getExecutionHistory(userId: string, limit = 50): ExecutionResult[] {
+    const safeLimit = Number.isFinite(limit) ? Math.max(0, Math.trunc(limit)) : 50;
+    if (safeLimit === 0) return [];
     return this.executionHistory
       .filter((r) => r.userId === userId)
-      .slice(-limit);
+      .slice(-safeLimit);
   }
 
   /**
    * スナップショットを取得
    */
-  public getSnapshot(candidateId: string): ExecutionSnapshot | undefined {
-    return this.snapshots.get(candidateId);
+  public getSnapshot(candidateId: string, userId?: string): ExecutionSnapshot | undefined {
+    if (userId) return this.snapshots.get(`${userId}:${candidateId}`);
+    // Without a user scope, do not expose another user's saved snapshot.
+    return undefined;
   }
 
   /**
@@ -239,7 +282,7 @@ export class ImprovementExecutor {
       },
     };
 
-    this.snapshots.set(candidate.id, snapshot);
+    this.snapshots.set(`${userId}:${candidate.id}`, snapshot);
     this.memoryEngine.setMemory(userId, `snapshot_${candidate.id}`, snapshot);
 
     return snapshot;
@@ -328,7 +371,7 @@ export class ImprovementExecutor {
     // （学習サイクルが起動済みかどうかに依存しないよう try/catch で保護）
     try {
       const cycles = await this.learningEngine.getAllLearningCycles(userId);
-      const activeCycle = cycles.find((c) => c.status === 'running' as any);
+      const activeCycle = cycles.find(c => c.status === 'running' && !c.dataPoints.some(point => point.input?.candidateId === candidate.id || point.input?.candidateId === undefined && point.input?.source === 'improvement' && point.input?.title === candidate.title));
 
       if (activeCycle) {
         await this.learningEngine.recordDataPoint(

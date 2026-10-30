@@ -37,12 +37,14 @@ export function mergePoiPoiState(
     }
   }
 
-  return {
-    version: 1,
-    records: Array.from(merged.values()).sort(
-      (a, b) => a.updatedAt - b.updatedAt
-    ),
-  };
+  const records = Array.from(merged.values()).sort(
+    (a, b) => a.updatedAt - b.updatedAt
+  );
+  // Bound persisted state and sync payloads without silently discarding memories.
+  if (records.length > 10000) {
+    throw new Error('PoiPoi state exceeds sync limit; no records were discarded');
+  }
+  return { version: 1, records };
 }
 
 export function serializePoiPoiState(
@@ -68,6 +70,8 @@ export function deserializePoiPoiState(
   }
 
   const records: PoiPoiStateRecord[] = [];
+
+  if (parsed.records.length > 10000) throw new Error('PoiPoi state exceeds sync limit');
 
   for (const item of parsed.records) {
     if (

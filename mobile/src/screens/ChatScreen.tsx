@@ -2,6 +2,7 @@ import * as React from 'react';
 import { useState, useEffect } from 'react';
 import { synchronizeMobilePoiPoiState } from '../services/PoiPoiUnifiedStateSync';
 import * as Linking from 'expo-linking';
+import * as Updates from 'expo-updates';
 function extractAIMessage(value: unknown): string {
   if (typeof value !== "string") {
     return value == null ? "応答がありません" : JSON.stringify(value);
@@ -27,6 +28,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { MobileSelfEvolution } from '../services/MobileSelfEvolution';
 import { AndroidAIModelManager } from '../services/AndroidAIModelManager';
 import { AndroidLocalAI } from '../services/AndroidLocalAI';
+import { replyWithLocalIdentity } from '../services/PoiPoiLocalIdentity';
 import { Keyboard, 
   View,
   Text,
@@ -41,7 +43,7 @@ import { Keyboard,
   Share,
 } from 'react-native';
 import { CameraView, useCameraPermissions } from 'expo-camera';
-import { useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import * as FileSystem from 'expo-file-system';
 import { VoiceInputUI } from '../components/VoiceInputUI';
 import { MobileAPIConnector, ChatRequest, ChatResponse } from "../services/MobileAPIConnector";
@@ -74,7 +76,8 @@ export default function ChatScreen() {
     const sync = async () => {
       if (!active) return;
       try {
-        await synchronizeMobilePoiPoiState('http://192.168.1.6:3000');
+        const savedPcUrl = await AsyncStorage.getItem('POIPOI_PC_URL');
+        if (savedPcUrl) await synchronizeMobilePoiPoiState(savedPcUrl);
         await MobileSelfEvolution.restoreEvolutionFromUnifiedState();
         await MobileSelfEvolution.applyPcEvolutionResults();
       } catch (error) {
@@ -121,74 +124,6 @@ export default function ChatScreen() {
   const [chatSessions, setChatSessions] = useState<Array<{ id: string; title?: string }>>([]);
   const [showHistory, setShowHistory] = useState(false);
 
-  // POIPOI_UNIFIED_CONVERSATION_SYNC_V3
-  const lastSyncedConversationRef = useRef('');
-  const messagesRef = useRef(messages);
-  messagesRef.current = messages;
-
-  useEffect(() => {
-    if (!localHistoryReady || !apiConnector || !isConnected || isLoading) return;
-
-    let cancelled = false;
-    let retryTimer: ReturnType<typeof setTimeout> | null = null;
-
-    const sync = async () => {
-      if (cancelled) return;
-
-      try {
-        const current = messagesRef.current;
-        const signature = JSON.stringify(
-          current.map(m => [m.id, m.text, m.isUser, m.timestamp])
-        );
-
-        if (signature !== lastSyncedConversationRef.current) {
-          const success = await apiConnector.syncMobileConversations(current);
-          if (!success) throw new Error('PCへの会話同期に失敗しました');
-          if (cancelled) return;
-          lastSyncedConversationRef.current = signature;
-        }
-
-        const sessionId = await AsyncStorage.getItem('chatSessionId');
-        if (!sessionId || cancelled) return;
-
-        const result = await apiConnector.getChatHistory(sessionId);
-        if (!result.success || !result.data || cancelled) return;
-
-        const incoming = result.data
-          .filter(m => m && typeof m.id === 'string' && typeof m.content === 'string')
-          .map(m => ({
-            id: m.id,
-            text: m.content,
-            isUser: m.role === 'user',
-            timestamp: typeof m.timestamp === 'number'
-              ? m.timestamp
-              : new Date(m.timestamp).getTime(),
-          }))
-          .filter(m => Number.isFinite(m.timestamp));
-
-        setMessages(prev => {
-          const known = new Set(prev.map(m => m.id));
-          const additions = incoming.filter(m => !known.has(m.id));
-          return additions.length
-            ? [...prev, ...additions].sort((a, b) => a.timestamp - b.timestamp)
-            : prev;
-        });
-      } catch (error) {
-        console.warn('[PoiPoi] 会話同期失敗:', error);
-        if (!cancelled) {
-          retryTimer = setTimeout(() => void sync(), 10000);
-        }
-      }
-    };
-
-    const timer = setTimeout(() => void sync(), 1500);
-
-    return () => {
-      cancelled = true;
-      clearTimeout(timer);
-      if (retryTimer) clearTimeout(retryTimer);
-    };
-  }, [messages, localHistoryReady, apiConnector, isConnected, isLoading]);
   const openChatHistory = async () => {
     if (!apiConnector || !isConnected) {
       setShowHistory(true);
@@ -211,6 +146,8 @@ export default function ChatScreen() {
       return;
     }
     await apiConnector.selectChatSession(id);
+    // A new history selection must not inherit the previous session's sync signature.
+    lastSyncedConversationRef.current = '';
     setSessionId(id);
     setMessages(result.data.map(message => ({
       id: message.id,
@@ -222,6 +159,33 @@ export default function ChatScreen() {
   };
   useEffect(()=>{AndroidAIModelManager.setProgressListener(setModelDownloadProgress);return ()=>AndroidAIModelManager.setProgressListener(null);},[]);
   const [apiConnector, setApiConnector] = useState<MobileAPIConnector | null>(null);
+  const rateAssistantAnswer = (item: Message) => {
+    if (item.isUser) return;
+    if (!apiConnector || !isConnected || !(sessionId || apiConnector.getSessionId())) {
+      Alert.alert('学習評価', 'PC接続時に評価できます。オフライン中の訂正はチャットで「正しくは…」と入力してください。');
+      return;
+    }
+    Alert.alert('この回答を評価', '回答を長押しして評価できます。', [
+      { text: 'キャンセル', style: 'cancel' },
+      { text: '正しい', onPress: () => { void submitRating(item, true); } },
+      { text: '間違い', onPress: () => { void submitRating(item, false); } },
+    ]);
+  };
+
+  const submitRating = async (item: Message, accepted: boolean) => {
+    const activeSession = sessionId || apiConnector?.getSessionId();
+    if (!apiConnector || !activeSession) return;
+    const result = await apiConnector.submitLearningFeedback({
+      sessionId: activeSession,
+      messageId: item.id,
+      accepted,
+    });
+    Alert.alert('学習評価', result.success
+      ? (accepted ? '正しい回答として記録しました' : '誤った回答として記録しました。正しい内容は「正しくは…」と送信してください。')
+      : (result.error || '評価を保存できませんでした'));
+  };
+
+
   const [isConnected, setIsConnected] = useState(false);
   const [sessionId, setSessionId] = useState<string | undefined>();
   const [loginUsername, setLoginUsername] = useState('');
@@ -229,6 +193,85 @@ export default function ChatScreen() {
   const [loginBusy, setLoginBusy] = useState(false);
   const [showLogin, setShowLogin] = useState(false);
   const [isAuthenticated, setIsAuthenticated] = useState(false);
+
+  // POIPOI_UNIFIED_CONVERSATION_SYNC_V3
+  const lastSyncedConversationRef = useRef('');
+  const messagesRef = useRef(messages);
+  messagesRef.current = messages;
+
+  useEffect(() => {
+    if (!localHistoryReady || !apiConnector || !isConnected || !isAuthenticated || isLoading) return;
+
+    let cancelled = false;
+    let retryTimer: ReturnType<typeof setTimeout> | null = null;
+
+    const sync = async () => {
+      if (cancelled || isLoading) return;
+
+      try {
+        const current = messagesRef.current;
+        const activeSessionId = apiConnector.getSessionId();
+        const signature = JSON.stringify({
+          sessionId: activeSessionId,
+          messages: current.map(m => [m.id, m.text, m.isUser, m.timestamp]),
+        });
+
+        if (signature !== lastSyncedConversationRef.current) {
+          const success = await apiConnector.syncMobileConversations(current);
+          if (!success) throw new Error('PCへの会話同期に失敗しました');
+          if (cancelled) return;
+          lastSyncedConversationRef.current = signature;
+        }
+
+        const sessionId = apiConnector.getSessionId();
+        if (!sessionId || cancelled) return;
+
+        const result = await apiConnector.getChatHistory(sessionId);
+        if (!result.success || !result.data || cancelled) return;
+
+        const incoming = result.data
+          .filter(m => m && typeof m.id === 'string' && typeof m.content === 'string')
+          .map(m => ({
+            id: m.id,
+            text: m.content,
+            isUser: m.role === 'user',
+            timestamp: typeof m.timestamp === 'number'
+              ? m.timestamp
+              : new Date(m.timestamp).getTime(),
+          }))
+          .filter(m => Number.isFinite(m.timestamp));
+
+        setMessages(prev => {
+          const known = new Set(prev.map(m => m.id));
+          const additions = incoming.filter(m => {
+            if (known.has(m.id)) return false;
+            // PC replies have different IDs from the optimistic mobile turns.
+            return !prev.some(existing =>
+              existing.isUser === m.isUser &&
+              existing.text === m.text &&
+              Math.abs(existing.timestamp - m.timestamp) < 120000
+            );
+          });
+          return additions.length
+            ? [...prev, ...additions].sort((a, b) => a.timestamp - b.timestamp)
+            : prev;
+        });
+      } catch (error) {
+        console.warn('[PoiPoi] 会話同期失敗:', error);
+        if (!cancelled) {
+          retryTimer = setTimeout(() => void sync(), 10000);
+        }
+      }
+    };
+
+    const timer = setTimeout(() => void sync(), 1500);
+
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+      if (retryTimer) clearTimeout(retryTimer);
+    };
+  }, [messages, localHistoryReady, apiConnector, isConnected, isAuthenticated, isLoading]);
 
   const handleLogin = async () => {
     if (!apiConnector || !loginUsername.trim() || !loginPassword || loginBusy) return;
@@ -261,6 +304,26 @@ export default function ChatScreen() {
         setShowHistory(false);
       } else {
         setSessionId(previousSessionId || undefined);
+      }
+      const nextOwner = String(authUser.id);
+      const nextOfficeKey = 'POIPOI_OFFICE_SESSION_V1:' + baseURL.replace(/\/$/, '') + ':' + nextOwner;
+      analyzedDocumentsRef.current = [];
+      lastDocumentAnalysisRef.current = '';
+      documentOwnerRef.current = nextOwner;
+      officeSessionKeyRef.current = nextOfficeKey;
+      try {
+        const stored = await AsyncStorage.getItem(nextOfficeKey);
+        if (stored) {
+          const parsed = JSON.parse(stored);
+          if (Array.isArray(parsed?.files) && parsed.files.length <= 6 &&
+              parsed.files.every((x: any) => x && typeof x.file === 'string' &&
+                typeof x.name === 'string' && (x.type === 'pdf' || x.type === 'xlsx'))) {
+            analyzedDocumentsRef.current = parsed.files;
+            lastDocumentAnalysisRef.current = typeof parsed.analysis === 'string' ? parsed.analysis : '';
+          }
+        }
+      } catch (storageError) {
+        console.warn('Office作業状態を復元できませんでした:', storageError);
       }
       setIsConnected(true);
       setIsAuthenticated(true);
@@ -340,6 +403,23 @@ export default function ChatScreen() {
 
   const checkMobileUpdate = async (baseURL: string) => {
     try {
+      // OTA applies only to compatible native builds with a configured update endpoint.
+      // Never replace native code or trigger an APK build from an OTA check.
+      if (!__DEV__ && Updates.isEnabled) {
+        try {
+          const ota = await Updates.checkForUpdateAsync();
+          if (ota.isAvailable) {
+            await Updates.fetchUpdateAsync();
+            Alert.alert('PoiPoiアップデート', 'アプリの更新を取得しました。再起動して適用しますか？', [
+              { text: 'あとで', style: 'cancel' },
+              { text: '再起動', onPress: () => { void Updates.reloadAsync(); } },
+            ]);
+            return;
+          }
+        } catch (otaError) {
+          console.warn('[PoiPoi] OTA更新確認失敗:', otaError);
+        }
+      }
       const response = await fetch(`${baseURL.replace(/\/$/, '')}/api/mobile-update`);
       if (!response.ok) return;
 
@@ -383,17 +463,29 @@ export default function ChatScreen() {
   useEffect(() => {
     let active = true;
     let checking = false;
+    let previouslyReachable = false;
+    let lastSyncAt = 0;
 
     const checkPC = async () => {
       if (!active || checking) return;
       checking = true;
       try {
-        if (await AsyncStorage.getItem('POIPOI_PC_DISCONNECTED') === '1') return;
+        if (await AsyncStorage.getItem('POIPOI_PC_DISCONNECTED') === '1') {
+          previouslyReachable = false;
+          setIsConnected(false);
+          setIsAuthenticated(false);
+          return;
+        }
 
         const url = (await AsyncStorage.getItem('POIPOI_PC_URL'))
           || Constants.expoConfig?.extra?.apiBaseUrl;
 
-        if (typeof url !== 'string' || !url.trim()) return;
+        if (typeof url !== 'string' || !url.trim()) {
+          previouslyReachable = false;
+          setIsConnected(false);
+          setIsAuthenticated(false);
+          return;
+        }
 
         const reachable = await Promise.race([
           fetch(`${url.replace(/\/$/, '')}/api/health`)
@@ -405,7 +497,9 @@ export default function ChatScreen() {
         if (!active) return;
 
         if (!reachable) {
+          previouslyReachable = false;
           setIsConnected(false);
+          setIsAuthenticated(false);
           return;
         }
 
@@ -415,11 +509,16 @@ export default function ChatScreen() {
         if (!active) return;
         if (await AsyncStorage.getItem('POIPOI_PC_DISCONNECTED') === '1') return;
 
+        const authenticated = await connector.checkAuthentication();
         setApiConnector(connector);
-        setIsAuthenticated(await connector.checkAuthentication());
-        setSessionId(connector.getSessionId() || undefined);
+        setIsAuthenticated(authenticated);
+        setSessionId(authenticated ? connector.getSessionId() || undefined : undefined);
         setIsConnected(true);
-        void checkMobileUpdate(url);
+        const justReconnected = !previouslyReachable;
+        previouslyReachable = true;
+        if (justReconnected) void checkMobileUpdate(url);
+        if (!authenticated || (!justReconnected && Date.now() - lastSyncAt < 60000)) return;
+        lastSyncAt = Date.now();
         void synchronizeMobilePoiPoiState(url)
           .then(async () => {
             await MobileSelfEvolution.restoreEvolutionFromUnifiedState();
@@ -430,10 +529,15 @@ export default function ChatScreen() {
             }
           })
           .catch(error => {
+            lastSyncAt = 0;
             console.warn('[PoiPoi] PC・Android自己進化同期失敗:', error);
           });
       } catch (error) {
-        if (active) setIsConnected(false);
+        if (active) {
+          previouslyReachable = false;
+          setIsConnected(false);
+          setIsAuthenticated(false);
+        }
       } finally {
         checking = false;
       }
@@ -467,39 +571,73 @@ export default function ChatScreen() {
   };
 
   const pickDocument = async () => {
+    if (isAnalyzingImage || isLoading) return;
     try {
       const result = await DocumentPicker.getDocumentAsync({
-        type: [
-          'image/*',
-          'video/*',
-          'audio/*',
-          'text/plain',
-          'application/zip',
-          'application/json'
-        ],
-        copyToCacheDirectory: true
+        type: ['application/pdf', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'],
+        multiple: true,
+        copyToCacheDirectory: true,
       });
-
       if (result.canceled || !result.assets?.length) return;
-
-      const file = result.assets[0];
-      setMessages(prev => [...prev, {
-        id: `file-${Date.now()}`,
-        text: `📎 ${file.name}`,
-        isUser: true,
-        timestamp: Date.now()
-      }]);
+      if (result.assets.length > 6) throw new Error('一度に選択できる資料は6件までです');
+      if (!apiConnector || !isAuthenticated || !(isConnected || await apiConnector.checkConnectivity())) {
+        throw new Error('資料解析にはPC版への接続とログインが必要です');
+      }
+      setIsAnalyzingImage(true);
+      // Preserve the last successful selection until the new analysis completes.
+      const uploadedFiles: Array<{ file: string; type: 'pdf' | 'xlsx'; name: string }> = [];
+      for (const item of result.assets) {
+        const type: 'pdf' | 'xlsx' | null = item.name.toLowerCase().endsWith('.xlsx') ? 'xlsx'
+          : item.name.toLowerCase().endsWith('.pdf') ? 'pdf' : null;
+        if (!type) throw new Error('PDFまたはXLSXファイルを選択してください');
+        if (typeof item.size === 'number' && item.size > 10 * 1024 * 1024) {
+          throw new Error(item.name + ' は10MBを超えています');
+        }
+        const base64 = await FileSystem.readAsStringAsync(item.uri, {
+          encoding: FileSystem.EncodingType.Base64,
+        });
+        if (base64.length > 14_000_000) throw new Error('ファイルがアップロード上限を超えています: ' + item.name);
+        const uploaded = await apiConnector.executeUnifiedTool('uploadDocument', {
+          fileName: item.name, type, base64,
+        });
+        if (!uploaded.success || !uploaded.data || typeof uploaded.data !== 'object') {
+          throw new Error(uploaded.error || 'アップロードに失敗しました: ' + item.name);
+        }
+        const file = (uploaded.data as { file?: unknown }).file;
+        if (typeof file !== 'string' || !file) throw new Error('資料の保存先を取得できませんでした');
+        uploadedFiles.push({ file, type, name: item.name });
+      }
+      const question = '各資料の重要数値と根拠を比較・分析し、結論と改善方針を日本語で示してください。推測値を作らないでください。';
+      const analyzed = uploadedFiles.length === 1
+        ? await apiConnector.executeUnifiedTool('analyzeDocument', {
+            file: uploadedFiles[0].file, type: uploadedFiles[0].type, question,
+          })
+        : await apiConnector.executeUnifiedTool('analyzeMultipleDocuments', {
+            files: uploadedFiles.map(({ file, type }) => ({ file, type })), question,
+          });
+      if (!analyzed.success || !analyzed.data || typeof analyzed.data !== 'object') {
+        throw new Error(analyzed.error || '資料解析に失敗しました');
+      }
+      const answer = (analyzed.data as { answer?: unknown }).answer;
+      if (typeof answer !== 'string' || !answer.trim()) throw new Error('解析結果が空です');
+      analyzedDocumentsRef.current = uploadedFiles;
+      lastDocumentAnalysisRef.current = answer;
+      await saveOfficeSession().catch(error => console.warn('Office作業状態を保存できませんでした:', error));
+      const now = Date.now();
+      setMessages(prev => [...prev,
+        { id: 'file-' + now, text: '📎 ' + uploadedFiles.map(x => x.name).join('、'), isUser: true, timestamp: now },
+        { id: 'analysis-' + now, text: answer + '\n\n追加質問は「/資料質問 質問内容」で送信できます。', isUser: false, timestamp: now },
+      ]);
     } catch (error) {
-      Alert.alert(
-        '添付エラー',
-        error instanceof Error ? error.message : 'ファイルを選択できませんでした'
-      );
+      Alert.alert('資料解析エラー', error instanceof Error ? error.message : '資料を解析できませんでした');
+    } finally {
+      setIsAnalyzingImage(false);
     }
   };
   const pickAttachment = async () => {
     try {
       const result = await ImagePicker.launchImageLibraryAsync({
-        mediaTypes: ['images'],
+        mediaTypes: ImagePicker.MediaTypeOptions.Images,
         base64: true,
         quality: 0.65
       });
@@ -597,7 +735,7 @@ export default function ChatScreen() {
           }
         }
         setIsAuthenticated(authenticated);
-        if (connected && savedSessionId) {
+        if (connected && authenticated && savedSessionId) {
           const sessions = await connector.getChatSessions();
           if (sessions.success && sessions.data?.some(s => s.id === savedSessionId)) {
 
@@ -631,6 +769,18 @@ export default function ChatScreen() {
   }, []);
 
   const pcConnectionBusyRef = React.useRef(false);
+  const analyzedDocumentsRef = React.useRef<Array<{ file: string; type: 'pdf' | 'xlsx'; name: string }>>([]);
+  const lastDocumentAnalysisRef = React.useRef('');
+  const documentOwnerRef = React.useRef('');
+  const officeSessionKeyRef = React.useRef('');
+  const officeCommand = (value: string) => /^\/資料(?:質問|PPT|一覧|取得|削除)(?:\s|$)/.test(value);
+  const saveOfficeSession = async () => {
+    if (!officeSessionKeyRef.current) return;
+    await AsyncStorage.setItem(officeSessionKeyRef.current, JSON.stringify({
+      files: analyzedDocumentsRef.current,
+      analysis: lastDocumentAnalysisRef.current,
+    }));
+  };
 
   const handleSend = async () => {
     const command = input.trim();
@@ -820,7 +970,7 @@ export default function ChatScreen() {
         if (command === '/PCヘルプ') {
           Alert.alert(
             'PoiPoi PC接続',
-            '/PC接続 http://192.168.1.6:3000\n' +
+            '/PC接続 http://192.168.1.100:3000\n' +
             '/PC再接続\n' +
             '/PC状態\n' +
             '/PC切断\n\n' +
@@ -882,9 +1032,10 @@ export default function ChatScreen() {
           await AsyncStorage.setItem('POIPOI_PC_URL', reconnectURL);
           await AsyncStorage.removeItem('POIPOI_PC_DISCONNECTED');
           setApiConnector(connector);
-          setIsAuthenticated(await connector.checkAuthentication());
+          const authenticated = await connector.checkAuthentication();
+          setIsAuthenticated(authenticated);
           setIsConnected(true);
-          setSessionId(connector.getSessionId() || undefined);
+          setSessionId(authenticated ? connector.getSessionId() || undefined : undefined);
           setInput('');
 
           Alert.alert('PoiPoi', 'PCへの再接続が完了しました。');
@@ -896,6 +1047,10 @@ export default function ChatScreen() {
           setApiConnector(null);
           setIsConnected(false);
           setIsAuthenticated(false);
+          documentOwnerRef.current = '';
+          officeSessionKeyRef.current = '';
+          analyzedDocumentsRef.current = [];
+          lastDocumentAnalysisRef.current = '';
           setSessionId(undefined);
           setChatSessions([]);
           setShowHistory(false);
@@ -957,7 +1112,7 @@ export default function ChatScreen() {
           url.length > 2048
         ) {
           throw new Error(
-            '接続先を指定してください。例: /PC接続 http://192.168.1.6:3000'
+            '接続先を指定してください。例: /PC接続 http://192.168.1.100:3000'
           );
         }
 
@@ -976,9 +1131,10 @@ export default function ChatScreen() {
         await AsyncStorage.removeItem('POIPOI_PC_DISCONNECTED');
 
         setApiConnector(connector);
-        setIsAuthenticated(await connector.checkAuthentication());
+        const authenticated = await connector.checkAuthentication();
+        setIsAuthenticated(authenticated);
         setIsConnected(true);
-        setSessionId(connector.getSessionId() || undefined);
+        setSessionId(authenticated ? connector.getSessionId() || undefined : undefined);
         setInput('');
 
         Alert.alert(
@@ -1062,10 +1218,136 @@ export default function ChatScreen() {
       if (
         apiConnector &&
         !input.trim().startsWith('/進化') &&
+        isAuthenticated &&
         (isConnected || await apiConnector.checkConnectivity())
       ) {
         if (!isConnected) setIsConnected(true);
         try {
+          const costMatch = input.trim().match(/^\/原価\s+([0-9]+(?:\.[0-9]+)?)\s+([0-9]+(?:\.[0-9]+)?)\s+([0-9]+(?:\.[0-9]+)?)$/);
+          if (costMatch) {
+            const cost = await apiConnector.executeUnifiedTool('analyzeCost', {
+              estimated: Number(costMatch[1]), actual: Number(costMatch[2]), quantity: Number(costMatch[3]),
+            });
+            response = cost.success
+              ? { success: true, data: { message: JSON.stringify(cost.data, null, 2) } }
+              : cost;
+          } else if (input.trim() === '/資料一覧') {
+            const docs = await apiConnector.executeUnifiedTool('listOfficeDocuments', {});
+            const ppts = await apiConnector.executeUnifiedTool('listOfficePresentations', {});
+            if (!docs.success || !ppts.success) throw new Error(docs.error || ppts.error || '資料一覧の取得に失敗しました');
+            const files = Array.isArray(docs.data) ? docs.data as Array<{ file: string; type: string }> : [];
+            const slides = Array.isArray(ppts.data) ? ppts.data as Array<{ id: string }> : [];
+            response = { success: true, data: { message:
+              '保存済み資料: ' + files.length + '件\n' + files.map(x => x.file).join('\n') +
+              '\nPowerPoint: ' + slides.length + '件\n' + slides.map(x => x.id).join('\n') +
+              '\n/資料取得 ID  /資料削除 ID' } };
+          } else if (input.trim().startsWith('/資料取得 ')) {
+            const id = input.trim().slice('/資料取得 '.length).trim();
+            if (!/^pres_[a-zA-Z0-9_]+$/.test(id)) throw new Error('PowerPoint IDが不正です');
+            const exported = await apiConnector.executeUnifiedTool('exportPresentation', { id });
+            const data = exported.data as { base64?: unknown } | undefined;
+            if (!exported.success || typeof data?.base64 !== 'string' || !data.base64 || data.base64.length > 28_000_000) {
+              throw new Error(exported.error || 'PowerPointの取得に失敗しました');
+            }
+            if (!FileSystem.documentDirectory) throw new Error('端末の保存領域が利用できません');
+            const destination = FileSystem.documentDirectory + id + '.pptx';
+            await FileSystem.writeAsStringAsync(destination, data.base64, { encoding: FileSystem.EncodingType.Base64 });
+            response = { success: true, data: { message: '保存しました: ' + destination } };
+          } else if (input.trim().startsWith('/資料削除 ')) {
+            const id = input.trim().slice('/資料削除 '.length).trim();
+            if (!/^pres_[a-zA-Z0-9_]+$/.test(id)) throw new Error('PowerPoint IDが不正です');
+            const deleted = await apiConnector.executeUnifiedTool('deleteOfficePresentation', { id });
+            if (!deleted.success) throw new Error(deleted.error || '削除に失敗しました');
+            response = { success: true, data: { message: 'PowerPointを削除しました: ' + id } };
+          } else if (input.trim().startsWith('/資料質問 ')) {
+            const question = input.trim().slice('/資料質問 '.length).trim();
+            const docs = analyzedDocumentsRef.current;
+            if (!question || !docs.length) throw new Error('先にPDF・Excel資料を添付してください');
+            const analyzed = docs.length === 1
+              ? await apiConnector.executeUnifiedTool('analyzeDocument', {
+                  file: docs[0].file, type: docs[0].type, question,
+                })
+              : await apiConnector.executeUnifiedTool('analyzeMultipleDocuments', {
+                  files: docs.map(({ file, type }) => ({ file, type })), question,
+                });
+            if (!analyzed.success || !analyzed.data || typeof analyzed.data !== 'object') {
+              throw new Error(analyzed.error || '追加質問の解析に失敗しました');
+            }
+            const answer = (analyzed.data as { answer?: unknown }).answer;
+            if (typeof answer !== 'string' || !answer.trim()) throw new Error('回答がありません');
+            lastDocumentAnalysisRef.current = answer;
+            await saveOfficeSession().catch(error => console.warn('Office作業状態を保存できませんでした:', error));
+            response = { success: true, data: { message: answer } };
+          } else if (input.trim().startsWith('/資料PPT ')) {
+            const request = input.trim().slice('/資料PPT '.length).trim();
+            const split = request.indexOf('｜');
+            const title = (split >= 0 ? request.slice(0, split) : request).trim();
+            const analysis = (split >= 0 ? request.slice(split + 1) : lastDocumentAnalysisRef.current).trim();
+            if (!title || (!analysis && !analyzedDocumentsRef.current.length)) {
+              throw new Error('先にPDF・Excel資料を解析するか「/資料PPT タイトル｜分析結果」を入力してください');
+            }
+            const documents = analyzedDocumentsRef.current;
+            const fromDocuments = split < 0 && documents.length > 0;
+            const created = fromDocuments
+              ? await apiConnector.executeUnifiedTool('createPresentationFromDocuments', {
+                  title, files: documents.map(({ file, type }) => ({ file, type })),
+                })
+              : await apiConnector.executeUnifiedTool('createPresentationFromAnalysis', { title, analysis });
+            if (!created.success || !created.data || typeof created.data !== 'object') {
+              throw new Error(created.error || 'PowerPoint作成に失敗しました');
+            }
+            let exportData: unknown = created.data;
+            if (!fromDocuments) {
+              const presentationId = (created.data as { id?: unknown }).id;
+              if (typeof presentationId !== 'string' || !presentationId) throw new Error('PowerPointの作成IDが取得できませんでした');
+              const exported = await apiConnector.executeUnifiedTool('exportPresentation', { id: presentationId });
+              if (!exported.success || !exported.data || typeof exported.data !== 'object') {
+                throw new Error(exported.error || 'PowerPointの出力に失敗しました');
+              }
+              exportData = exported.data;
+            } else {
+              const newAnalysis = (created.data as { analysis?: unknown }).analysis;
+              if (typeof newAnalysis === 'string' && newAnalysis.trim()) {
+                lastDocumentAnalysisRef.current = newAnalysis;
+                await saveOfficeSession().catch(error => console.warn('Office作業状態を保存できませんでした:', error));
+              }
+            }
+            const fileBase64 = (exportData as { base64?: unknown } | null)?.base64;
+            if (typeof fileBase64 !== 'string' || !fileBase64 || fileBase64.length > 28_000_000) {
+              throw new Error('PowerPointファイルが空、または保存上限を超えています');
+            }
+            if (!FileSystem.documentDirectory) {
+              throw new Error('端末のファイル保存領域が利用できません');
+            }
+            const safeTitle = title.replace(/[\\/:*?"<>|\x00-\x1f]/g, '_').slice(0, 60) || 'PoiPoi';
+            const destination = FileSystem.documentDirectory + safeTitle + '-' + Date.now() + '.pptx';
+            await FileSystem.writeAsStringAsync(destination, fileBase64, {
+              encoding: FileSystem.EncodingType.Base64,
+            });
+            // The existing APK may not contain the native expo-sharing module.
+            // Save first, then attempt native sharing only when available.
+            try {
+              const Sharing = require('expo-sharing') as typeof import('expo-sharing');
+              if (await Sharing.isAvailableAsync()) {
+                await Sharing.shareAsync(destination, {
+                  mimeType: 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+                  dialogTitle: 'PoiPoi PowerPointを共有',
+                  UTI: 'org.openxmlformats.presentationml.presentation',
+                });
+              }
+            } catch (shareError) {
+              console.warn('共有機能が使えないためPowerPointを端末内に保存しました:', shareError);
+            }
+            response = {
+              success: true,
+              data: { message: 'PowerPointを端末内に保存しました。\n' + destination },
+            };
+          } else if (input.trim().startsWith('/計画 ')) {
+            const planned = await apiConnector.planAndExecute(input.trim().slice('/計画 '.length));
+            response = planned.success
+              ? { success: true, data: { message: JSON.stringify(planned.data, null, 2) } }
+              : planned;
+          } else {
           response = await apiConnector.sendChatMessage({
             message: input,
             sessionId: sessionId,
@@ -1080,21 +1362,32 @@ export default function ChatScreen() {
               source: 'poipoi-mobile',
             },
           });
+          }
 
           if (!response.success) {
             throw new Error(response.error || 'API エラー');
           }
         } catch (error) {
           console.warn('サーバー通信失敗:', error);
-          setIsConnected(false);
-          response = undefined;
+          if (officeCommand(input.trim())) {
+            response = { success: true, data: { message: error instanceof Error ? error.message : '資料処理に失敗しました' } };
+          } else {
+            // An application/API error does not prove the PC network is offline.
+            // Keep the connection status for the periodic health check to decide.
+            response = undefined;
+          }
         }
       }
 
-      // POIPOI_CHAT_SOURCE_V1
-const usedLocalAI = !response?.success;
-      if (usedLocalAI) {
+      if (!response?.success && officeCommand(input.trim())) {
         response = {
+          success: true,
+          data: { message: '資料の解析・PowerPoint作成にはPC版PoiPoiへの接続とログインが必要です。PC接続を確認して再実行してください。' },
+        };
+      }
+
+      const usedLocalAI = !response?.success;
+      if (usedLocalAI) {        response = {
           success: true,
           data: {
             message: await (input.trim() === '/進化復旧'
@@ -1139,7 +1432,7 @@ const usedLocalAI = !response?.success;
   const match = args.match(/^(\d+)\s+([\s\S]+)$/);
   if (!match) return Promise.reject(new Error('使い方: /進化実行 1 内容'));
   return MobileSelfEvolution.executeFeature(Number(match[1]) - 1, match[2]);
-})() : input.startsWith('/進化状態 ') ? MobileSelfEvolution.getFeatureStatus(Number(input.slice('/進化状態 '.length).trim()) - 1) : input.startsWith('/進化無効 ') ? MobileSelfEvolution.deactivateFeatureExclusive(Number(input.slice('/進化無効 '.length).trim()) - 1) : input.trim() === '/進化登録一覧' ? MobileSelfEvolution.getActiveFeatures() : input.startsWith('/進化登録 ') ? MobileSelfEvolution.activateFeatureExclusive(Number(input.slice('/進化登録 '.length).trim()) - 1) : input.startsWith('/進化設計確認 ') ? MobileSelfEvolution.getFeatureDesign(Number(input.slice('/進化設計確認 '.length).trim()) - 1) : input.startsWith('/進化設計 ') ? MobileSelfEvolution.generateFeatureDesignExclusive(Number(input.slice('/進化設計 '.length).trim()) - 1) : input.startsWith('/進化承認 ') ? MobileSelfEvolution.approveAndSaveExclusive(Number(input.slice(6).trim()) - 1).then(f => '承認しました: ' + f.request) : input.trim() === '/進化一覧' ? MobileSelfEvolution.getProposals().then(list => list.length ? list.map((f,i) => (i+1) + '. [' + f.status + '] ' + f.request).join('\n') : '提案はありません') : input.startsWith('/進化 ') ? MobileSelfEvolution.proposeExclusive(input.slice(4)).then(r => r.proposal) : AndroidLocalAI.sendMessage(input)),
+})() : input.startsWith('/進化状態 ') ? MobileSelfEvolution.getFeatureStatus(Number(input.slice('/進化状態 '.length).trim()) - 1) : input.startsWith('/進化無効 ') ? MobileSelfEvolution.deactivateFeatureExclusive(Number(input.slice('/進化無効 '.length).trim()) - 1) : input.trim() === '/進化登録一覧' ? MobileSelfEvolution.getActiveFeatures() : input.startsWith('/進化登録 ') ? MobileSelfEvolution.activateFeatureExclusive(Number(input.slice('/進化登録 '.length).trim()) - 1) : input.startsWith('/進化設計確認 ') ? MobileSelfEvolution.getFeatureDesign(Number(input.slice('/進化設計確認 '.length).trim()) - 1) : input.startsWith('/進化設計 ') ? MobileSelfEvolution.generateFeatureDesignExclusive(Number(input.slice('/進化設計 '.length).trim()) - 1) : input.startsWith('/進化承認 ') ? MobileSelfEvolution.approveAndSaveExclusive(Number(input.slice(6).trim()) - 1).then(f => '承認しました: ' + f.request) : input.trim() === '/進化一覧' ? MobileSelfEvolution.getProposals().then(list => list.length ? list.map((f,i) => (i+1) + '. [' + f.status + '] ' + f.request).join('\n') : '提案はありません') : input.startsWith('/進化 ') ? MobileSelfEvolution.proposeExclusive(input.slice(4)).then(r => r.proposal) : replyWithLocalIdentity(input, () => AndroidLocalAI.sendMessage(input))),
           },
         };
       }
@@ -1151,9 +1444,10 @@ const usedLocalAI = !response?.success;
           ? response.data.message
           : response.data.message?.content || "応答がありません";
         const assistantMessage: Message = {
-          id: (Date.now() + 1).toString(),
-          text: `${usedLocalAI ? "[スマホAI]" : "[PC AI]"} ${extractAIMessage(messageContent)}`,
-          isUser: false,
+          id: typeof response.data.message === 'object' && response.data.message?.id
+            ? response.data.message.id
+            : (Date.now() + 1).toString(),
+          text: `${usedLocalAI ? "[スマホAI]" : "[PC AI]"} ${extractAIMessage(messageContent)}`,          isUser: false,
           timestamp: Date.now()
         };
         setMessages(prev => [...prev, assistantMessage]);
@@ -1168,8 +1462,8 @@ const usedLocalAI = !response?.success;
     } catch (error) {
       if (apiConnector && isConnected) {
         try {
-          const localAnswer = await AndroidLocalAI.sendMessage(input);
-          setIsConnected(false);
+          const localAnswer = await replyWithLocalIdentity(input, () => AndroidLocalAI.sendMessage(input));
+          // AI fallback does not imply a disconnected PC; health checks own this state.
           setMessages(prev => [...prev, {
             id: (Date.now() + 1).toString(),
             text: localAnswer,
@@ -1236,14 +1530,21 @@ const usedLocalAI = !response?.success;
         data={messages}
         keyExtractor={item => item.id}
         renderItem={({ item }) => (
-          <View style={[styles.messageContainer, item.isUser && styles.userMessage]}>
-            <Text style={[styles.messageText, item.isUser && styles.userMessageText]}>
+          <TouchableOpacity
+            activeOpacity={1}
+            disabled={item.isUser}
+            onLongPress={() => rateAssistantAnswer(item)}
+            style={[styles.messageContainer, item.isUser && styles.userMessage]}>
+            <Text
+              style={[styles.messageText, item.isUser && styles.userMessageText]}
+              onLongPress={() => rateAssistantAnswer(item)}
+            >
               {item.text}
             </Text>
             <Text style={styles.timestamp}>
               {new Date(item.timestamp).toLocaleTimeString()}
             </Text>
-          </View>
+          </TouchableOpacity>
         )}
         contentContainerStyle={styles.messagesList}
       />

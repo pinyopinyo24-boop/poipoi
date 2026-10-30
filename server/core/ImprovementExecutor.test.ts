@@ -257,7 +257,7 @@ describe('ImprovementExecutor', () => {
       const candidate = makeCandidate();
       await executor.execute(userId, candidate);
 
-      const snap = executor.getSnapshot(candidate.id);
+      const snap = executor.getSnapshot(candidate.id, userId);
       expect(snap).toBeDefined();
       expect(snap!.candidateId).toBe(candidate.id);
       expect(snap!.userId).toBe(userId);

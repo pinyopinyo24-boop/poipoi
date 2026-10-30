@@ -1,1 +1,1 @@
-export const POIPOI_EVOLUTION_TEST: string = 'after-v2';;
+export const POIPOI_EVOLUTION_TEST: string = 'after';

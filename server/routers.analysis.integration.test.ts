@@ -177,7 +177,7 @@ describe('Analysis + Presentation Integration', () => {
       expect(parsed.id).toBe(presentation.id);
     });
 
-    it('should export presentation to PowerPoint', () => {
+    it('should export presentation to PowerPoint', async () => {
       const presentation = presentationManager.createPresentation(
         'Test Presentation',
         'Test'
@@ -190,7 +190,7 @@ describe('Analysis + Presentation Integration', () => {
         elements: [],
       });
 
-      const buffer = presentationManager.exportPowerPoint(presentation.id);
+      const buffer = await presentationManager.exportPowerPoint(presentation.id);
       expect(buffer).toBeDefined();
       expect(buffer instanceof Buffer).toBe(true);
     });
@@ -208,9 +208,7 @@ describe('Analysis + Presentation Integration', () => {
         elements: [],
       });
 
-      const buffer = presentationManager.exportPDF(presentation.id);
-      expect(buffer).toBeDefined();
-      expect(buffer instanceof Buffer).toBe(true);
+      expect(() => presentationManager.exportPDF(presentation.id)).toThrow('PDFエクスポートエンジンが構成されていません');
     });
   });
 

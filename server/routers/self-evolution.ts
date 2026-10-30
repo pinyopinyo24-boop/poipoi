@@ -1,18 +1,20 @@
-import { router, publicProcedure, protectedProcedure } from "../_core/trpc";
+import { router, protectedProcedure } from "../_core/trpc";
 import { z } from "zod";
+import { randomUUID } from "node:crypto";
 import { invokeLLM } from "../_core/llm";
+import { getUserPoiPoiUnifiedState, syncUserPoiPoiUnifiedState } from "../core/PoiPoiUnifiedStateStore";
 
 // Self-evolution system that learns from user interactions
 export const selfEvolutionRouter = router({
   // Analyze user feedback and suggest improvements
-  analyzeFeedback: publicProcedure
+  analyzeFeedback: protectedProcedure
     .input(
       z.object({
-        feedback: z.string().describe("ユーザーからのフィードバック"),
-        context: z.string().optional().describe("現在のコンテキスト"),
+        feedback: z.string().min(1).max(4000).describe("ユーザーからのフィードバック"),
+        context: z.string().max(4000).optional().describe("現在のコンテキスト"),
       })
     )
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
       try {
         // Use LLM to analyze feedback and generate improvements
         const response = await invokeLLM({
@@ -65,6 +67,23 @@ Respond in JSON format with: { "analysis": "...", "suggestions": ["...", "..."],
         }
 
         const result = JSON.parse(content);
+        if (typeof result.analysis !== 'string' || !Array.isArray(result.suggestions) ||
+            !result.suggestions.every((item: unknown) => typeof item === 'string') ||
+            !['high', 'medium', 'low'].includes(result.priority)) {
+          throw new Error('Invalid feedback analysis response');
+        }
+        await syncUserPoiPoiUnifiedState(String(ctx.user.id), {
+          version: 1,
+          records: [{
+            id: 'feedback-' + randomUUID(),
+            category: 'learning',
+            origin: 'pc',
+            updatedAt: Date.now(),
+            value: JSON.stringify({ feedback: input.feedback, context: input.context,
+              analysis: result.analysis, suggestions: result.suggestions,
+              priority: result.priority }).slice(0, 3000),
+          }],
+        });
         return {
           success: true,
           analysis: result.analysis,
@@ -84,9 +103,9 @@ Respond in JSON format with: { "analysis": "...", "suggestions": ["...", "..."],
   generateImprovement: protectedProcedure
     .input(
       z.object({
-        feature: z.string().describe("改善対象の機能"),
+        feature: z.string().min(1).max(300).describe("改善対象の機能"),
         feedback: z.string().describe("ユーザーからのフィードバック"),
-        codeFile: z.string().optional().describe("対象のコードファイル"),
+        codeFile: z.string().max(500).optional().describe("対象のコードファイル"),
       })
     )
     .mutation(async ({ input }) => {
@@ -156,15 +175,15 @@ Respond in JSON format with: { "improvements": "...", "code": "...", "explanatio
     }),
 
   // Learn from user interactions and adapt
-  learnFromInteraction: publicProcedure
+  learnFromInteraction: protectedProcedure
     .input(
       z.object({
-        interaction: z.string().describe("ユーザーとの相互作用"),
-        outcome: z.string().describe("相互作用の結果"),
+        interaction: z.string().min(1).max(4000).describe("ユーザーとの相互作用"),
+        outcome: z.string().min(1).max(4000).describe("相互作用の結果"),
         satisfaction: z.number().min(1).max(5).describe("ユーザー満足度 (1-5)"),
       })
     )
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
       try {
         // Store interaction data for learning
         const learningData = {
@@ -173,6 +192,16 @@ Respond in JSON format with: { "improvements": "...", "code": "...", "explanatio
           outcome: input.outcome,
           satisfaction: input.satisfaction,
         };
+        await syncUserPoiPoiUnifiedState(String(ctx.user.id), {
+          version: 1,
+          records: [{
+            id: 'interaction-' + randomUUID(),
+            category: 'learning',
+            origin: 'pc',
+            updatedAt: Date.now(),
+            value: JSON.stringify(learningData).slice(0, 3000),
+          }],
+        });
 
         // Use LLM to extract insights
         const response = await invokeLLM({
@@ -235,22 +264,21 @@ Respond in JSON format with: { "insights": ["...", "..."], "recommendations": ["
       }
     }),
 
-  // Get system status and evolution metrics
-  getEvolutionStatus: publicProcedure.query(async () => {
+  // Report actual stored learning events, not fabricated activity counters.
+  getEvolutionStatus: protectedProcedure.query(async ({ ctx }) => {
+    const state = await getUserPoiPoiUnifiedState(String(ctx.user.id));
+    const learned = state.records.filter(record => record.category === 'learning');
     return {
-      status: "active",
-      evolutionPhase: "continuous_learning",
+      status: 'available',
+      evolutionPhase: 'approval_required',
       metrics: {
-        feedbackProcessed: 0,
-        improvementsGenerated: 0,
-        interactionsAnalyzed: 0,
-        systemOptimization: "ongoing",
+        interactionsAnalyzed: learned.filter(record => record.id.startsWith('interaction-')).length,
+        learningRecords: learned.length,
+        feedbackProcessed: learned.filter(record => record.id.startsWith('correction-')).length,
+        improvementsGenerated: state.records.filter(record => record.category === 'evolution').length,
+        systemOptimization: 'not_verified',
       },
-      nextActions: [
-        "Monitor user feedback patterns",
-        "Generate code improvements",
-        "Adapt to user preferences",
-      ],
+      nextActions: ['Review proposed changes', 'Approve code preview explicitly'],
     };
   }),
 });

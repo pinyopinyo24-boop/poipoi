@@ -423,7 +423,7 @@ export class MobileSelfEvolution {
       .filter(record =>
         record.category === 'evolution' &&
         record.origin === 'pc' &&
-        record.id.startsWith('evolution_run_')
+        (record.id.startsWith('evolution_run_') || record.id.startsWith('evolution-'))
       )
       .sort((a, b) => b.updatedAt - a.updatedAt)
       .map(record => {
@@ -448,15 +448,28 @@ export class MobileSelfEvolution {
     const pcRecords = state.records.filter(record =>
       record.category === 'evolution' &&
       record.origin === 'pc' &&
-      record.id.startsWith('evolution_run_')
+      (record.id.startsWith('evolution_run_') || record.id.startsWith('evolution-'))
     );
 
     const key = 'poipoi:evolution:pc-applied';
     const saved = await AsyncStorage.getItem(key);
 
-    const applied: Record<string, number> = saved
-      ? JSON.parse(saved)
-      : {};
+    let applied: Record<string, number> = {};
+    if (saved) {
+      try {
+        const parsed: unknown = JSON.parse(saved);
+        if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+          applied = Object.fromEntries(
+            Object.entries(parsed).filter(([id, time]) =>
+              (id.startsWith('evolution_run_') || id.startsWith('evolution-')) &&
+              typeof time === 'number' && Number.isFinite(time)
+            )
+          );
+        }
+      } catch {
+        // Damaged import markers must not prevent recovering verified PC history.
+      }
+    }
 
     let imported = 0;
     let skipped = 0;
@@ -483,7 +496,7 @@ export class MobileSelfEvolution {
 
       const run = result as Record<string, unknown>;
 
-      if (run.outcome !== 'executed') {
+      if (run.outcome !== 'executed' && !(run.success === true && run.tested === true)) {
         skipped++;
         continue;
       }
@@ -521,8 +534,8 @@ export class MobileSelfEvolution {
 
       const run = result as Record<string, unknown>;
 
-      if (run.outcome === 'executed') executedRuns++;
-      if (run.outcome === 'error') errorRuns++;
+      if (run.outcome === 'executed' || (run.success === true && run.tested === true)) executedRuns++;
+      if (run.outcome === 'error' || run.success === false) errorRuns++;
 
       if (
         typeof run.changesApplied === 'number' &&
@@ -640,13 +653,14 @@ export class MobileSelfEvolution {
       throw new Error('設計データが不正です');
     }
 
+    const designs = value.designs as Array<string | null>;
     if (!value.active.every(item =>
       Number.isInteger(item) &&
       item >= 0 &&
       item < proposals.length &&
       proposals[item].status === 'approved' &&
-      typeof value.designs[item] === 'string' &&
-      value.designs[item].length > 0
+      typeof designs[item] === 'string' &&
+      (designs[item] as string).length > 0
     )) {
       throw new Error('有効化データが不正です');
     }

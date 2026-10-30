@@ -1,23 +1,81 @@
 /**
- * LLM Integration - Google Gemini API
+ * PoiPoi local Ollama LLM integration.
  */
 
 export type Role = "system" | "user" | "assistant" | "tool" | "function";
 
+export type TextContent = {
+  type: "text";
+  text: string;
+};
+
+export type ImageContent = {
+  type: "image_url";
+  image_url: {
+    url: string;
+    detail?: "auto" | "low" | "high";
+  };
+};
+
+export type FileContent = {
+  type: "file_url";
+  file_url: {
+    url: string;
+    mime_type?: "audio/mpeg" | "audio/wav" | "application/pdf" | "audio/mp4" | "video/mp4" ;
+  };
+};
+
+export type MessageContent = string | TextContent | ImageContent | FileContent;
+
 export type Message = {
   role: Role;
-  content: any;
+  content: MessageContent | MessageContent[];
+  name?: string;
+  tool_call_id?: string;
 };
+
+export type Tool = {
+  type: "function";
+  function: {
+    name: string;
+    description?: string;
+    parameters?: Record<string, unknown>;
+  };
+};
+
+export type ToolChoicePrimitive = "none" | "auto" | "required";
+export type ToolChoiceByName = { name: string };
+export type ToolChoiceExplicit = {
+  type: "function";
+  function: {
+    name: string;
+  };
+};
+export type ToolChoice = ToolChoicePrimitive | ToolChoiceByName | ToolChoiceExplicit;
 
 export type LLMRequest = {
   model?: string;
   messages: Message[];
+  tools?: Tool[];
+  tool_choice?: ToolChoice;
   temperature?: number;
   top_p?: number;
   max_tokens?: number;
-  tools?: any;
-  tool_choice?: any;
-  response_format?: any;
+  response_format?: {
+    type: "json_schema";
+    json_schema: {
+      name: string;
+      strict?: boolean;
+      schema: Record<string, unknown>;
+    };
+  };
+  thinking?: {
+    type: "enabled";
+    budget_tokens: number;
+  };
+  reasoning?: {
+    effort: "minimal" | "low" | "medium" | "high";
+  };
 };
 
 export type LLMResponse = {
@@ -40,96 +98,121 @@ export type LLMResponse = {
   };
 };
 
-
 export type LLMModel = {
   id: string;
   object: string;
   owned_by: string;
   permission: Array<Record<string, unknown>>;
+  created?: number;
+  root?: string;
+  parent?: string | null;
+  capabilities?: Record<string, unknown>;
 };
 
-const GEMINI_API_KEY = process.env.GEMINI_API_KEY || "";
+/** Invoke local Ollama models. */
+export async function invokeLLM(request: LLMRequest): Promise<LLMResponse> {
+  const baseUrl = (process.env.LOCAL_AI_URL || "http://localhost:11434").replace(/\/+$/, "");
+  const isCodeTask = request.messages.some(message =>
+    typeof message.content === "string" &&
+    /code implementation agent|code generation expert|software implementation agent/i.test(message.content)
+  );
+  const model = (request.model && /^(qwen|llama|mistral|phi|deepseek|codellama|gemma)/i.test(request.model) ? request.model : undefined) || (isCodeTask
+    ? process.env.LOCAL_CODER_MODEL || "qwen2.5-coder:7b"
+    : process.env.LOCAL_CHAT_MODEL || process.env.LOCAL_CODER_MODEL || "qwen2.5-coder:7b");
 
-const GEMINI_API_URL =
-  "https://generativelanguage.googleapis.com/v1beta/openai/";
-
-const DEFAULT_MODEL = "gemini-2.0-flash";
-export async function invokeLLM(
-  request: LLMRequest
-): Promise<LLMResponse> {
-
-  const model = request.model || ned_by: string;
-  permission: Array<Record<string, unknown>>;
-};
-
-const GEMINI_API_KEY = process.env.GEMINI_API_KEY || "";
-
-const GEMINI_API_URL =
-  "https://generativelanguage.googleapis.com/v1beta/openai/";
-
-const DEFAULT_MODEL = "gemini-2.0-flash";
-export async function invokeLLM(
-  request: LLMRequest
-): Promise<LLMResponse> {
-
-  const model = request.model || DEFAULT_MODEL;
-
-  const url = `${GEMINI_API_URL}chat/completions`;
-
-  const response = await globalThis.fetch(url, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      "Authorization": `Bearer ${GEMINI_API_KEY}`,
-    },
-    body: JSON.stringify({
-      model,
-      messages: request.messages,
-      temperature: request.temperature ?? 0.7,
-      top_p: request.top_p ?? 0.9,
-      max_tokens: request.max_tokens ?? 2048,
-      tools: request.tools,
-      tool_choice: request.tool_choice,
-      response_format: request.response_format,
-    }),
+  const messages = [...(request.messages || [])];
+  console.log("[LLM REQUEST] Local AI", {
+    model,
+    messageCount: messages.length,
+    timestamp: new Date().toISOString(),
   });
 
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 120000);
+  try {
+    const response = await fetch(`${baseUrl}/api/chat`, {
+      signal: controller.signal,
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        model,
+        messages,
+        stream: false,
+        options: {
+          ...(request.temperature !== undefined ? { temperature: request.temperature } : {}),
+          ...(request.top_p !== undefined ? { top_p: request.top_p } : {}),
+          ...(request.max_tokens !== undefined ? { num_predict: request.max_tokens } : {}),
+        },
+        ...(request.response_format ? { format: request.response_format.json_schema.schema } : {}),
+      }),
+    });
 
-  if (!response.ok) {
-    const error = await response.text();
-    throw new Error(`Gemini API error: ${error}`);
-  }
+    if (!response.ok) {
+      const errorData = await response.text();
+      throw new Error(`Local AI error: ${response.status} - ${errorData}`);
+    }
 
+    const rawText = await response.text();
 
-  const data = await response.json() as any;
-
-
-  return {
-    id: data.id || `gemini-${Date.now()}`,
-    object: "chat.completion",
-    created: Math.floor(Date.now() / 1000),
-    model,
-    choices: data.choices || [],
-    usage: data.usage || {
-      prompt_tokens: 0,
-      completion_tokens: 0,
-      total_tokens: 0,
-    },
-  };
+let data: any;
+try {
+  data = JSON.parse(rawText);
+} catch {
+  throw new Error(
+    `Local AIがJSON以外を返しました: ${rawText.slice(0, 500)}`
+  );
 }
 
-
-export async function listLLMModels(): Promise<{data: LLMModel[]}> {
-
-  return {
-    data: [
-      {
-        id: "gemini-2.0-flash",
-        object: "model",
-        owned_by: "google",
-        permission: [],
+    return {
+      id: data.id || `local-${Date.now()}`,
+      object: "chat.completion",
+      created: Math.floor(Date.now() / 1000),
+      model: data.model || model,
+      choices: [{
+        index: 0,
+        message: {
+          role: "assistant",
+          content: typeof data.message?.content === "string" ? data.message.content : "",
+        },
+        finish_reason: "stop",
+      }],
+      usage: {
+        prompt_tokens: data.prompt_eval_count ?? data.usage?.prompt_tokens ?? 0,
+        completion_tokens: data.eval_count ?? data.usage?.completion_tokens ?? 0,
+        total_tokens: (data.prompt_eval_count ?? data.usage?.prompt_tokens ?? 0) + (data.eval_count ?? data.usage?.completion_tokens ?? 0),
       },
-    ],
-  };
-
+    };
+  } catch (error) {
+    const errorMsg = error instanceof Error ? error.message : String(error);
+    console.error("[LLM ERROR] Local AI call failed:", errorMsg);
+    // Callers must be able to distinguish transport failure from a real answer.
+    throw error;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+export async function listLLMModels(): Promise<{ data: LLMModel[] }> {
+  const baseUrl = (process.env.LOCAL_AI_URL || "http://localhost:11434").replace(/\/+$/, "");
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 5000);
+  try {
+    const response = await fetch(baseUrl + "/api/tags", { signal: controller.signal });
+    if (!response.ok) throw new Error("Local model listing failed: " + response.status);
+    const payload: unknown = await response.json();
+    if (!payload || typeof payload !== "object" || !("models" in payload) ||
+        !Array.isArray(payload.models)) throw new Error("Invalid local model listing");
+    return {
+      data: payload.models.filter((item: unknown): item is { name: string } =>
+        !!item && typeof item === "object" && "name" in item &&
+        typeof item.name === "string"
+      ).map(item => ({
+        id: item.name, object: "model", owned_by: "local", permission: [],
+      })),
+    };
+  } catch (error) {
+    console.warn("[LLM] Local model discovery unavailable:", error);
+    return { data: [] };
+  } finally {
+    clearTimeout(timer);
+  }
 }

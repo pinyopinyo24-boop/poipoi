@@ -93,12 +93,6 @@ export class APIKeyManagementService {
         autoRotate: true,
       },
       {
-        provider: 'gemini',
-        rotationIntervalDays: 90,
-        warningDaysBefore: 14,
-        autoRotate: true,
-      },
-      {
         provider: 'local',
         rotationIntervalDays: 180,
         warningDaysBefore: 30,

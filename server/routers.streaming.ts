@@ -257,16 +257,6 @@ export const streamingRouter = router({
         entities: `以下のテキストから固有表現を抽出してください:\n${input.text}`,
       };
 
-      if (/^正しくは[、,：:\s]*/u.test(input.message)) {
-        const text = "訂正内容を覚えました。";
-        return {
-          conversationId: input.conversationId || "conv_" + Date.now(),
-          tokens: [text],
-          fullText: text,
-          tokenCount: 1,
-          isImage: false,
-        };
-      }
 
 
       const response = await invokeLLM({
@@ -306,16 +296,6 @@ export const streamingRouter = router({
     .mutation(async ({ input }) => {
       const language = input.language || "JavaScript";
 
-      if (/^正しくは[、,：:\s]*/u.test(input.message)) {
-        const text = "訂正内容を覚えました。";
-        return {
-          conversationId: input.conversationId || "conv_" + Date.now(),
-          tokens: [text],
-          fullText: text,
-          tokenCount: 1,
-          isImage: false,
-        };
-      }
 
 
       const response = await invokeLLM({
@@ -355,16 +335,6 @@ export const streamingRouter = router({
     .mutation(async ({ input }) => {
       const sourceLanguage = input.sourceLanguage || "自動検出";
 
-      if (/^正しくは[、,：:\s]*/u.test(input.message)) {
-        const text = "訂正内容を覚えました。";
-        return {
-          conversationId: input.conversationId || "conv_" + Date.now(),
-          tokens: [text],
-          fullText: text,
-          tokenCount: 1,
-          isImage: false,
-        };
-      }
 
 
       const response = await invokeLLM({

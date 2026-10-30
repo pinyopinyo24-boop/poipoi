@@ -30,9 +30,13 @@ export class ChatRepository {
   constructor() {
     
     if (fs.existsSync(this.storagePath)) {
-      const data = JSON.parse(fs.readFileSync(this.storagePath, "utf8"));
-      this.sessions = new Map(data.sessions || []);
-      this.messages = new Map(data.messages || []);
+      try {
+        const data = JSON.parse(fs.readFileSync(this.storagePath, "utf8"));
+        this.sessions = new Map(data.sessions || []);
+        this.messages = new Map(data.messages || []);
+      } catch (error) {
+        console.error("[PoiPoi] Unable to read saved chat history:", error);
+      }
     }
   }
 
@@ -52,12 +56,17 @@ export class ChatRepository {
    */
   async saveMessage(message: ChatMessage, sessionId?: string): Promise<void> {
     const key = sessionId || message.userId;
+    const session = this.sessions.get(key);
+    if (sessionId && !session) throw new Error('Chat session not found');
+    if (session && session.userId !== message.userId) {
+      throw new Error('Chat session owner mismatch');
+    }
     const sessionMessages = this.messages.get(key) || [];
+    if (sessionMessages.some(existing => existing.id === message.id)) return;
     sessionMessages.push(message);
     this.messages.set(key, sessionMessages);
-    const session = this.sessions.get(key);
     if (session) {
-      session.updatedAt = message.timestamp;
+      session.updatedAt = Math.max(session.updatedAt || 0, message.timestamp);
       session.messageCount = sessionMessages.length;
       this.sessions.set(key, session);
     }
@@ -72,7 +81,9 @@ export class ChatRepository {
     limit: number = 50
   ): Promise<ChatMessage[]> {
     const messages = this.messages.get(sessionId) || [];
-    return messages.slice(-limit).map((msg) => ({
+    const safeLimit = Number.isFinite(limit) ? Math.max(0, Math.floor(limit)) : 50;
+    if (safeLimit === 0) return [];
+    return messages.slice(-safeLimit).map((msg) => ({
       ...msg,
       content: msg.content || '',
     }));
@@ -82,6 +93,10 @@ export class ChatRepository {
    * セッションを保存
    */
   async saveSession(session: ChatSession): Promise<void> {
+    const existing = this.sessions.get(session.id);
+    if (existing && existing.userId !== session.userId) {
+      throw new Error('Chat session owner mismatch');
+    }
     this.sessions.set(session.id, session);
     this.persist();
   }
@@ -112,6 +127,7 @@ export class ChatRepository {
    */
   async deleteSession(sessionId: string): Promise<void> {
     this.sessions.delete(sessionId);
+    this.messages.delete(sessionId);
     this.persist();
   }
 
@@ -120,8 +136,8 @@ export class ChatRepository {
    */
   async getUserStatistics(userId: string): Promise<any> {
     const userSessions = await this.getUserSessions(userId);
-    const totalMessages = Array.from(this.messages.values()).reduce(
-      (sum, msgs) => sum + msgs.length,
+    const totalMessages = userSessions.reduce(
+      (sum, session) => sum + (this.messages.get(session.id)?.length ?? 0),
       0
     );
 
@@ -140,6 +156,7 @@ export class ChatRepository {
    */
   async clearAllMessages(): Promise<void> {
     this.messages.clear();
+    this.persist();
   }
 
   /**
@@ -147,6 +164,8 @@ export class ChatRepository {
    */
   async clearAllSessions(): Promise<void> {
     this.sessions.clear();
+    this.messages.clear();
+    this.persist();
   }
 }
 

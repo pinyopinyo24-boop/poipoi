@@ -77,6 +77,7 @@ export class SelfEvolutionWorkflow {
   private executor: ImprovementExecutor;
   private memoryEngine: MemoryEngine;
   private resultHistory: WorkflowResult[] = [];
+  private executionApprovals = new Map<string, Set<string>>();
 
   private constructor() {
     this.improvementManager = SelfImprovementManager.getInstance();
@@ -135,6 +136,12 @@ export class SelfEvolutionWorkflow {
    *      - 謌仙粥 竊・謾ｹ蝟・ヱ繝ｩ繝｡繝ｼ繧ｿ遒ｺ螳壹・MemoryEngine / SelfLearningEngine 菫晏ｭ・   *      - 螟ｱ謨・竊・繝ｭ繝ｼ繝ｫ繝舌ャ繧ｯ
    *   3. 繝ｯ繝ｼ繧ｯ繝輔Ο繝ｼ蜈ｨ菴薙・邨先棡繧定ｿ斐☆
    */
+  public approveExecution(userId: string, simulationId: string): void {
+    const approved = this.executionApprovals.get(userId) ?? new Set<string>();
+    approved.add(simulationId);
+    this.executionApprovals.set(userId, approved);
+  }
+
   public async runExecution(
     userId: string,
     approvedSimulation?: SimulationResult
@@ -142,12 +149,18 @@ export class SelfEvolutionWorkflow {
     const workflowId = this.generateId('exec');
 
     // Step 1: 繧ｷ繝溘Η繝ｬ繝ｼ繧ｷ繝ｧ繝ｳ繝輔ぉ繝ｼ繧ｺ
+    if (approvedSimulation && approvedSimulation.mode !== 'simulation') {
+      throw new Error('Execution requires a simulation result');
+    }
     if (approvedSimulation && approvedSimulation.userId !== userId) {
       throw new Error('Simulation result does not belong to the requested user');
     }
-    const simulationResult = approvedSimulation ?? await this.runSimulation(userId);
+    if (!approvedSimulation || !this.executionApprovals.get(userId)?.has(approvedSimulation.workflowId)) {
+      throw new Error('Explicit approval is required before execution');
+    }
+    const simulationResult = approvedSimulation;
     // simulation 縺ｮ workflowId 縺ｯ繝ｯ繝ｼ繧ｯ繝輔Ο繝ｼID縺ｨ縺ｯ蛻･縺ｫ謖√◆縺帙ｋ
-    const simulation: SimulationResult = { ...simulationResult, workflowId };
+    const simulation: SimulationResult = simulationResult;
 
     // Step 2: 謇ｿ隱肴ｸ医∩蛟呵｣懊・縺ｿ螳滄圀縺ｫ螳溯｡・
     const execution = await this.executor.executeBatch(

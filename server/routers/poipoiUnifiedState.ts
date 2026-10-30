@@ -1,6 +1,9 @@
 import { z } from 'zod';
-import { publicProcedure, router } from '../_core/trpc';
+import { mergePoiPoiState } from '../core/PoiPoiUnifiedState';
+import { protectedProcedure, router } from '../_core/trpc';
 import {
+  getUserPoiPoiUnifiedState,
+  syncUserPoiPoiUnifiedState,
   getPoiPoiUnifiedState,
   syncPoiPoiUnifiedState,
 } from '../core/PoiPoiUnifiedStateStore';
@@ -18,14 +21,26 @@ const stateSchema = z.object({
   records: z.array(recordSchema).max(10000),
 });
 
+// An explicitly configured owner may bridge the PC's existing local AI memory.
+// Never expose global PC state to arbitrary authenticated accounts.
+const isOwner = (id: string) =>
+  !!process.env.POIPOI_OWNER_USER_ID && process.env.POIPOI_OWNER_USER_ID === id;
+
 export const poipoiUnifiedStateRouter = router({
-  get: publicProcedure.query(async () => {
-    return getPoiPoiUnifiedState();
+  get: protectedProcedure.query(async ({ ctx }) => {
+    const id = String(ctx.user.id);
+    const personal = await getUserPoiPoiUnifiedState(id);
+    if (!isOwner(id)) return personal;
+    return mergePoiPoiState(personal, await getPoiPoiUnifiedState());
   }),
 
-  sync: publicProcedure
+  sync: protectedProcedure
     .input(stateSchema)
-    .mutation(async ({ input }) => {
-      return syncPoiPoiUnifiedState(input);
+    .mutation(async ({ ctx, input }) => {
+      const id = String(ctx.user.id);
+      const personal = await syncUserPoiPoiUnifiedState(id, input);
+      if (!isOwner(id)) return personal;
+      const global = await syncPoiPoiUnifiedState(personal);
+      return syncUserPoiPoiUnifiedState(id, global);
     }),
 });

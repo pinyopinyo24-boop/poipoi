@@ -122,7 +122,7 @@ export class ExcelAnalysisManager {
     for (let colIndex = 0; colIndex < headers.length; colIndex++) {
       const header = headers[colIndex];
       const column = rows.map(row => row[colIndex]);
-      const numbers = column.filter(v => typeof v === 'number' || !isNaN(Number(v))).map(Number);
+      const numbers = column.filter(v => (typeof v === 'number' && Number.isFinite(v)) || (typeof v === 'string' && v.trim() !== '' && Number.isFinite(Number(v)))).map(Number);
 
       if (numbers.length > 0) {
         const key = `${sheetName}.${header}`;
@@ -141,10 +141,10 @@ export class ExcelAnalysisManager {
    * データ型を検出
    */
   private detectDataType(column: any[]): string {
-    const nonNull = column.filter(v => v !== null && v !== undefined);
+    const nonNull = column.filter(v => v !== null && v !== undefined && v !== '');
     if (nonNull.length === 0) return 'empty';
 
-    const numbers = nonNull.filter(v => typeof v === 'number' || !isNaN(Number(v)));
+    const numbers = nonNull.filter(v => (typeof v === 'number' && Number.isFinite(v)) || (typeof v === 'string' && v.trim() !== '' && Number.isFinite(Number(v))));
     if (numbers.length === nonNull.length) return 'number';
 
     const dates = nonNull.filter(v => !isNaN(Date.parse(String(v))));
@@ -173,7 +173,7 @@ export class ExcelAnalysisManager {
     const sorted = [...numbers].sort((a, b) => a - b);
     const sum = numbers.reduce((a, b) => a + b, 0);
     const average = sum / numbers.length;
-    const median = sorted[Math.floor(sorted.length / 2)];
+    const median = sorted.length % 2 === 0 ? (sorted[sorted.length / 2 - 1] + sorted[sorted.length / 2]) / 2 : sorted[Math.floor(sorted.length / 2)];
     const max = Math.max(...numbers);
     const min = Math.min(...numbers);
 
@@ -181,6 +181,11 @@ export class ExcelAnalysisManager {
     const stdDev = Math.sqrt(variance);
 
     return { sum, average, median, max, min, stdDev };
+  }
+
+  calculateDeviationScores(numbers: number[]): number[] {
+    const stats = this.calculateStatistics(numbers);
+    return numbers.map(value => stats.stdDev === 0 ? 50 : 50 + 10 * (value - stats.average) / stats.stdDev);
   }
 
   /**

@@ -7,7 +7,7 @@ import { ChatCoreManager, ChatMessage, ChatSession } from '../core/ChatCoreManag
 import { ChatService } from '../services/ChatService';
 import { MessageProcessingService } from '../services/MessageProcessingService';
 import { ContextAwarenessService } from '../services/ContextAwarenessService';
-import { ChatRepository } from '../repositories/ChatRepository';
+import { ChatRepository, getSharedChatRepository } from '../repositories/ChatRepository';
 
 describe('ChatCoreManager', () => {
   let chatCoreManager: ChatCoreManager;
@@ -18,7 +18,12 @@ describe('ChatCoreManager', () => {
   let mockAuditManager: any;
   let mockApprovalManager: any;
 
-  beforeEach(() => {
+  beforeEach(async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: true, text: async () => JSON.stringify({ model: 'qwen2.5-coder:7b', message: { role: 'assistant', content: 'テスト応答' }, prompt_eval_count: 10, eval_count: 5 }) }));
+    await getSharedChatRepository().saveSession({
+      id: 'session123', userId: 'user123', title: 'Test session',
+      createdAt: Date.now(), updatedAt: Date.now(), messageCount: 0,
+    });
     mockMemoryManager = {
       saveConversation: vi.fn().mockResolvedValue(undefined),
       searchMemories: vi.fn().mockResolvedValue([]),
@@ -85,7 +90,7 @@ describe('ChatCoreManager', () => {
       const response = await chatCoreManager.processMessage(
         'user123',
         'session123',
-        '生産実績を分析してください'
+        '生産分析を実行してください'
       );
 
       expect(response.message.content).toBeTruthy();
@@ -203,8 +208,6 @@ describe('ChatCoreManager', () => {
     });
 
     it('should delete session with approval', async () => {
-      await chatCoreManager.createSession('user123', 'テストセッション');
-
       await chatCoreManager.deleteSession('user123', 'session123');
 
       expect(mockApprovalManager.requestApproval).toHaveBeenCalled();
@@ -370,7 +373,7 @@ describe('ChatCoreManager', () => {
         'session123'
       );
 
-      const userMessage = history.find((msg) => msg.role === 'user');
+      const userMessage = history.find((msg) => msg.role === 'user' && msg.content === originalMessage);
       expect(userMessage?.content).toBe(originalMessage);
     });
 
@@ -485,7 +488,7 @@ describe('MessageProcessingService', () => {
     );
 
     expect(result).toBeDefined();
-    expect(result.response).toBeTruthy();
+    expect(result.response).toBe(''); // Classification does not fabricate an AI answer.
     expect(result.managersUsed).toBeDefined();
   });
 
