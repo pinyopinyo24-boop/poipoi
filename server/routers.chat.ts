@@ -405,6 +405,7 @@ export const chatRouter = router({
     .mutation(async ({ ctx, input }) => {
       const userId = String(ctx.user?.id ?? "mobile");
       const repository = (await import("./repositories/ChatRepository")).getSharedChatRepository();
+      const syncedMemories: Array<{ id: string; category: "memory"; origin: "android"; updatedAt: number; value: string }> = [];
       for (const conversation of input.conversations) {
         if (!conversation.id.trim() || conversation.messages.length === 0) continue;
         const existing = await repository.getSession(conversation.id);
@@ -440,6 +441,19 @@ export const chatRouter = router({
           }, conversation.id);
           known.add(message.id);
           existingTurns.push({ role: message.role, content: message.content, timestamp });
+          if (ctx.user && message.content.length <= 2000) {
+            syncedMemories.push({ id: "conversation-" + message.id, category: "memory", origin: "android", updatedAt: timestamp, value: JSON.stringify({ role: message.role, content: message.content }) });
+          }
+        }
+      }
+      // Make imported Android history searchable in later PC sessions.
+      // Only authenticated, owned sessions contribute to the user-scoped store.
+      if (ctx.user && syncedMemories.length) {
+        try {
+          const { syncUserPoiPoiUnifiedState } = await import("./core/PoiPoiUnifiedStateStore");
+          await syncUserPoiPoiUnifiedState(userId, { version: 1, records: syncedMemories.slice(-200) });
+        } catch (error) {
+          console.warn("[AZ] History imported but memory indexing unavailable:", error);
         }
       }
       return { success: true };
