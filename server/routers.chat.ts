@@ -265,8 +265,8 @@ export const chatRouter = router({
           const syncedAI = (await getUserPoiPoiUnifiedState(userId)).records.find(
             record => record.id === 'az:ai-name' && record.category === 'memory'
           );
-          if (syncedAI?.value && PoiPoiIdentity.getName() === 'AZ') {
-            PoiPoiIdentity.setName(syncedAI.value);
+          if (syncedAI?.value && PoiPoiIdentity.getAIName(userId) === PoiPoiIdentity.getName()) {
+            PoiPoiIdentity.setAIName(userId, syncedAI.value);
           }
         }
         let directAnswer: string | undefined;
@@ -274,7 +274,7 @@ export const chatRouter = router({
           const name = PoiPoiIdentity.getUserName(userId);
           directAnswer = name ? `あなたの名前は「${name}」です。` : 'あなたの名前はまだ登録されていません。何とお呼びすればよいですか？';
         } else if (/^(?:あなた|AI|AZ)の名前(?:は|って)?[？?]$/u.test(originalMessage) || /^名前は[？?]$/u.test(originalMessage)) {
-          directAnswer = `私の名前は「${PoiPoiIdentity.getName()}」です。`;
+          directAnswer = `私の名前は「${PoiPoiIdentity.getAIName(userId)}」です。`;
         } else if (userRename) {
           const name = PoiPoiIdentity.setUserName(userId, userRename[1].trim());
           if (ctx.user) {
@@ -286,7 +286,7 @@ export const chatRouter = router({
           }
           directAnswer = `あなたの名前を「${name}」として覚えました。`;
         } else if (aiRename) {
-          const aiName = PoiPoiIdentity.setName(aiRename[1].trim());
+          const aiName = PoiPoiIdentity.setAIName(userId, aiRename[1].trim());
           if (ctx.user) {
             const { syncUserPoiPoiUnifiedState } = await import('./core/PoiPoiUnifiedStateStore');
             await syncUserPoiPoiUnifiedState(userId, {
