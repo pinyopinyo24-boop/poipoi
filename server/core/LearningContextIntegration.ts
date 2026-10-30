@@ -28,7 +28,8 @@ export class LearningContextIntegration {
     this.knowledge = new LearningKnowledgeBridge(root);
   }
 
-  async buildContext(message: string, limit = 5): Promise<string> {
+  async buildContext(message: string, limit = 5, userId?: string): Promise<string> {
+    if (userId) return "";
     const entries = await this.knowledge.recall(message, limit);
     const shared = await getPoiPoiUnifiedState();
     const memories = shared.records.filter(record =>
@@ -67,10 +68,11 @@ export class LearningContextIntegration {
 
 export async function enrichPromptWithLearning(
   root: string,
-  prompt: string
+  prompt: string,
+  userId?: string
 ): Promise<string> {
   try {
-    const context = await new LearningContextIntegration(root).buildContext(prompt);
+    const context = await new LearningContextIntegration(root).buildContext(prompt, 5, userId);
     return context ? `Past examples:\n${context}\n\nCurrent request:\n${prompt}` : prompt;
   } catch {
     return prompt;
@@ -86,8 +88,6 @@ export async function recordLearningFeedback(
 ): Promise<void> {
   if (!task.trim() || !answer.trim()) return;
 
-  await new LearningKnowledgeBridge(process.cwd()).recordFeedback(
-    task, answer, accepted, correction
-  );
+  if (!userId) await new LearningKnowledgeBridge(process.cwd()).recordFeedback(task, answer, accepted, correction);
   await publishLearning(task, answer, accepted, correction, userId);
 }

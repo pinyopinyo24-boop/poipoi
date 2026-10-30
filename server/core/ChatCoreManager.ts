@@ -256,7 +256,7 @@ export class ChatCoreManager {
 
       let learnedMessage = userMessage;
       try {
-        learnedMessage = await enrichPromptWithLearning(process.cwd(), userMessage);
+        learnedMessage = await enrichPromptWithLearning(process.cwd(), userMessage, session?.userId);
       } catch (error) {
         console.warn('[PoiPoi] Learning context unavailable:', error);
       }
