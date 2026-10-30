@@ -10,8 +10,12 @@ import { PoipoiCodeAgent } from '../core/PoipoiCodeAgent';
 import { getPresentationRepository } from '../managers/PresentationRepository';
 import { PresentationAIManager } from '../managers/PresentationAIManager';
 
-async function resolveUpload(file: string, extension: string): Promise<string> {
+async function resolveUpload(file: string, extension: string, userId: string): Promise<string> {
   const root = await realpath(path.resolve(process.cwd(), 'uploads'));
+  const userKey = createHash('sha256').update(userId).digest('hex').slice(0, 24);
+  const userRoot = path.resolve(root, 'documents', userKey);
+  const requested = path.resolve(root, file);
+  if (!requested.startsWith(userRoot + path.sep)) throw new Error('Document is not owned by current user');
   const full = await realpath(path.resolve(root, file));
   if (!full.startsWith(root + path.sep) || path.extname(full).toLowerCase() !== extension) {
     throw new Error('Invalid uploaded file path');
@@ -85,16 +89,16 @@ export const unifiedToolsRouter = router({
       return { format: 'pptx', base64: bytes.toString('base64') };
     }),
   excel: protectedProcedure.input(z.object({ file: z.string().min(1).max(500) }))
-    .mutation(async ({ input }) => {
-      const file = await resolveUpload(input.file, '.xlsx');
+    .mutation(async ({ input, ctx }) => {
+      const file = await resolveUpload(input.file, '.xlsx', String(ctx.user.id));
       const data = new ExcelAnalysisManager().parseExcel(file);
       if (!data) throw new Error('Excel parsing failed');
       return { statistics: data.statistics, numericalData: data.numericalData,
         sheets: data.sheets.map(sheet => ({ name: sheet.name, rows: sheet.data.length })) };
     }),
   pdf: protectedProcedure.input(z.object({ file: z.string().min(1).max(500) }))
-    .mutation(async ({ input }) => {
-      const file = await resolveUpload(input.file, '.pdf');
+    .mutation(async ({ input, ctx }) => {
+      const file = await resolveUpload(input.file, '.pdf', String(ctx.user.id));
       const { PDFParse } = await import('pdf-parse');
       const parser = new PDFParse({ data: new Uint8Array(await readFile(file)) });
       try {
@@ -110,7 +114,7 @@ export const unifiedToolsRouter = router({
     type: z.enum(['xlsx', 'pdf']),
     question: z.string().min(1).max(3000),
   })).mutation(async ({ input, ctx }) => {
-    const file = await resolveUpload(input.file, '.' + input.type);
+    const file = await resolveUpload(input.file, '.' + input.type, String(ctx.user.id));
     let evidence: string;
     if (input.type === 'xlsx') {
       const parsed = new ExcelAnalysisManager().parseExcel(file);
@@ -258,10 +262,10 @@ export const unifiedToolsRouter = router({
   analyzeMultipleDocuments: protectedProcedure.input(z.object({
     files: z.array(z.object({ file: z.string().min(1).max(500), type: z.enum(['xlsx', 'pdf']) })).min(2).max(6),
     question: z.string().min(1).max(3000),
-  })).mutation(async ({ input }) => {
+  })).mutation(async ({ input, ctx }) => {
     const sources: Array<{ file: string; evidence: string }> = [];
     for (const item of input.files) {
-      const full = await resolveUpload(item.file, '.' + item.type);
+      const full = await resolveUpload(item.file, '.' + item.type, String(ctx.user.id));
       if (item.type === 'xlsx') {
         const parsed = new ExcelAnalysisManager().parseExcel(full);
         if (!parsed) throw new Error('Excel extraction failed');
