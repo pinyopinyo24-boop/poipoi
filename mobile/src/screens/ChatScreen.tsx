@@ -42,7 +42,7 @@ import { Keyboard,
   Share,
 } from 'react-native';
 import { CameraView, useCameraPermissions } from 'expo-camera';
-import { useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import * as FileSystem from 'expo-file-system';
 import { VoiceInputUI } from '../components/VoiceInputUI';
 import { MobileAPIConnector, ChatRequest, ChatResponse } from "../services/MobileAPIConnector";
@@ -123,13 +123,83 @@ export default function ChatScreen() {
   const [chatSessions, setChatSessions] = useState<Array<{ id: string; title?: string }>>([]);
   const [showHistory, setShowHistory] = useState(false);
 
+  const openChatHistory = async () => {
+    if (!apiConnector || !isConnected) {
+      setShowHistory(true);
+      return;
+    }
+    const result = await apiConnector.getChatSessions();
+    if (!result.success || !result.data) {
+      Alert.alert('履歴エラー', '履歴を取得できませんでした');
+      return;
+    }
+    setChatSessions(result.data);
+    setShowHistory(true);
+  };
+
+  const openChatSession = async (id: string) => {
+    if (!apiConnector) return;
+    const result = await apiConnector.getChatHistory(id);
+    if (!result.success || !result.data) {
+      Alert.alert('履歴エラー', '会話を取得できませんでした');
+      return;
+    }
+    await apiConnector.selectChatSession(id);
+    // A new history selection must not inherit the previous session's sync signature.
+    lastSyncedConversationRef.current = '';
+    setSessionId(id);
+    setMessages(result.data.map(message => ({
+      id: message.id,
+      text: message.content,
+      isUser: message.role === 'user',
+      timestamp: message.timestamp,
+    })));
+    setShowHistory(false);
+  };
+  useEffect(()=>{AndroidAIModelManager.setProgressListener(setModelDownloadProgress);return ()=>AndroidAIModelManager.setProgressListener(null);},[]);
+  const [apiConnector, setApiConnector] = useState<MobileAPIConnector | null>(null);
+  const rateAssistantAnswer = (item: Message) => {
+    if (item.isUser) return;
+    if (!apiConnector || !isConnected || !(sessionId || apiConnector.getSessionId())) {
+      Alert.alert('学習評価', 'PC接続時に評価できます。オフライン中の訂正はチャットで「正しくは…」と入力してください。');
+      return;
+    }
+    Alert.alert('この回答を評価', '回答を長押しして評価できます。', [
+      { text: 'キャンセル', style: 'cancel' },
+      { text: '正しい', onPress: () => { void submitRating(item, true); } },
+      { text: '間違い', onPress: () => { void submitRating(item, false); } },
+    ]);
+  };
+
+  const submitRating = async (item: Message, accepted: boolean) => {
+    const activeSession = sessionId || apiConnector?.getSessionId();
+    if (!apiConnector || !activeSession) return;
+    const result = await apiConnector.submitLearningFeedback({
+      sessionId: activeSession,
+      messageId: item.id,
+      accepted,
+    });
+    Alert.alert('学習評価', result.success
+      ? (accepted ? '正しい回答として記録しました' : '誤った回答として記録しました。正しい内容は「正しくは…」と送信してください。')
+      : (result.error || '評価を保存できませんでした'));
+  };
+
+
+  const [isConnected, setIsConnected] = useState(false);
+  const [sessionId, setSessionId] = useState<string | undefined>();
+  const [loginUsername, setLoginUsername] = useState('');
+  const [loginPassword, setLoginPassword] = useState('');
+  const [loginBusy, setLoginBusy] = useState(false);
+  const [showLogin, setShowLogin] = useState(false);
+  const [isAuthenticated, setIsAuthenticated] = useState(false);
+
   // POIPOI_UNIFIED_CONVERSATION_SYNC_V3
   const lastSyncedConversationRef = useRef('');
   const messagesRef = useRef(messages);
   messagesRef.current = messages;
 
   useEffect(() => {
-    if (!localHistoryReady || !apiConnector || !isConnected || isLoading) return;
+    if (!localHistoryReady || !apiConnector || !isConnected || !isAuthenticated || isLoading) return;
 
     let cancelled = false;
     let retryTimer: ReturnType<typeof setTimeout> | null = null;
@@ -200,76 +270,7 @@ export default function ChatScreen() {
       clearTimeout(timer);
       if (retryTimer) clearTimeout(retryTimer);
     };
-  }, [messages, localHistoryReady, apiConnector, isConnected, isLoading]);
-  const openChatHistory = async () => {
-    if (!apiConnector || !isConnected) {
-      setShowHistory(true);
-      return;
-    }
-    const result = await apiConnector.getChatSessions();
-    if (!result.success || !result.data) {
-      Alert.alert('履歴エラー', '履歴を取得できませんでした');
-      return;
-    }
-    setChatSessions(result.data);
-    setShowHistory(true);
-  };
-
-  const openChatSession = async (id: string) => {
-    if (!apiConnector) return;
-    const result = await apiConnector.getChatHistory(id);
-    if (!result.success || !result.data) {
-      Alert.alert('履歴エラー', '会話を取得できませんでした');
-      return;
-    }
-    await apiConnector.selectChatSession(id);
-    // A new history selection must not inherit the previous session's sync signature.
-    lastSyncedConversationRef.current = '';
-    setSessionId(id);
-    setMessages(result.data.map(message => ({
-      id: message.id,
-      text: message.content,
-      isUser: message.role === 'user',
-      timestamp: message.timestamp,
-    })));
-    setShowHistory(false);
-  };
-  useEffect(()=>{AndroidAIModelManager.setProgressListener(setModelDownloadProgress);return ()=>AndroidAIModelManager.setProgressListener(null);},[]);
-  const [apiConnector, setApiConnector] = useState<MobileAPIConnector | null>(null);
-  const rateAssistantAnswer = (item: Message) => {
-    if (item.isUser) return;
-    if (!apiConnector || !isConnected || !(sessionId || apiConnector.getSessionId())) {
-      Alert.alert('学習評価', 'PC接続時に評価できます。オフライン中の訂正はチャットで「正しくは…」と入力してください。');
-      return;
-    }
-    Alert.alert('この回答を評価', '回答を長押しして評価できます。', [
-      { text: 'キャンセル', style: 'cancel' },
-      { text: '正しい', onPress: () => { void submitRating(item, true); } },
-      { text: '間違い', onPress: () => { void submitRating(item, false); } },
-    ]);
-  };
-
-  const submitRating = async (item: Message, accepted: boolean) => {
-    const activeSession = sessionId || apiConnector?.getSessionId();
-    if (!apiConnector || !activeSession) return;
-    const result = await apiConnector.submitLearningFeedback({
-      sessionId: activeSession,
-      messageId: item.id,
-      accepted,
-    });
-    Alert.alert('学習評価', result.success
-      ? (accepted ? '正しい回答として記録しました' : '誤った回答として記録しました。正しい内容は「正しくは…」と送信してください。')
-      : (result.error || '評価を保存できませんでした'));
-  };
-
-
-  const [isConnected, setIsConnected] = useState(false);
-  const [sessionId, setSessionId] = useState<string | undefined>();
-  const [loginUsername, setLoginUsername] = useState('');
-  const [loginPassword, setLoginPassword] = useState('');
-  const [loginBusy, setLoginBusy] = useState(false);
-  const [showLogin, setShowLogin] = useState(false);
-  const [isAuthenticated, setIsAuthenticated] = useState(false);
+  }, [messages, localHistoryReady, apiConnector, isConnected, isAuthenticated, isLoading]);
 
   const handleLogin = async () => {
     if (!apiConnector || !loginUsername.trim() || !loginPassword || loginBusy) return;
@@ -635,7 +636,7 @@ export default function ChatScreen() {
   const pickAttachment = async () => {
     try {
       const result = await ImagePicker.launchImageLibraryAsync({
-        mediaTypes: ['images'],
+        mediaTypes: ImagePicker.MediaTypeOptions.Images,
         base64: true,
         quality: 0.65
       });
