@@ -7,7 +7,7 @@ import { ChatCoreManager, ChatMessage, ChatSession } from '../core/ChatCoreManag
 import { ChatService } from '../services/ChatService';
 import { MessageProcessingService } from '../services/MessageProcessingService';
 import { ContextAwarenessService } from '../services/ContextAwarenessService';
-import { ChatRepository } from '../repositories/ChatRepository';
+import { ChatRepository, getSharedChatRepository } from '../repositories/ChatRepository';
 
 describe('ChatCoreManager', () => {
   let chatCoreManager: ChatCoreManager;
@@ -18,7 +18,11 @@ describe('ChatCoreManager', () => {
   let mockAuditManager: any;
   let mockApprovalManager: any;
 
-  beforeEach(() => {
+  beforeEach(async () => {
+    await getSharedChatRepository().saveSession({
+      id: 'session123', userId: 'user123', title: 'Test session',
+      createdAt: Date.now(), updatedAt: Date.now(), messageCount: 0,
+    });
     mockMemoryManager = {
       saveConversation: vi.fn().mockResolvedValue(undefined),
       searchMemories: vi.fn().mockResolvedValue([]),
@@ -203,8 +207,6 @@ describe('ChatCoreManager', () => {
     });
 
     it('should delete session with approval', async () => {
-      await chatCoreManager.createSession('user123', 'テストセッション');
-
       await chatCoreManager.deleteSession('user123', 'session123');
 
       expect(mockApprovalManager.requestApproval).toHaveBeenCalled();
