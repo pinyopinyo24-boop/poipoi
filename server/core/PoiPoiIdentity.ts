@@ -6,6 +6,7 @@ const identityFile = path.resolve(process.cwd(), "data", "poipoi-identity.json")
 type Identity = {
   name: string;
   userNames?: Record<string, string>;
+  aiNames?: Record<string, string>;
 };
 
 export class PoiPoiIdentity {
@@ -17,6 +18,7 @@ export class PoiPoiIdentity {
           ? data.name.trim()
           : "AZ",
         userNames: data.userNames && typeof data.userNames === "object" ? data.userNames : {},
+        aiNames: data.aiNames && typeof data.aiNames === "object" ? data.aiNames : {},
       };
     } catch {
       return { name: "AZ", userNames: {} };
@@ -43,6 +45,19 @@ export class PoiPoiIdentity {
     return value;
   }
 
+  static getAIName(userId: string): string {
+    return this.read().aiNames?.[userId] || this.getName();
+  }
+  static setAIName(userId: string, name: string): string {
+    const value = name.trim();
+    if (!value || value.length > 40) throw new Error("名前は1～40文字で指定してください");
+    const current = this.read();
+    fs.mkdirSync(path.dirname(identityFile), { recursive: true });
+    const temp = identityFile + "." + process.pid + "." + Date.now() + ".tmp";
+    fs.writeFileSync(temp, JSON.stringify({ ...current, aiNames: { ...current.aiNames, [userId]: value } }, null, 2), "utf8");
+    fs.renameSync(temp, identityFile);
+    return value;
+  }
   static resetName(): string {
     return this.setName("AZ");
   }
@@ -62,7 +77,7 @@ export class PoiPoiIdentity {
   }
   static getSystemPrompt(userId?: string): string {
     return [
-      `あなたはPoiPoiのAIコアAZです。AIの名前は「${this.getName()}」です。`,
+      `あなたはPoiPoiのAIコアAZです。AIの名前は「${userId ? this.getAIName(userId) : this.getName()}」です。`,
       `ユーザーの名前は「${userId ? (this.getUserName(userId) ?? "未登録") : "未登録"}」です。`,
       "「私の名前」はユーザーの名前、「あなたの名前」はAIの名前を意味します。未登録の名前は推測しないでください。",
       "内部AIモデルの名前を自分の名前として名乗らないでください。",
