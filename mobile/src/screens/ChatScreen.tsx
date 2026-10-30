@@ -1218,7 +1218,7 @@ export default function ChatScreen() {
             const split = request.indexOf('｜');
             const title = (split >= 0 ? request.slice(0, split) : request).trim();
             const analysis = (split >= 0 ? request.slice(split + 1) : lastDocumentAnalysisRef.current).trim();
-            if (!title || !analysis) {
+            if (!title || (!analysis && !analyzedDocumentsRef.current.length)) {
               throw new Error('先にPDF・Excel資料を解析するか「/資料PPT タイトル｜分析結果」を入力してください');
             }
             const documents = analyzedDocumentsRef.current;
@@ -1254,7 +1254,7 @@ export default function ChatScreen() {
             if (!FileSystem.documentDirectory) {
               throw new Error('端末のファイル保存領域が利用できません');
             }
-            const safeTitle = title.replace(/[\\/:*?"<>|\\x00-\\x1f]/g, '_').slice(0, 60) || 'PoiPoi';
+            const safeTitle = title.replace(/[\\/:*?"<>|\x00-\x1f]/g, '_').slice(0, 60) || 'PoiPoi';
             const destination = FileSystem.documentDirectory + safeTitle + '-' + Date.now() + '.pptx';
             await FileSystem.writeAsStringAsync(destination, fileBase64, {
               encoding: FileSystem.EncodingType.Base64,

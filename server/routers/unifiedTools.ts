@@ -2,7 +2,7 @@ import { router, protectedProcedure } from '../_core/trpc';
 import { z } from 'zod';
 import { ExcelAnalysisManager } from '../managers/ExcelAnalysisManager';
 import { invokeLLM } from '../_core/llm';
-import { readFile, realpath, stat, mkdir, writeFile } from 'node:fs/promises';
+import { readFile, realpath, stat, mkdir, writeFile, readdir, unlink } from 'node:fs/promises';
 import { createHash, randomUUID } from 'node:crypto';
 import path from 'node:path';
 import { getUserPoiPoiUnifiedState, syncUserPoiPoiUnifiedState } from '../core/PoiPoiUnifiedStateStore';
@@ -24,6 +24,26 @@ async function resolveUpload(file: string, extension: string, userId: string): P
   const info = await stat(full);
   if (!info.isFile() || info.size > 10 * 1024 * 1024) throw new Error('Upload exceeds allowed size');
   return full;
+}
+
+
+const presentationRoot = path.resolve(process.cwd(), 'uploads', 'presentations');
+function presentationDirectory(userId: string) {
+  const key = createHash('sha256').update(userId).digest('hex').slice(0, 24);
+  return path.join(presentationRoot, key);
+}
+async function persistPresentation(id: string, userId: string, bytes: Buffer) {
+  if (!/^pres_[a-zA-Z0-9_]+$/.test(id)) throw new Error('Invalid presentation identifier');
+  const directory = presentationDirectory(userId);
+  await mkdir(directory, { recursive: true });
+  await writeFile(path.join(directory, id + '.pptx'), bytes, { flag: 'wx', mode: 0o600 });
+}
+async function readPersistedPresentation(id: string, userId: string): Promise<Buffer> {
+  if (!/^pres_[a-zA-Z0-9_]+$/.test(id)) throw new Error('Presentation not found');
+  const file = path.join(presentationDirectory(userId), id + '.pptx');
+  const info = await stat(file).catch(() => null);
+  if (!info?.isFile() || info.size > 20 * 1024 * 1024) throw new Error('Presentation not found');
+  return readFile(file);
 }
 
 const presentationManager = new PresentationAIManager(getPresentationRepository());
@@ -68,25 +88,49 @@ export const unifiedToolsRouter = router({
     await writeFile(destination, bytes, { flag: 'wx', mode: 0o600 });
     return { file: relativeFile, type: input.type, size: bytes.length };
   }),
+  listOfficePresentations: protectedProcedure.query(async ({ ctx }) => {
+    const directory = presentationDirectory(String(ctx.user.id));
+    const files = await readdir(directory).catch(error => {
+      if ((error as NodeJS.ErrnoException).code === 'ENOENT') return [] as string[];
+      throw error;
+    });
+    return (await Promise.all(files.filter(name => /^pres_[a-zA-Z0-9_]+\\.pptx$/.test(name))
+      .map(async name => {
+        const info = await stat(path.join(directory, name));
+        return { id: name.slice(0, -5), size: info.size, updatedAt: info.mtime.toISOString() };
+      }))).sort((a, b) => b.updatedAt.localeCompare(a.updatedAt)).slice(0, 100);
+  }),
+  deleteOfficePresentation: protectedProcedure.input(z.object({
+    id: z.string().regex(/^pres_[a-zA-Z0-9_]+$/),
+  })).mutation(async ({ input, ctx }) => {
+    const file = path.join(presentationDirectory(String(ctx.user.id)), input.id + '.pptx');
+    await unlink(file);
+    if (presentationOwners.get(input.id) === String(ctx.user.id)) {
+      presentationManager.deletePresentation(input.id);
+      presentationOwners.delete(input.id);
+    }
+    return { deleted: true };
+  }),
   presentation: protectedProcedure.input(z.object({
     title: z.string().min(1).max(255),
     description: z.string().max(1000).default(''),
     slides: z.array(z.object({ title: z.string().min(1).max(255), content: z.string().max(10000) })).min(1).max(30),
-  })).mutation(({ input, ctx }) => {
+  })).mutation(async ({ input, ctx }) => {
     const manager = presentationManager;
     const created = manager.createPresentation(input.title, input.description);
     for (const slide of input.slides) {
       manager.addSlide(created.id, { title: slide.title, content: slide.content, layout: 'content', elements: [] });
     }
+    const bytes = await manager.exportPowerPoint(created.id);
+    if (!bytes || bytes.length > 20 * 1024 * 1024) throw new Error('PowerPoint export failed or too large');
+    await persistPresentation(created.id, String(ctx.user.id), bytes);
     presentationOwners.set(created.id, String(ctx.user.id));
     return { id: created.id, slideCount: input.slides.length, generated: true };
   }),
   exportPresentation: protectedProcedure
     .input(z.object({ id: z.string().min(1) }))
     .mutation(async ({ input, ctx }) => {
-      if (presentationOwners.get(input.id) !== String(ctx.user.id)) throw new Error('Presentation not found');
-      const bytes = await presentationManager.exportPowerPoint(input.id);
-      if (!bytes) throw new Error('Presentation not found');
+      const bytes = await readPersistedPresentation(input.id, String(ctx.user.id));
       return { format: 'pptx', base64: bytes.toString('base64') };
     }),
   excel: protectedProcedure.input(z.object({ file: z.string().min(1).max(500) }))
@@ -179,6 +223,9 @@ export const unifiedToolsRouter = router({
     for (const slide of parsed.slides) {
       presentationManager.addSlide(created.id, { ...slide, layout: 'content', elements: [] });
     }
+    const bytes = await presentationManager.exportPowerPoint(created.id);
+    if (!bytes || bytes.length > 20 * 1024 * 1024) throw new Error('PowerPoint export failed or too large');
+    await persistPresentation(created.id, String(ctx.user.id), bytes);
     presentationOwners.set(created.id, String(ctx.user.id));
     return { id: created.id, slideCount: parsed.slides.length, exportProcedure: 'unifiedTools.exportPresentation' };
   }),
@@ -251,6 +298,7 @@ export const unifiedToolsRouter = router({
     const bytes = await presentationManager.exportPowerPoint(created.id);
     if (!bytes) throw new Error('PowerPoint export failed');
     if (bytes.length > 20 * 1024 * 1024) throw new Error('PowerPoint exceeds mobile export limit');
+    await persistPresentation(created.id, userId, bytes);
     return {
       id: created.id, slideCount: slides.length, format: 'pptx' as const,
       base64: bytes.toString('base64'), analysis,
