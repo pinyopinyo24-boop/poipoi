@@ -527,7 +527,7 @@ export const chatRouter = router({
         title: `チャット回答の報告: ${input.issueType}`,
         message: description,
         email: null,
-        userId: ctx.user?.id ?? "mobile",
+        userId: typeof ctx.user?.id === "number" ? ctx.user.id : null,
         status: 'new',
       });
 
