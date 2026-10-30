@@ -1,14 +1,10 @@
-import { updateMobilePoiPoiState, synchronizeMobilePoiPoiState, getMobilePoiPoiState } from './PoiPoiUnifiedStateSync';
+import { updateMobilePoiPoiState, synchronizeMobilePoiPoiState, getMobilePoiPoiState, getMobilePoiPoiAccountNamespace } from './PoiPoiUnifiedStateSync';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { AndroidLocalAI } from './AndroidLocalAI';
 
 const scopedEvolutionStorage = {
   async key(key: string): Promise<string> {
-    const token = await AsyncStorage.getItem('sessionToken');
-    if (!token) return key + ':anonymous';
-    let hash = 2166136261;
-    for (const char of token) hash = Math.imul(hash ^ char.charCodeAt(0), 16777619);
-    return key + ':account:' + (hash >>> 0).toString(16);
+    return key + ':' + await getMobilePoiPoiAccountNamespace();
   },
   async getItem(key: string) { return AsyncStorage.getItem(await this.key(key)); },
   async setItem(key: string, value: string) { return AsyncStorage.setItem(await this.key(key), value); },
@@ -127,8 +123,8 @@ export class MobileSelfEvolution {
       console.warn('[PoiPoi] Evolution state registration failed:', error);
     }
     try {
-      const disconnected = await scopedEvolutionStorage.getItem('POIPOI_PC_DISCONNECTED');
-      const configuredUrl = await scopedEvolutionStorage.getItem('POIPOI_PC_URL');
+      const disconnected = await AsyncStorage.getItem('POIPOI_PC_DISCONNECTED');
+      const configuredUrl = await AsyncStorage.getItem('POIPOI_PC_URL');
 
       if (disconnected !== '1' && configuredUrl?.trim()) {
         await synchronizeMobilePoiPoiState(configuredUrl.trim());

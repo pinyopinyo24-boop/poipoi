@@ -11,6 +11,10 @@ const STORAGE_KEY = 'poipoi:unified-ai-state:v1';
 
 // Keep offline records separated by the active login. Legacy anonymous records
 // remain on-device and are not uploaded into an unrelated authenticated account.
+export async function getMobilePoiPoiAccountNamespace(): Promise<string> {
+  return storageKey();
+}
+
 async function storageKey(): Promise<string> {
   const token = await AsyncStorage.getItem('sessionToken');
   if (!token) return STORAGE_KEY;
