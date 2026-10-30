@@ -283,7 +283,9 @@ export const chatRouter = router({
           const syncedAI = (await getUserPoiPoiUnifiedState(userId)).records.find(
             record => record.id === 'az:ai-name' && record.category === 'memory'
           );
-          if (syncedAI?.value && PoiPoiIdentity.getAIName(userId) === PoiPoiIdentity.getName()) {
+          // Unified state is authoritative after Android/PC synchronization.
+          // Refresh even when an older per-user name is cached on this PC.
+          if (syncedAI?.value && PoiPoiIdentity.getAIName(userId) !== syncedAI.value) {
             PoiPoiIdentity.setAIName(userId, syncedAI.value);
           }
         }
