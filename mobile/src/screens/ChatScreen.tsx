@@ -249,7 +249,7 @@ export default function ChatScreen() {
             return !prev.some(existing =>
               existing.isUser === m.isUser &&
               existing.text === m.text &&
-              Math.abs(existing.timestamp - m.timestamp) < 120000
+              Math.abs(existing.timestamp - m.timestamp) < 3000
             );
           });
           return additions.length

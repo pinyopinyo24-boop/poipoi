@@ -566,29 +566,32 @@ export class MobileAPIConnector {
   }>): Promise<boolean> {
     try {
       const history = messages
-        .filter(m => m.id !== '0' && typeof m.text === 'string' && m.text.trim() && Number.isFinite(m.timestamp))
-        .slice(-200);
+        .filter(m => m.id !== '0' && typeof m.text === 'string' && m.text.trim() && Number.isFinite(m.timestamp));
 
       if (history.length === 0) return true;
 
       const sessionId = this.sessionId || await this.createChatSession();
 
-      const syncResponse = await this.apiClient.post('/api/trpc/chat.syncHistory', {
-        json: {
-          conversations: [{
-            id: sessionId,
-            title: 'PoiPoiモバイルチャット',
-            updatedAt: new Date().toISOString(),
-            messages: history.map(m => ({
-              id: m.id,
-              role: m.isUser ? 'user' : 'assistant',
-              content: m.text,
-              timestamp: new Date(m.timestamp).toISOString(),
-            })),
-          }],
-        },
-      });
-      if (this.getTrpcData<{ success: boolean }>(syncResponse.data)?.success !== true) return false;
+      // Upload all turns in bounded batches; never silently discard older history.
+      for (let offset = 0; offset < history.length; offset += 200) {
+        const batch = history.slice(offset, offset + 200);
+        const syncResponse = await this.apiClient.post('/api/trpc/chat.syncHistory', {
+          json: {
+            conversations: [{
+              id: sessionId,
+              title: 'PoiPoiモバイルチャット',
+              updatedAt: new Date().toISOString(),
+              messages: batch.map(m => ({
+                id: m.id,
+                role: m.isUser ? 'user' : 'assistant',
+                content: m.text,
+                timestamp: new Date(m.timestamp).toISOString(),
+              })),
+            }],
+          },
+        });
+        if (this.getTrpcData<{ success: boolean }>(syncResponse.data)?.success !== true) return false;
+      }
 
       return true;
     } catch (error) {

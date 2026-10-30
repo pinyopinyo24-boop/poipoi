@@ -94,11 +94,10 @@ async function readLocal(): Promise<PoiPoiUnifiedState> {
   return json ? deserializePoiPoiState(json) : emptyState();
 }
 
-async function saveLocal(state: PoiPoiUnifiedState): Promise<void> {
-  await AsyncStorage.setItem(
-    await storageKey(),
-    serializePoiPoiState(state)
-  );
+async function saveLocal(state: PoiPoiUnifiedState, expectedKey?: string): Promise<void> {
+  const key = await storageKey();
+  if (expectedKey && key !== expectedKey) throw new Error('Account changed before saving state');
+  await AsyncStorage.setItem(expectedKey ?? key, serializePoiPoiState(state));
 }
 
 export function getMobilePoiPoiState(): Promise<PoiPoiUnifiedState> {
@@ -274,7 +273,7 @@ export function synchronizeMobilePoiPoiState(
     if (await AsyncStorage.getItem('sessionToken') !== token || await storageKey() !== initialKey) {
       throw new Error('PoiPoi account changed during sync; retry for the current account');
     }
-    await saveLocal(finalState);
+    await saveLocal(finalState, initialKey);
     return finalState;
   });
 }
