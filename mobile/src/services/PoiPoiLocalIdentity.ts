@@ -23,7 +23,7 @@ export async function replyWithLocalIdentity(message: string, fallback: () => Pr
     const name = rename[1].trim();
     await AsyncStorage.setItem(KEY, name);
     await updateMobilePoiPoiState({ id: 'az:ai-name', category: 'memory', value: name, updatedAt: Date.now(), origin: 'android' });
-    return '名前を「' + name + '」に変更しました。';
+    return 'AIの名前を「' + name + '」に変更しました。';
   }
   if (text === '名前は？' || text === 'あなたの名前は？' || text === 'AZの名前は？') {
     const state = await getMobilePoiPoiState();

@@ -115,7 +115,7 @@ export async function searchUserPoiPoiMemories(
   ])].slice(0, 40);
   if (!terms.length) return [];
   return state.records
-    .filter(record => record.category === 'memory' || record.category === 'learning')
+    .filter(record => (record.category === 'memory' || record.category === 'learning') && !record.id.startsWith('az:'))
     .map(record => {
       const value = record.value.normalize('NFKC').toLocaleLowerCase();
       const score = terms.reduce((total, term) => total + (value.includes(term) ? term.length : 0), 0);

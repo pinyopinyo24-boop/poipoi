@@ -304,7 +304,7 @@ export const chatRouter = router({
         }
 
         const mobileHistory = (input.context?.poipoiConversation ?? [])
-          .map(turn => `${turn.role === 'user' ? 'ユーザー' : 'PoiPoi'}: ${turn.content}`)
+          .map(turn => `${turn.role === 'user' ? 'ユーザー' : 'AZ'}: ${turn.content.slice(0, 2000)}`)
           .join('\n');
         const mobileHistoryPrefix = mobileHistory
           ? `スマホ側の直前の会話:\n${mobileHistory}\n\n現在の質問:\n`
