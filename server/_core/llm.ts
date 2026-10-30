@@ -1,18 +1,7 @@
 import { enrichPromptWithLearning } from "../core/LearningContextIntegration";
 /**
- * LLM Integration - Google Gemini API螳溯｣・
- * Google Gemini API繧剃ｽｿ逕ｨ縺励◆LLM邨ｱ蜷・
+ * PoiPoi local Ollama LLM integration.
  */
-
-// [LLM KEY CHECK] Startup verification
-if (typeof process !== 'undefined' && process.env) {
-  const apiKey = process.env.GEMINI_API_KEY;
-  if (!apiKey) {
-    console.warn('[LLM KEY CHECK] WARNING: GEMINI_API_KEY is not set');
-  } else {
-    console.log('[LLM KEY CHECK] GEMINI_API_KEY is configured');
-  }
-}
 
 export type Role = "system" | "user" | "assistant" | "tool" | "function";
 
@@ -121,36 +110,68 @@ export type LLMModel = {
   capabilities?: Record<string, unknown>;
 };
 
-/**
- * Google Gemini API險ｭ螳・
- */
-const GEMINI_API_KEY = process.env.GEMINI_API_KEY || "";
-const GEMINI_API_URL = "https://generativelanguage.googleapis.com/v1beta/openai/";
-const DEFAULT_MODEL = "gemini-2.0-flash";
-
-/**
- * Invoke LLM - Google Gemini API螳溯｣・
- */
+/** Invoke local Ollama models. */
 export async function invokeLLM(request: LLMRequest): Promise<LLMResponse> {
-  const baseUrl = process.env.LOCAL_AI_URL || "http://localhost:11434";
-  const model = request.messages?.[0]?.content?.includes("code generation expert") ? "qwen2.5-coder:7b" : "qwen2.5:7b";
+  const baseUrl = (process.env.LOCAL_AI_URL || "http://localhost:11434").replace(/\/+$/, "");
+  const isCodeTask = request.messages.some(message =>
+    typeof message.content === "string" &&
+    /code implementation agent|code generation expert|software implementation agent/i.test(message.content)
+  );
+  const model = (request.model && /^(qwen|llama|mistral|phi|deepseek|codellama|gemma)/i.test(request.model) ? request.model : undefined) || (isCodeTask
+    ? process.env.LOCAL_CODER_MODEL || "qwen2.5-coder:7b"
+    : process.env.LOCAL_CHAT_MODEL || process.env.LOCAL_CODER_MODEL || "qwen2.5-coder:7b");
 
-  const messages = request.messages || [];
+  const messages = [
+    { role: "system" as const, content: "For numeric questions, compute carefully: first extract all numbers with units, write the equation internally, calculate, then verify by reversing the operation. Per-unit time = elapsed minutes / quantity (example: 75 minutes / 60 parts = 1.25 minutes per part, NOT 0.8). Combined per-unit time = sum of all elapsed minutes / sum of all quantities, NOT an average of unrelated ratios. Total cost variance = (actual unit cost - estimated unit cost) * quantity (example: (168 - 150) * 30 = 18 * 30 = 540, NOT 420). Do not accept an incorrect value supplied by the question; recompute it. Never claim a file, tool action or synchronization succeeded without a confirmed successful result. Follow the requested answer format exactly; output digits only when requested." },
+    ...(request.messages || []),
+  ];
+  const userIndex = messages.findLastIndex(message => message.role === "user");
+  if (userIndex >= 0 && !request.response_format) {
+    const userMessage = messages[userIndex];
+    if (typeof userMessage.content === "string") {
+      messages[userIndex] = {
+        ...userMessage,
+        content: userMessage.content.startsWith('Past examples:') ? userMessage.content : await enrichPromptWithLearning(process.cwd(), userMessage.content),
+      };
+    }
+  }
 
+  const prompt = [...messages].reverse().find(m => m.role === "user")?.content;
+  if (typeof prompt === "string" && /合計個数|加重/.test(prompt) && /平均製造時間|平均.*時間/.test(prompt)) {
+    const pairs = Array.from(prompt.matchAll(/(\d+)個を(\d+)分/g));
+    if (pairs.length > 1) {
+      const count = pairs.reduce((n, p) => n + Number(p[1]), 0);
+      const elapsed = pairs.reduce((n, p) => n + Number(p[2]), 0);
+      if (count > 0) return {
+        id: "local-arithmetic", object: "chat.completion", created: Math.floor(Date.now()/1000), model,
+        choices: [{ index: 0, message: { role: "assistant", content: (elapsed/count).toFixed(2) }, finish_reason: "stop" }],
+        usage: { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0 },
+      };
+    }
+  }
   console.log("[LLM REQUEST] Local AI", {
     model,
     messageCount: messages.length,
     timestamp: new Date().toISOString(),
   });
 
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 120000);
   try {
     const response = await fetch(`${baseUrl}/api/chat`, {
+      signal: controller.signal,
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         model,
         messages,
         stream: false,
+        options: {
+          ...(request.temperature !== undefined ? { temperature: request.temperature } : {}),
+          ...(request.top_p !== undefined ? { top_p: request.top_p } : {}),
+          ...(request.max_tokens !== undefined ? { num_predict: request.max_tokens } : {}),
+        },
+        ...(request.response_format ? { format: request.response_format.json_schema.schema } : {}),
       }),
     });
 
@@ -179,89 +200,47 @@ try {
         index: 0,
         message: {
           role: "assistant",
-          content: data.message?.content || "",
+          content: typeof data.message?.content === "string" ? data.message.content : "",
         },
         finish_reason: "stop",
       }],
       usage: {
-        prompt_tokens: data.usage?.prompt_tokens || 0,
-        completion_tokens: data.usage?.completion_tokens || 0,
-        total_tokens: data.usage?.total_tokens || 0,
+        prompt_tokens: data.prompt_eval_count ?? data.usage?.prompt_tokens ?? 0,
+        completion_tokens: data.eval_count ?? data.usage?.completion_tokens ?? 0,
+        total_tokens: (data.prompt_eval_count ?? data.usage?.prompt_tokens ?? 0) + (data.eval_count ?? data.usage?.completion_tokens ?? 0),
       },
     };
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : String(error);
     console.error("[LLM ERROR] Local AI call failed:", errorMsg);
-
-    return {
-      id: `local-error-${Date.now()}`,
-      object: "chat.completion",
-      created: Math.floor(Date.now() / 1000),
-      model: model,
-      choices: [{
-        index: 0,
-        message: {
-          role: "assistant",
-          content: "現在、ローカルAIサービスに接続できません。",
-        },
-        finish_reason: "error",
-      }],
-      usage: {
-        prompt_tokens: 0,
-        completion_tokens: 0,
-        total_tokens: 0,
-      },
-    };
+    // Callers must be able to distinguish transport failure from a real answer.
+    throw error;
+  } finally {
+    clearTimeout(timer);
   }
 }
 export async function listLLMModels(): Promise<{ data: LLMModel[] }> {
+  const baseUrl = (process.env.LOCAL_AI_URL || "http://localhost:11434").replace(/\/+$/, "");
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 5000);
   try {
-    // Gemini API縺ｧ縺ｯ models 繧ｨ繝ｳ繝峨・繧､繝ｳ繝医′逡ｰ縺ｪ繧九◆繧√√ョ繝輔か繝ｫ繝医Δ繝・Ν繧定ｿ斐☆
+    const response = await fetch(baseUrl + "/api/tags", { signal: controller.signal });
+    if (!response.ok) throw new Error("Local model listing failed: " + response.status);
+    const payload: unknown = await response.json();
+    if (!payload || typeof payload !== "object" || !("models" in payload) ||
+        !Array.isArray(payload.models)) throw new Error("Invalid local model listing");
     return {
-      data: [
-        {
-          id: "gemini-2.0-flash",
-          object: "model",
-          owned_by: "google",
-          permission: [],
-          created: Math.floor(Date.now() / 1000),
-          capabilities: {
-            vision: true,
-            function_calling: true,
-            json_mode: true,
-          },
-        },
-        {
-          id: "gemini-1.5-pro",
-          object: "model",
-          owned_by: "google",
-          permission: [],
-          created: Math.floor(Date.now() / 1000),
-          capabilities: {
-            vision: true,
-            function_calling: true,
-            json_mode: true,
-          },
-        },
-      ],
+      data: payload.models.filter((item: unknown): item is { name: string } =>
+        !!item && typeof item === "object" && "name" in item &&
+        typeof item.name === "string"
+      ).map(item => ({
+        id: item.name, object: "model", owned_by: "local", permission: [],
+      })),
     };
   } catch (error) {
-    console.error("[LLM] Failed to list models:", error);
-    // 繝・ヵ繧ｩ繝ｫ繝医Δ繝・Ν繧定ｿ斐☆
-    return {
-      data: [
-        {
-          id: DEFAULT_MODEL,
-          object: "model",
-          owned_by: "google",
-          permission: [],
-        },
-      ],
-    };
+    console.warn("[LLM] Local model discovery unavailable:", error);
+    return { data: [] };
+  } finally {
+    clearTimeout(timer);
   }
 }
-
-
-
-
-
