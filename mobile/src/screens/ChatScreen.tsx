@@ -519,30 +519,56 @@ export default function ChatScreen() {
     try {
       const result = await DocumentPicker.getDocumentAsync({
         type: [
-          'image/*',
-          'video/*',
-          'audio/*',
-          'text/plain',
-          'application/zip',
-          'application/json'
+          'application/pdf',
+          'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
         ],
-        copyToCacheDirectory: true
+        copyToCacheDirectory: true,
       });
-
       if (result.canceled || !result.assets?.length) return;
-
       const file = result.assets[0];
-      setMessages(prev => [...prev, {
-        id: `file-${Date.now()}`,
-        text: `📎 ${file.name}`,
-        isUser: true,
-        timestamp: Date.now()
-      }]);
+      const type = file.name.toLowerCase().endsWith('.xlsx') ? 'xlsx'
+        : file.name.toLowerCase().endsWith('.pdf') ? 'pdf' : null;
+      if (!type) throw new Error('PDFまたはXLSXファイルを選択してください');
+      if (!apiConnector || !isAuthenticated || !(isConnected || await apiConnector.checkConnectivity())) {
+        throw new Error('資料解析にはPC版への接続とログインが必要です');
+      }
+      if (typeof file.size === 'number' && file.size > 10 * 1024 * 1024) {
+        throw new Error('10MB以下のファイルを選択してください');
+      }
+      setIsAnalyzingImage(true);
+      const base64 = await FileSystem.readAsStringAsync(file.uri, {
+        encoding: FileSystem.EncodingType.Base64,
+      });
+      const uploaded = await apiConnector.executeUnifiedTool('uploadDocument', {
+        fileName: file.name, type, base64,
+      });
+      if (!uploaded.success || !uploaded.data || typeof uploaded.data !== 'object') {
+        throw new Error(uploaded.error || '資料のアップロードに失敗しました');
+      }
+      const serverFile = (uploaded.data as { file?: unknown }).file;
+      if (typeof serverFile !== 'string' || !serverFile) {
+        throw new Error('アップロードした資料の保存先を取得できませんでした');
+      }
+      const analyzed = await apiConnector.executeUnifiedTool('analyzeDocument', {
+        file: serverFile, type,
+        question: '資料の内容と重要な数値を要約し、根拠、結論、次のアクションを日本語で示してください。数値は推測しないでください。',
+      });
+      if (!analyzed.success || !analyzed.data || typeof analyzed.data !== 'object') {
+        throw new Error(analyzed.error || '資料解析に失敗しました');
+      }
+      const answer = (analyzed.data as { answer?: unknown }).answer;
+      if (typeof answer !== 'string' || !answer.trim()) {
+        throw new Error('資料の解析結果が空です');
+      }
+      setMessages(prev => [...prev,
+        { id: 'file-' + Date.now(), text: '📎 ' + file.name, isUser: true, timestamp: Date.now() },
+        { id: 'analysis-' + Date.now(), text: answer, isUser: false, timestamp: Date.now() },
+      ]);
     } catch (error) {
-      Alert.alert(
-        '添付エラー',
-        error instanceof Error ? error.message : 'ファイルを選択できませんでした'
-      );
+      Alert.alert('資料解析エラー',
+        error instanceof Error ? error.message : 'ファイルを解析できませんでした');
+    } finally {
+      setIsAnalyzingImage(false);
     }
   };
   const pickAttachment = async () => {
