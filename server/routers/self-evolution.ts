@@ -264,6 +264,119 @@ Respond in JSON format with: { "insights": ["...", "..."], "recommendations": ["
       }
     }),
 
+  // Persistent, account-scoped proposal workflow. Generation never changes code.
+  proposeImprovement: protectedProcedure
+    .input(z.object({
+      issue: z.string().trim().min(1).max(2000),
+      target: z.string().trim().min(1).max(300),
+      expectedOutcome: z.string().trim().min(1).max(1000),
+    }))
+    .mutation(async ({ input, ctx }) => {
+      const id = 'evolution-proposal-' + randomUUID();
+      const proposal = { id, issue: input.issue, target: input.target,
+        expectedOutcome: input.expectedOutcome, status: 'proposed' as const,
+        createdAt: Date.now(), updatedAt: Date.now() };
+      await syncUserPoiPoiUnifiedState(String(ctx.user.id), {
+        version: 1, records: [{ id, category: 'evolution', origin: 'pc',
+          updatedAt: proposal.updatedAt, value: JSON.stringify(proposal) }],
+      });
+      return proposal;
+    }),
+
+  listProposals: protectedProcedure.query(async ({ ctx }) => {
+    const state = await getUserPoiPoiUnifiedState(String(ctx.user.id));
+    return state.records.filter(record => record.category === 'evolution' &&
+      record.id.startsWith('evolution-proposal-')).flatMap(record => {
+      try { return [JSON.parse(record.value)]; } catch { return []; }
+    }).sort((a, b) => b.updatedAt - a.updatedAt);
+  }),
+
+  reviewProposal: protectedProcedure
+    .input(z.object({
+      proposalId: z.string().uuid(),
+      decision: z.enum(['approve_preview', 'reject']),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      const id = 'evolution-proposal-' + input.proposalId;
+      const state = await getUserPoiPoiUnifiedState(String(ctx.user.id));
+      const record = state.records.find(item => item.category === 'evolution' && item.id === id);
+      if (!record) throw new Error('Proposal not found');
+      const proposal = JSON.parse(record.value) as {
+        id: string; issue: string; target: string; expectedOutcome: string;
+        status: string; createdAt: number; updatedAt: number; previewId?: string;
+      };
+      if (proposal.status !== 'proposed') throw new Error('Proposal already reviewed');
+      // Approval is for generating a preview only, not for applying changes.
+      if (input.decision === 'approve_preview' && ctx.user.role !== 'admin')
+        throw new Error('Administrator permission required');
+      const next = { ...proposal, status: input.decision === 'reject' ? 'rejected' : 'preview_approved',
+        updatedAt: Date.now() };
+      await syncUserPoiPoiUnifiedState(String(ctx.user.id), {
+        version: 1, records: [{ id, category: 'evolution', origin: 'pc',
+          updatedAt: next.updatedAt, value: JSON.stringify(next) }],
+      });
+      return { ...next, applied: false, tested: false };
+    }),
+
+  generateApprovedPreview: protectedProcedure
+    .input(z.object({ proposalId: z.string().uuid() }))
+    .mutation(async ({ ctx, input }) => {
+      if (ctx.user.role !== 'admin') throw new Error('Administrator permission required');
+      const id = 'evolution-proposal-' + input.proposalId;
+      const state = await getUserPoiPoiUnifiedState(String(ctx.user.id));
+      const record = state.records.find(item => item.category === 'evolution' && item.id === id);
+      if (!record) throw new Error('Proposal not found');
+      const proposal = JSON.parse(record.value) as {
+        issue: string; target: string; expectedOutcome: string; status: string;
+        createdAt: number; updatedAt: number;
+      };
+      if (proposal.status !== 'preview_approved') throw new Error('Preview approval required');
+      const { unifiedToolsRouter } = await import('./unifiedTools');
+      const preview = await unifiedToolsRouter.createCaller(ctx).codePreview({
+        request: 'Target: ' + proposal.target + '\nIssue: ' + proposal.issue +
+          '\nExpected result: ' + proposal.expectedOutcome,
+      });
+      const next = { ...proposal, status: 'preview_ready', previewId: preview.previewId,
+        updatedAt: Date.now() };
+      await syncUserPoiPoiUnifiedState(String(ctx.user.id), {
+        version: 1, records: [{ id, category: 'evolution', origin: 'pc',
+          updatedAt: next.updatedAt, value: JSON.stringify(next) }],
+      });
+      return { ...next, changes: preview.changes, expiresInSeconds: preview.expiresInSeconds,
+        applied: false, tested: false };
+    }),
+
+  applyApprovedPreview: protectedProcedure
+    .input(z.object({
+      proposalId: z.string().uuid(),
+      previewId: z.string().uuid(),
+      confirm: z.literal('APPLY_AND_VERIFY'),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      if (ctx.user.role !== 'admin') throw new Error('Administrator permission required');
+      const id = 'evolution-proposal-' + input.proposalId;
+      const state = await getUserPoiPoiUnifiedState(String(ctx.user.id));
+      const record = state.records.find(item => item.category === 'evolution' && item.id === id);
+      if (!record) throw new Error('Proposal not found');
+      const proposal = JSON.parse(record.value) as { status: string; previewId?: string };
+      if (proposal.status !== 'preview_ready' || proposal.previewId !== input.previewId)
+        throw new Error('Approved preview does not match proposal');
+      // Explicit confirmation is required. The existing code agent performs verification
+      // and rollback; this endpoint does not silently invoke it.
+      const { unifiedToolsRouter } = await import('./unifiedTools');
+      const outcome = await unifiedToolsRouter.createCaller(ctx).applyCodePreview({
+        previewId: input.previewId, confirm: input.confirm,
+      });
+      const next = { ...proposal, status: outcome.success ? 'applied' : 'failed',
+        updatedAt: Date.now(), success: outcome.success, tested: outcome.tested,
+        error: outcome.error?.slice(0, 1000) };
+      await syncUserPoiPoiUnifiedState(String(ctx.user.id), {
+        version: 1, records: [{ id, category: 'evolution', origin: 'pc',
+          updatedAt: next.updatedAt, value: JSON.stringify(next) }],
+      });
+      return next;
+    }),
+
   // Report actual stored learning events, not fabricated activity counters.
   getEvolutionStatus: protectedProcedure.query(async ({ ctx }) => {
     const state = await getUserPoiPoiUnifiedState(String(ctx.user.id));
