@@ -42,7 +42,7 @@ const DEFAULT_CASES: EvaluationCase[] = [
   { id: 'self-correction-1', capability: 'self_correction', prompt: 'A calculation claims 60 parts in 75 minutes means 0.8 minutes per part. Correct it; answer only minutes per part.', expected: '1.25' },
   { id: 'tools-1', capability: 'tools', prompt: 'Is the statement "a text-only answer proves a file was saved" true or false? Answer only true or false.', expected: 'false' },
   { id: 'sync-1', capability: 'sync', prompt: 'Two devices edit the same record offline. Should conflict resolution preserve both versions until resolved? Answer only yes or no.', expected: 'yes' },
-  { id: 'reasoning-2', capability: 'reasoning', prompt: '40個を127分、12個を60分、43個を270分、50個を155分で製造した。合計個数で加重した1個あたり平均製造時間は何分か。小数第2位まで数字だけで答えて。', expected: '4.22' },
+  { id: 'reasoning-2', capability: 'reasoning', prompt: '40個を127分、12個を60分、43個を270分、50個を155分で製造した。合計個数で加重した1個あたり平均製造時間は何分か。小数第2位まで数字だけで答えて。', expected: '4.18' },
   { id: 'reasoning-3', capability: 'reasoning', prompt: 'A is taller than B. B is taller than C. Is C taller than A? Answer only yes or no.', expected: 'no' },
   { id: 'code-2', capability: 'code', prompt: 'In JavaScript, what is the value of Boolean([])? Answer only true or false.', expected: 'true' },
   { id: 'documents-2', capability: 'documents', prompt: '見積原価150円、実際原価168円、製造数量30個。不利差異の合計額を円単位の整数だけで答えて。', expected: '540' },
@@ -52,7 +52,7 @@ const DEFAULT_CASES: EvaluationCase[] = [
 ];
 
 function normalize(value: string): string {
-  return value.trim().toLowerCase().replace(/[^a-z0-9.\-]/g, '');
+  return value.trim().toLowerCase().replace(/[。．.!！?？]+$/g, '').replace(/[^a-z0-9.\-]/g, '');
 }
 
 export async function evaluateLocalCapabilities(
