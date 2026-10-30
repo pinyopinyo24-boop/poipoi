@@ -103,10 +103,21 @@ export const chatRouter = router({
               quantity: Number(quantityMatch[1]),
             }
           : null;
+        // Read-only natural-language tool routing. Mutations still require explicit commands.
+        const readOnlyIntent = /(?:見せて|表示して|一覧|リスト|確認したい|教えて|調べて|探して|どれ|ある[？?]?)/u.test(command);
+        const naturalTool = !explicitToolRequest && !codeRequest && readOnlyIntent
+          ? /(?:Excel|エクセル|PDF|資料|ファイル|文書)(?:の)?(?:一覧|リスト|どれ|ある)/iu.test(command)
+            ? '資料一覧'
+            : /(?:PowerPoint|パワーポイント|PPT|プレゼン)(?:の)?(?:一覧|リスト|どれ|ある)/iu.test(command)
+              ? 'PPT一覧'
+              : /(?:在庫|棚卸|発注|欠品)/u.test(command) && /(?:一覧|リスト|確認|見せて|表示|教えて)/u.test(command)
+                ? '在庫一覧'
+                : null
+          : null;
         const toolRequest = explicitToolRequest ?? (naturalManufacturingList
           ? ['製造一覧', '製造一覧', ''] as RegExpMatchArray
           : naturalCostArgs ? ['原価', '原価', JSON.stringify(naturalCostArgs)] as RegExpMatchArray : null);
-        if (codeRequest || toolRequest || /^PoiPoiツール[：:\s]+製造一覧\s*$/u.test(command)) {
+        if (codeRequest || toolRequest || naturalTool || /^PoiPoiツール[：:\s]+製造一覧\s*$/u.test(command)) {
           if (!ctx.user) {
             throw new TRPCError({ code: 'UNAUTHORIZED', message: 'ツール利用にはログインが必要です' });
           }
@@ -119,7 +130,14 @@ export const chatRouter = router({
           const { unifiedToolsRouter } = await import('./routers/unifiedTools');
           const caller = unifiedToolsRouter.createCaller(ctx);
           let result: unknown;
-          if (toolRequest?.[1] === 'コード適用') {
+          if (naturalTool === '資料一覧') {
+            result = await caller.listOfficeDocuments();
+          } else if (naturalTool === 'PPT一覧') {
+            result = await caller.listOfficePresentations();
+          } else if (naturalTool === '在庫一覧') {
+            const records = await caller.listManufacturingRecords();
+            result = records.map(record => ({ itemId: record.itemId, stockQuantity: record.stockQuantity ?? null, reorderLevel: record.reorderLevel ?? null, reorderRequired: record.reorderRequired, updatedAt: record.updatedAt }));
+          } else if (toolRequest?.[1] === 'コード適用') {
             if (ctx.user.role !== 'admin') {
               throw new TRPCError({ code: 'FORBIDDEN', message: 'コード変更機能は管理者のみ利用できます' });
             }
