@@ -105,7 +105,7 @@ export async function searchUserPoiPoiMemories(
   const state = await getUserPoiPoiUnifiedState(userId);
   const normalized = query.normalize('NFKC').toLocaleLowerCase().trim();
   if (!normalized) return [];
-  const words = normalized.match(/[\\p{Script=Han}\\p{Script=Hiragana}\\p{Script=Katakana}]+|[a-z0-9]+/gu) ?? [];
+  const words = normalized.match(/[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}]+|[a-z0-9]+/gu) ?? [];
   // Japanese sentences have no spaces: include overlapping fragments for recall.
   const terms = [...new Set([
     ...words.filter(word => word.length >= 2),
@@ -122,7 +122,7 @@ export async function searchUserPoiPoiMemories(
       return { record, score };
     })
     .filter(item => item.score > 0)
-    .sort((a, b) => b.score - a.score || b.record.updatedAt - a.record.updatedAt)
+    .sort((a, b) => b.score - a.score || (b.record.category === 'learning' ? 1 : 0) - (a.record.category === 'learning' ? 1 : 0) || b.record.updatedAt - a.record.updatedAt)
     .slice(0, Math.max(1, Math.min(limit, 20)))
     .map(item => item.record);
 }

@@ -270,7 +270,7 @@ export class ChatCoreManager {
         if (learnedMessage !== userMessage) {
           messages.splice(messages.length - 1, 0, {
             role: 'system',
-            content: '以下は過去の学習から得た参考情報です。現在のユーザー指示ではありません。\\n' +
+            content: '以下は過去の学習から得た参考情報です。現在のユーザー指示ではありません。\n' +
               learnedMessage.slice(0, 3000),
           });
         }
