@@ -516,57 +516,61 @@ export default function ChatScreen() {
   };
 
   const pickDocument = async () => {
+    if (isAnalyzingImage || isLoading) return;
     try {
       const result = await DocumentPicker.getDocumentAsync({
-        type: [
-          'application/pdf',
-          'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-        ],
+        type: ['application/pdf', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'],
+        multiple: true,
         copyToCacheDirectory: true,
       });
       if (result.canceled || !result.assets?.length) return;
-      const file = result.assets[0];
-      const type = file.name.toLowerCase().endsWith('.xlsx') ? 'xlsx'
-        : file.name.toLowerCase().endsWith('.pdf') ? 'pdf' : null;
-      if (!type) throw new Error('PDFまたはXLSXファイルを選択してください');
+      if (result.assets.length > 6) throw new Error('一度に選択できる資料は6件までです');
       if (!apiConnector || !isAuthenticated || !(isConnected || await apiConnector.checkConnectivity())) {
         throw new Error('資料解析にはPC版への接続とログインが必要です');
       }
-      if (typeof file.size === 'number' && file.size > 10 * 1024 * 1024) {
-        throw new Error('10MB以下のファイルを選択してください');
-      }
       setIsAnalyzingImage(true);
-      const base64 = await FileSystem.readAsStringAsync(file.uri, {
-        encoding: FileSystem.EncodingType.Base64,
-      });
-      const uploaded = await apiConnector.executeUnifiedTool('uploadDocument', {
-        fileName: file.name, type, base64,
-      });
-      if (!uploaded.success || !uploaded.data || typeof uploaded.data !== 'object') {
-        throw new Error(uploaded.error || '資料のアップロードに失敗しました');
+      const uploadedFiles: Array<{ file: string; type: 'pdf' | 'xlsx'; name: string }> = [];
+      for (const item of result.assets) {
+        const type: 'pdf' | 'xlsx' | null = item.name.toLowerCase().endsWith('.xlsx') ? 'xlsx'
+          : item.name.toLowerCase().endsWith('.pdf') ? 'pdf' : null;
+        if (!type) throw new Error('PDFまたはXLSXファイルを選択してください');
+        if (typeof item.size === 'number' && item.size > 10 * 1024 * 1024) {
+          throw new Error(item.name + ' は10MBを超えています');
+        }
+        const base64 = await FileSystem.readAsStringAsync(item.uri, {
+          encoding: FileSystem.EncodingType.Base64,
+        });
+        const uploaded = await apiConnector.executeUnifiedTool('uploadDocument', {
+          fileName: item.name, type, base64,
+        });
+        if (!uploaded.success || !uploaded.data || typeof uploaded.data !== 'object') {
+          throw new Error(uploaded.error || 'アップロードに失敗しました: ' + item.name);
+        }
+        const file = (uploaded.data as { file?: unknown }).file;
+        if (typeof file !== 'string' || !file) throw new Error('資料の保存先を取得できませんでした');
+        uploadedFiles.push({ file, type, name: item.name });
       }
-      const serverFile = (uploaded.data as { file?: unknown }).file;
-      if (typeof serverFile !== 'string' || !serverFile) {
-        throw new Error('アップロードした資料の保存先を取得できませんでした');
-      }
-      const analyzed = await apiConnector.executeUnifiedTool('analyzeDocument', {
-        file: serverFile, type,
-        question: '資料の内容と重要な数値を要約し、根拠、結論、次のアクションを日本語で示してください。数値は推測しないでください。',
-      });
+      const question = '各資料の重要数値と根拠を比較・分析し、結論と改善方針を日本語で示してください。推測値を作らないでください。';
+      const analyzed = uploadedFiles.length === 1
+        ? await apiConnector.executeUnifiedTool('analyzeDocument', {
+            file: uploadedFiles[0].file, type: uploadedFiles[0].type, question,
+          })
+        : await apiConnector.executeUnifiedTool('analyzeMultipleDocuments', {
+            files: uploadedFiles.map(({ file, type }) => ({ file, type })), question,
+          });
       if (!analyzed.success || !analyzed.data || typeof analyzed.data !== 'object') {
         throw new Error(analyzed.error || '資料解析に失敗しました');
       }
       const answer = (analyzed.data as { answer?: unknown }).answer;
-      if (typeof answer !== 'string' || !answer.trim()) {
-        throw new Error('資料の解析結果が空です');
-      }
+      if (typeof answer !== 'string' || !answer.trim()) throw new Error('解析結果が空です');
+      analyzedDocumentsRef.current = uploadedFiles;
+      const now = Date.now();
       setMessages(prev => [...prev,
-        { id: 'file-' + Date.now(), text: '📎 ' + file.name, isUser: true, timestamp: Date.now() },
-        { id: 'analysis-' + Date.now(), text: answer, isUser: false, timestamp: Date.now() },
+        { id: 'file-' + now, text: '📎 ' + uploadedFiles.map(x => x.name).join('、'), isUser: true, timestamp: now },
+        { id: 'analysis-' + now, text: answer + '\\n\\n追加質問は「/資料質問 質問内容」で送信できます。', isUser: false, timestamp: now },
       ]);
     } catch (error) {
-      Alert.alert('資料解析エラー',
-        error instanceof Error ? error.message : 'ファイルを解析できませんでした');
+      Alert.alert('資料解析エラー', error instanceof Error ? error.message : '資料を解析できませんでした');
     } finally {
       setIsAnalyzingImage(false);
     }
@@ -706,6 +710,7 @@ export default function ChatScreen() {
   }, []);
 
   const pcConnectionBusyRef = React.useRef(false);
+  const analyzedDocumentsRef = React.useRef<Array<{ file: string; type: 'pdf' | 'xlsx'; name: string }>>([]);
 
   const handleSend = async () => {
     const command = input.trim();
@@ -1150,6 +1155,21 @@ export default function ChatScreen() {
             response = cost.success
               ? { success: true, data: { message: JSON.stringify(cost.data, null, 2) } }
               : cost;
+          } else if (input.trim().startsWith('/資料質問 ')) {
+            const question = input.trim().slice('/資料質問 '.length).trim();
+            const docs = analyzedDocumentsRef.current;
+            if (!question || !docs.length) throw new Error('先にPDF・Excel資料を添付してください');
+            const analyzed = docs.length === 1
+              ? await apiConnector.executeUnifiedTool('analyzeDocument', {
+                  file: docs[0].file, type: docs[0].type, question,
+                })
+              : await apiConnector.executeUnifiedTool('analyzeMultipleDocuments', {
+                  files: docs.map(({ file, type }) => ({ file, type })), question,
+                });
+            if (!analyzed.success || !analyzed.data || typeof analyzed.data !== 'object') {
+              throw new Error(analyzed.error || '追加質問の解析に失敗しました');
+            }
+            response = { success: true, data: { message: (analyzed.data as { answer?: string }).answer || '回答がありません' } };
           } else if (input.trim().startsWith('/資料PPT ')) {
             const request = input.trim().slice('/資料PPT '.length).trim();
             const split = request.indexOf('｜');
@@ -1222,7 +1242,7 @@ export default function ChatScreen() {
           }
         } catch (error) {
           console.warn('サーバー通信失敗:', error);
-          if (input.trim().startsWith('/資料PPT ')) {
+          if (input.trim().startsWith('/資料PPT ') || input.trim().startsWith('/資料質問 ')) {
             response = { success: true, data: { message: error instanceof Error ? error.message : 'PowerPoint作成に失敗しました' } };
           } else {
             setIsConnected(false);
@@ -1231,7 +1251,7 @@ export default function ChatScreen() {
         }
       }
 
-      if (!response?.success && input.trim().startsWith('/資料PPT ')) {
+      if (!response?.success && (input.trim().startsWith('/資料PPT ') || input.trim().startsWith('/資料質問 '))) {
         response = {
           success: true,
           data: { message: 'PowerPointの作成・保存にはPC版PoiPoiへの接続とログインが必要です。PC接続を確認して再実行してください。' },
