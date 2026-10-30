@@ -456,7 +456,8 @@ export const chatRouter = router({
           const { syncUserPoiPoiUnifiedState } = await import("./core/PoiPoiUnifiedStateStore");
           await syncUserPoiPoiUnifiedState(userId, { version: 1, records: syncedMemories.slice(-200) });
         } catch (error) {
-          console.warn("[AZ] History imported but memory indexing unavailable:", error);
+          console.error("[AZ] History imported but memory indexing failed:", error);
+          throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "会話履歴の記憶同期に失敗しました。再度同期してください。" });
         }
       }
       return { success: true };
