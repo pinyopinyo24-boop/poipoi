@@ -170,7 +170,7 @@ export class PoipoiCodeAgent {
     // Discover relevant tracked source context when a user names a capability rather
     // than a path. Never run project code or expose configuration/secrets.
     const explicit = task.match(/(?:server|mobile|client|shared|src)\/[a-zA-Z0-9_./-]+\.(?:ts|tsx|js|jsx)/g) ?? [];
-    const tokens = task.normalize('NFKC').toLowerCase().match(/[a-z][a-z0-9_-]{2,}/g) ?? [];
+    const tokens: string[] = task.normalize('NFKC').toLowerCase().match(/[a-z][a-z0-9_-]{2,}/g) ?? [];
     const hints = [
       [/会話|チャット|文脈/, ['chat', 'conversation']],
       [/記憶|訂正|学習/, ['memory', 'learning']],
