@@ -45,7 +45,8 @@ describe('BackupService', () => {
       const backup = await backupService.createBackup(1, 'Test Backup');
       expect(backup).not.toBeNull();
       if (backup) {
-        expect(backup.status).toBe('pending');
+        expect(backup.status).toBe('failed');
+        expect(backup.metadata.error).toContain('No persistent backup storage adapter');
       }
     });
 
