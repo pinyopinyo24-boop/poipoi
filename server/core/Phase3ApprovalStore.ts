@@ -1,4 +1,3 @@
-import { Phase3ApprovalValidator } from "./Phase3ApprovalValidator";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import type { Phase3ApprovalRecord } from "./Phase3ApprovalHistory";
@@ -37,7 +36,9 @@ export class Phase3ApprovalStore {
 
   async append(record: Phase3ApprovalRecord): Promise<void> {
     const records = await this.load();
-    Phase3ApprovalValidator.ensureUnique(records, record);
+    if (records.some(existing => existing.id === record.id)) {
+      throw new Error("承認履歴IDが重複しています");
+    }
     records.push({ ...record });
 
     await mkdir(path.dirname(this.filePath), {
