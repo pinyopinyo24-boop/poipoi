@@ -548,9 +548,7 @@ export default function ChatScreen() {
         throw new Error('資料解析にはPC版への接続とログインが必要です');
       }
       setIsAnalyzingImage(true);
-      // Reset old selection before a new upload; partial failures must not reuse old evidence.
-      analyzedDocumentsRef.current = [];
-      lastDocumentAnalysisRef.current = '';
+      // Preserve the last successful selection until the new analysis completes.
       const uploadedFiles: Array<{ file: string; type: 'pdf' | 'xlsx'; name: string }> = [];
       for (const item of result.assets) {
         const type: 'pdf' | 'xlsx' | null = item.name.toLowerCase().endsWith('.xlsx') ? 'xlsx'
@@ -562,6 +560,7 @@ export default function ChatScreen() {
         const base64 = await FileSystem.readAsStringAsync(item.uri, {
           encoding: FileSystem.EncodingType.Base64,
         });
+        if (base64.length > 14_000_000) throw new Error('ファイルがアップロード上限を超えています: ' + item.name);
         const uploaded = await apiConnector.executeUnifiedTool('uploadDocument', {
           fileName: item.name, type, base64,
         });
@@ -738,7 +737,7 @@ export default function ChatScreen() {
   const lastDocumentAnalysisRef = React.useRef('');
   const documentOwnerRef = React.useRef('');
   const officeSessionKeyRef = React.useRef('');
-  const officeCommand = (value: string) => /^\/資料質問\s|^\/資料PPT(?:\s|$)/.test(value);
+  const officeCommand = (value: string) => /^\/資料(?:質問|PPT|一覧|取得|削除)(?:\s|$)/.test(value);
   const saveOfficeSession = async () => {
     if (!officeSessionKeyRef.current) return;
     await AsyncStorage.setItem(officeSessionKeyRef.current, JSON.stringify({
@@ -1194,6 +1193,34 @@ export default function ChatScreen() {
             response = cost.success
               ? { success: true, data: { message: JSON.stringify(cost.data, null, 2) } }
               : cost;
+          } else if (input.trim() === '/資料一覧') {
+            const docs = await apiConnector.executeUnifiedTool('listOfficeDocuments', {});
+            const ppts = await apiConnector.executeUnifiedTool('listOfficePresentations', {});
+            if (!docs.success || !ppts.success) throw new Error(docs.error || ppts.error || '資料一覧の取得に失敗しました');
+            const files = Array.isArray(docs.data) ? docs.data as Array<{ file: string; type: string }> : [];
+            const slides = Array.isArray(ppts.data) ? ppts.data as Array<{ id: string }> : [];
+            response = { success: true, data: { message:
+              '保存済み資料: ' + files.length + '件\n' + files.map(x => x.file).join('\n') +
+              '\nPowerPoint: ' + slides.length + '件\n' + slides.map(x => x.id).join('\n') +
+              '\n/資料取得 ID  /資料削除 ID' } };
+          } else if (input.trim().startsWith('/資料取得 ')) {
+            const id = input.trim().slice('/資料取得 '.length).trim();
+            if (!/^pres_[a-zA-Z0-9_]+$/.test(id)) throw new Error('PowerPoint IDが不正です');
+            const exported = await apiConnector.executeUnifiedTool('exportPresentation', { id });
+            const data = exported.data as { base64?: unknown } | undefined;
+            if (!exported.success || typeof data?.base64 !== 'string' || !data.base64 || data.base64.length > 28_000_000) {
+              throw new Error(exported.error || 'PowerPointの取得に失敗しました');
+            }
+            if (!FileSystem.documentDirectory) throw new Error('端末の保存領域が利用できません');
+            const destination = FileSystem.documentDirectory + id + '.pptx';
+            await FileSystem.writeAsStringAsync(destination, data.base64, { encoding: FileSystem.EncodingType.Base64 });
+            response = { success: true, data: { message: '保存しました: ' + destination } };
+          } else if (input.trim().startsWith('/資料削除 ')) {
+            const id = input.trim().slice('/資料削除 '.length).trim();
+            if (!/^pres_[a-zA-Z0-9_]+$/.test(id)) throw new Error('PowerPoint IDが不正です');
+            const deleted = await apiConnector.executeUnifiedTool('deleteOfficePresentation', { id });
+            if (!deleted.success) throw new Error(deleted.error || '削除に失敗しました');
+            response = { success: true, data: { message: 'PowerPointを削除しました: ' + id } };
           } else if (input.trim().startsWith('/資料質問 ')) {
             const question = input.trim().slice('/資料質問 '.length).trim();
             const docs = analyzedDocumentsRef.current;

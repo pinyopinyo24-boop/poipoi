@@ -81,12 +81,34 @@ export const unifiedToolsRouter = router({
       throw new Error('Invalid XLSX signature');
     }
     const userKey = createHash('sha256').update(String(ctx.user.id)).digest('hex').slice(0, 24);
-    const relativeFile = path.join('documents', userKey, randomUUID() + extension);
+    const relativeFile = ['documents', userKey, randomUUID() + extension].join('/');
     const uploadRoot = path.resolve(process.cwd(), 'uploads');
     const destination = path.resolve(uploadRoot, relativeFile);
     await mkdir(path.dirname(destination), { recursive: true });
     await writeFile(destination, bytes, { flag: 'wx', mode: 0o600 });
     return { file: relativeFile, type: input.type, size: bytes.length };
+  }),
+  listOfficeDocuments: protectedProcedure.query(async ({ ctx }) => {
+    const key = createHash('sha256').update(String(ctx.user.id)).digest('hex').slice(0, 24);
+    const directory = path.resolve(process.cwd(), 'uploads', 'documents', key);
+    const names = await readdir(directory).catch(error => {
+      if ((error as NodeJS.ErrnoException).code === 'ENOENT') return [] as string[];
+      throw error;
+    });
+    const entries = await Promise.all(names.filter(name => /^[0-9a-f-]{36}\.(pdf|xlsx)$/.test(name))
+      .map(async name => {
+        const info = await stat(path.join(directory, name));
+        return { file: ['documents', key, name].join('/'), type: path.extname(name).slice(1),
+          size: info.size, updatedAt: info.mtime.toISOString() };
+      }));
+    return entries.sort((a, b) => b.updatedAt.localeCompare(a.updatedAt)).slice(0, 100);
+  }),
+  deleteOfficeDocument: protectedProcedure.input(z.object({
+    file: z.string().min(1).max(500), type: z.enum(['pdf', 'xlsx']),
+  })).mutation(async ({ input, ctx }) => {
+    const file = await resolveUpload(input.file, '.' + input.type, String(ctx.user.id));
+    await unlink(file);
+    return { deleted: true };
   }),
   listOfficePresentations: protectedProcedure.query(async ({ ctx }) => {
     const directory = presentationDirectory(String(ctx.user.id));
@@ -94,7 +116,7 @@ export const unifiedToolsRouter = router({
       if ((error as NodeJS.ErrnoException).code === 'ENOENT') return [] as string[];
       throw error;
     });
-    return (await Promise.all(files.filter(name => /^pres_[a-zA-Z0-9_]+\\.pptx$/.test(name))
+    return (await Promise.all(files.filter(name => /^pres_[a-zA-Z0-9_]+\.pptx$/.test(name))
       .map(async name => {
         const info = await stat(path.join(directory, name));
         return { id: name.slice(0, -5), size: info.size, updatedAt: info.mtime.toISOString() };
@@ -125,6 +147,8 @@ export const unifiedToolsRouter = router({
     if (!bytes || bytes.length > 20 * 1024 * 1024) throw new Error('PowerPoint export failed or too large');
     await persistPresentation(created.id, String(ctx.user.id), bytes);
     presentationOwners.set(created.id, String(ctx.user.id));
+    presentationManager.deletePresentation(created.id);
+    presentationOwners.delete(created.id);
     return { id: created.id, slideCount: input.slides.length, generated: true };
   }),
   exportPresentation: protectedProcedure
@@ -227,6 +251,8 @@ export const unifiedToolsRouter = router({
     if (!bytes || bytes.length > 20 * 1024 * 1024) throw new Error('PowerPoint export failed or too large');
     await persistPresentation(created.id, String(ctx.user.id), bytes);
     presentationOwners.set(created.id, String(ctx.user.id));
+    presentationManager.deletePresentation(created.id);
+    presentationOwners.delete(created.id);
     return { id: created.id, slideCount: parsed.slides.length, exportProcedure: 'unifiedTools.exportPresentation' };
   }),
   createPresentationFromDocuments: protectedProcedure.input(z.object({
@@ -299,6 +325,8 @@ export const unifiedToolsRouter = router({
     if (!bytes) throw new Error('PowerPoint export failed');
     if (bytes.length > 20 * 1024 * 1024) throw new Error('PowerPoint exceeds mobile export limit');
     await persistPresentation(created.id, userId, bytes);
+    presentationManager.deletePresentation(created.id);
+    presentationOwners.delete(created.id);
     return {
       id: created.id, slideCount: slides.length, format: 'pptx' as const,
       base64: bytes.toString('base64'), analysis,
