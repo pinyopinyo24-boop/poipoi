@@ -56,6 +56,8 @@ export type ToolChoice = ToolChoicePrimitive | ToolChoiceByName | ToolChoiceExpl
 
 export type LLMRequest = {
   userId?: string;
+  timeoutMs?: number;
+  contextWindow?: number;
   model?: string;
   messages: Message[];
   tools?: Tool[];
@@ -159,8 +161,14 @@ export async function invokeLLM(request: LLMRequest): Promise<LLMResponse> {
     timestamp: new Date().toISOString(),
   });
 
+  const requestedTimeout = Number(request.timeoutMs ?? process.env.LOCAL_AI_TIMEOUT_MS ?? 120000);
+  const timeoutMs = Number.isFinite(requestedTimeout)
+    ? Math.max(1000, Math.min(600000, requestedTimeout)) : 120000;
+  const requestedContext = Number(request.contextWindow ?? process.env.LOCAL_AI_CONTEXT_SIZE ?? 32768);
+  const contextWindow = Number.isFinite(requestedContext)
+    ? Math.max(4096, Math.min(32768, Math.trunc(requestedContext))) : 32768;
   const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), 120000);
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
   try {
     const response = await fetch(`${baseUrl}/api/chat`, {
       signal: controller.signal,
@@ -171,7 +179,7 @@ export async function invokeLLM(request: LLMRequest): Promise<LLMResponse> {
         messages,
         stream: false,
         options: {
-          num_ctx: Math.max(4096, Math.min(32768, Number(process.env.LOCAL_AI_CONTEXT_SIZE) || 32768)),
+          num_ctx: contextWindow,
           ...(request.temperature !== undefined ? { temperature: request.temperature } : {}),
           ...(request.top_p !== undefined ? { top_p: request.top_p } : {}),
           ...(request.max_tokens !== undefined ? { num_predict: request.max_tokens } : {}),
@@ -216,10 +224,13 @@ try {
       },
     };
   } catch (error) {
-    const errorMsg = error instanceof Error ? error.message : String(error);
+    const failure = controller.signal.aborted
+      ? new DOMException(`Local AI request timed out after ${Math.round(timeoutMs / 1000)} seconds`, 'TimeoutError')
+      : error;
+    const errorMsg = failure instanceof Error ? failure.message : String(failure);
     console.error("[LLM ERROR] Local AI call failed:", errorMsg);
-    // Callers must be able to distinguish transport failure from a real answer.
-    throw error;
+    // Callers must distinguish transport failure from a real answer.
+    throw failure;
   } finally {
     clearTimeout(timer);
   }

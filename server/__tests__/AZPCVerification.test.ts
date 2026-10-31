@@ -166,6 +166,34 @@ describe('AZ PC integration with controlled model responses', () => {
     await expect(tools.applyCodePreview({ previewId: preview.previewId, confirm: 'APPLY_ONLY' })).rejects.toThrow();
     await expect(stat(model.fixture + '/' + sourcePath)).rejects.toThrow();
   });
+  it('keeps an explicit one-file reference small and gives coder requests their own bounded timeout', async () => {
+    const tools = unifiedToolsRouter.createCaller(ctx(user));
+    const target = 'server/core/CompactPreview.ts';
+    model.replies.push('Create only the requested standalone module.', JSON.stringify({ changes: [{ path: target, content: 'export const compact = 1;\n' }] }));
+    const preview = await tools.codePreview({ request: 'Using server/core/PoipoiEvolutionTestTarget.ts as reference, create only ' + target + '. Do not modify existing files.' });
+    expect(preview.changes[0].path).toBe(target);
+    expect(model.requests[0]).toMatchObject({ timeoutMs: 300000, contextWindow: 8192, max_tokens: 256 });
+    expect(model.requests[1]).toMatchObject({ timeoutMs: 300000, contextWindow: 8192 });
+    const prompt = model.requests[1].messages.find((message: any) => message.role === 'user').content;
+    expect(prompt.length).toBeLessThan(6000);
+    expect(prompt).toContain('Existing source: server/core/PoipoiEvolutionTestTarget.ts');
+    expect(prompt).not.toContain('Existing source: client/src/App.tsx');
+    expect(prompt).not.toContain('Existing source: server/routers.ts');
+    expect(await readFile(model.fixture + '/server/core/PoipoiEvolutionTestTarget.ts', 'utf8')).not.toContain('compact');
+    await tools.rejectCodePreview({ previewId: preview.previewId });
+  });
+  it('reserves context for returning a complete existing source file', async () => {
+    const tools = unifiedToolsRouter.createCaller(ctx(user));
+    const target = 'server/core/LargePreview.ts';
+    const source = 'export const large = 1;\n' + '// source context line\n'.repeat(1000);
+    await writeFile(model.fixture + '/' + target, source);
+    model.replies.push('Preserve the source and add one comment.', JSON.stringify({ changes: [{ path: target, content: source + '\n// proposed only\n' }] }));
+    const preview = await tools.codePreview({ request: 'Modify ' + target + ' by adding a comment, preserving its complete existing content.' });
+    expect(model.requests[1].contextWindow).toBe(32768);
+    expect(preview.changes[0].previousContent).toBe(source);
+    expect(await readFile(model.fixture + '/' + target, 'utf8')).toBe(source);
+    await tools.rejectCodePreview({ previewId: preview.previewId });
+  });
   it('returns actual before/after text and a matching source hash for an existing-file preview', async () => {
     const tools = unifiedToolsRouter.createCaller(ctx(user)); const sourcePath = 'server/core/PoipoiEvolutionTestTarget.ts';
     const source = await readFile(model.fixture + '/' + sourcePath, 'utf8');

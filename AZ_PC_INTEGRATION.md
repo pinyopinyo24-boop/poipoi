@@ -29,7 +29,7 @@ available, including the streaming response contract and image command.
 
 ## Validation status
 
-On the 315a075 source plus the follow-up fixes, 185 focused tests passed in an
+For commit 3cb9644, 185 focused tests passed in an
 isolated Linux worktree (zero failures). The tests cover the chat core, persistent
 memory, learning, approval gating and fourteen PC integration scenarios. The
 integration model responses are controlled fixtures, not real Ollama responses.
@@ -61,3 +61,21 @@ confirmed repeats idempotent. Without confirmation, the prior approval gate stay
 in place. The PC delete button sends confirmation after its existing dialog.
 Fifty-nine focused tests passed, including preservation after an unconfirmed or
 cross-account deletion attempt and cleanup of an anonymous verification session.
+
+## Code generation request limits
+
+A live PC generation attempt completed planning but reached the previous fixed
+120-second generation deadline. Explicit existing source references now limit the
+source context to those files instead of adding unrelated ranked sources and an
+inventory. Plans are capped at 256 output tokens. Small requests use an 8192-token
+context; larger requests retain room for complete replacement source. Code requests
+use a separately bounded 300-second deadline, configurable with
+`LOCAL_CODER_TIMEOUT_MS` (at most 600000) and `LOCAL_CODER_CONTEXT_SIZE` (at most
+32768). Normal chat retains its existing default deadline and context configuration.
+Generation still creates no source files and never applies changes. The live PC
+request must be repeated before successful model-driven generation can be claimed.
+
+The request-limit follow-up passed 22 focused tests, including explicit-reference
+context reduction, complete-source context reservation, unchanged normal-chat
+deadlines and bounded coder deadlines checked with a fake clock. Model output in
+these tests is controlled; live generation success is still unverified.

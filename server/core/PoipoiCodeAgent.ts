@@ -199,8 +199,13 @@ export class PoipoiCodeAgent {
     const ranked = candidates.map(file => ({ file, score: tokens.reduce((sum, token) =>
       sum + (file.toLowerCase().includes(token) ? token.length : 0), 0) }))
       .filter(item => item.score > 0).sort((a, b) => b.score - a.score || a.file.localeCompare(b.file));
-    const sourceFiles = [...new Set([...explicit, ...ranked.map(item => item.file),
-      'client/src/App.tsx', 'server/routers.ts', 'server/routers/unifiedTools.ts'])].slice(0, 5);
+    // A concrete reference/target is already grounded context. Do not inflate a
+    // one-file request with unrelated source, inventories or entry points.
+    const explicitExisting = [...new Set(explicit)].filter(file => existsSync(this.safePath(file)));
+    const sourceFiles = explicitExisting.length
+      ? explicitExisting.slice(0, 5)
+      : [...new Set([...ranked.map(item => item.file),
+          'client/src/App.tsx', 'server/routers.ts', 'server/routers/unifiedTools.ts'])].slice(0, 5);
     const context: string[] = [];
     const sourceHashes = new Map<string, string>();
     const sourceContents = new Map<string, string>();
@@ -216,7 +221,17 @@ export class PoipoiCodeAgent {
       sourceContents.set(file, source);
     }
     if (!context.length) throw new Error('関連する既存ソースを特定できません。対象機能またはソースパスを指定してください。');
-    const planResponse = await invokeLLM({ userId,
+    const configuredTimeout = Number(process.env.LOCAL_CODER_TIMEOUT_MS);
+    const timeoutMs = Number.isFinite(configuredTimeout) && configuredTimeout >= 1000
+      ? Math.min(600000, configuredTimeout) : 300000;
+    const configuredContext = Number(process.env.LOCAL_CODER_CONTEXT_SIZE);
+    const contextFor = (characters: number) => {
+      if (Number.isFinite(configuredContext) && configuredContext >= 4096) return Math.min(32768, configuredContext);
+      return characters <= 16000 ? 8192 : characters <= 40000 ? 16384 : 32768;
+    };
+    const planResponse = await invokeLLM({ userId, timeoutMs,
+      contextWindow: contextFor(task.length + 2000),
+      max_tokens: 256,
       model: process.env.LOCAL_CODER_MODEL || "qwen2.5-coder:7b",
       temperature: 0.1,
       messages: [
@@ -233,13 +248,13 @@ export class PoipoiCodeAgent {
       "Modify the existing TypeScript project according to the user's request.",
       "Preserve existing functionality.",
       "Make the minimum necessary file changes.",
-      "First reason about dependencies and preserve all existing exports. Wire any new feature into an existing reviewed entry point; an unused new file is not a completed capability.",
+      "First reason about dependencies and preserve all existing exports. Wire user-facing features into reviewed entry points when requested. For an explicitly requested standalone module, respect its requested path and do not invent entry-point changes.",
       "Do not fabricate unknown existing file contents; return an empty changes array if necessary.",
       "Only modify existing files whose full contents are supplied below. You may also CREATE new TypeScript/JavaScript source files under server/, client/src/, shared/, src/ or mobile/src/ when necessary. Never replace an existing file whose content is absent. Connect new exports to the existing implementation; preserve compatibility.",
       "Implementation plan (check against the actual source):",
       plan.slice(0, 6000),
       "Existing source path inventory (names only; do not modify without supplied content):",
-      candidates.slice(0, 150).join("\n"),
+      (explicitExisting.length ? explicit : sourceFiles).slice(0, 20).join("\n"),
       "Use only dependencies already declared by the project. Do not add packages or configuration changes.",
       "Existing dependency names:",
       Object.keys(JSON.parse(readFileSync(resolve(this.root, 'package.json'), 'utf8')).dependencies ?? {}).join(', '),
@@ -254,7 +269,8 @@ export class PoipoiCodeAgent {
       task,
     ].join("\n");
 
-    const response = await invokeLLM({ userId,
+    const response = await invokeLLM({ userId, timeoutMs,
+      contextWindow: contextFor(prompt.length + contextSize),
       model: process.env.LOCAL_CODER_MODEL || "qwen2.5-coder:7b",
       temperature: 0.1,
       response_format: {
