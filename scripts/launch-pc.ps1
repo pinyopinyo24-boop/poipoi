@@ -44,12 +44,12 @@ try {
     if (-not $locked) {
         Write-Host 'ポイポイは起動中です。画面が開くまでお待ちください。'
         for ($i = 0; $i -lt 120; $i++) {
-            if (Test-PoiPoiReady) { Start-Process 'http://127.0.0.1:3000/streaming'; exit 0 }
+            if (Test-PoiPoiReady) { Start-Process 'http://localhost:3000/'; exit 0 }
             Start-Sleep -Seconds 1
         }
         throw '起動を確認できませんでした。ポイポイの起動ウィンドウを確認してください。'
     }
-    if (Test-PoiPoiReady) { Start-Process 'http://127.0.0.1:3000/streaming'; exit 0 }
+    if (Test-PoiPoiReady) { Start-Process 'http://localhost:3000/'; exit 0 }
     if (@(Get-NetTCPConnection -LocalPort 3000 -State Listen -ErrorAction SilentlyContinue).Count -gt 0) {
         throw '3000番ポートが使用中です。既存のプログラムは停止しませんでした。'
     }
@@ -57,7 +57,7 @@ try {
     if (-not (Test-Path -LiteralPath (Join-Path $root 'node_modules\tsx\package.json'))) {
         throw '起動に必要な依存ファイルがありません。セットアップを確認してください。'
     }
-    Write-Host 'ポイポイを起動しています。準備ができると会話画面が開きます。'
+    Write-Host 'ポイポイを起動しています。準備ができるとホーム画面が開きます。'
     Write-Host 'このウィンドウは起動中そのままにしてください。'
     $previousNodeEnv = $env:NODE_ENV
     try {
@@ -70,8 +70,8 @@ try {
         if (Test-PoiPoiReady) { $ready = $true; break }
         Start-Sleep -Seconds 1
     }
-    if ($ready) { Start-Process 'http://127.0.0.1:3000/streaming' }
-    else { Write-Warning '起動に時間がかかっています。上の表示を確認してください。準備後は http://127.0.0.1:3000/streaming を開けます。' }
+    if ($ready) { Start-Process 'http://localhost:3000/' }
+    else { Write-Warning '起動に時間がかかっています。上の表示を確認してください。準備後は http://localhost:3000/ を開けます。' }
     $server.WaitForExit()
     if ($server.ExitCode -ne 0) { throw "ポイポイが終了しました（終了コード：$($server.ExitCode)）。" }
 } finally {
