@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useLocation } from "wouter";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -14,7 +14,30 @@ export default function Login() {
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [isLoading, setIsLoading] = useState(false);
-  const [errorMessage, setErrorMessage] = useState("");
+  const [errorMessage, setErrorMessage] = useState(() => {
+    const errors: Record<string, string> = {
+      not_configured: "Google登録は接続設定待ちです。従来の登録・ログインも利用できます。",
+      state: "認証の有効期限が切れたか、開始したブラウザーと異なります。Googleログインをやり直してください。",
+      cancelled: "Googleでの認証がキャンセルされました。",
+      verification: "Googleの認証を確認できませんでした。やり直してください。",
+      storage: "アカウント保存用のデータベースに接続できません。",
+      failed: "Googleでの登録・ログインに失敗しました。Google接続設定・通信・データベースの確認が必要です。",
+    };
+    const key = new URLSearchParams(window.location.search).get("google_error");
+    return key ? errors[key] || "Google認証に失敗しました。" : "";
+  });
+  const [googleStatus, setGoogleStatus] = useState<"loading" | "enabled" | "disabled" | "error">("loading");
+  useEffect(() => {
+    const controller = new AbortController();
+    void fetch("/api/oauth/google/status", { signal: controller.signal, cache: "no-store" })
+      .then(async response => {
+        if (!response.ok) throw new Error("Status unavailable");
+        const data: unknown = await response.json();
+        if (!controller.signal.aborted) setGoogleStatus(data && typeof data === "object" && "enabled" in data && data.enabled === true ? "enabled" : "disabled");
+      })
+      .catch(() => { if (!controller.signal.aborted) setGoogleStatus("error"); });
+    return () => controller.abort();
+  }, []);
   const [notice, setNotice] = useState("");
   const showError = (error: unknown, fallback: string) => {
     const message = error instanceof Error ? error.message : fallback;
@@ -96,6 +119,16 @@ export default function Login() {
             次世代生産管理 & AIクリエイティブプラットフォーム
           </p>
 
+          <div className="mb-5 space-y-2">
+            <Button type="button" variant="outline" className="w-full" disabled={isLoading || googleStatus !== "enabled"}
+              onClick={() => window.location.assign("/api/oauth/google/start")}>
+              Googleアカウントで{isRegister ? "登録" : "ログイン"}
+            </Button>
+            {googleStatus === "loading" && <p className="text-xs text-gray-600">Google接続設定を確認中...</p>}
+            {googleStatus === "disabled" && <p className="text-xs text-gray-600">Google登録は接続設定待ちです。下の通常登録・ログインも利用できます。</p>}
+            {googleStatus === "error" && <p role="status" className="text-xs text-red-700">Google接続設定を確認できません。下の通常登録・ログインをお使いください。</p>}
+            <p className="text-center text-xs text-gray-500">またはユーザー名とパスワードで続ける</p>
+          </div>
           <form onSubmit={isRegister ? handleRegister : handleLogin}>
             <div className="space-y-4">
               {isRegister && (

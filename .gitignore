@@ -117,3 +117,7 @@ backup_old/
 # Android signing material must stay outside the repository.
 *.jks
 *.keystore
+
+# OAuth configuration backups and atomic writes contain secrets.
+.env.google-backup-*
+.env.*.tmp
