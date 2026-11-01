@@ -1,3 +1,4 @@
+import { isCodeImplementationRequest } from './AZCapabilityCatalog';
 import { z } from 'zod';
 import { randomUUID, createHash } from 'node:crypto';
 import { promises as fs } from 'node:fs';
@@ -13,6 +14,7 @@ import { searchUserPoiPoiMemories, syncUserPoiPoiUnifiedState } from './PoiPoiUn
 const domain = /製造|生産|原価|在庫|工程|Excel|エクセル|PDF|PPT|PowerPoint|パワーポイント|資料|ファイル|文書|予定|会議|カレンダー|スケジュール|プログラム|コード|機能|自己進化/i;
 const action = /して|作って|作成|修正|追加|登録|変更|分析|比較|計算|一覧|見せて|調べて|探して|出力|生成|実行|改善|まとめて|整理|読んで|読み込|確認したい|教えて|入れて|設定|保存|記録|集計|取得/;
 export function shouldRunAZTask(request: string, previous: string[]) {
+  if (isCodeImplementationRequest(request)) return true;
   if (/^(?:正しくは|正解は|訂正|私の名前|あなたの名前|AIの名前|AZの呼び名)/.test(request)) return false;
   // Recognize the owner's direct request to fix AZ's unnatural conversation.
   // Text rewriting and simple dialogue remain on the usual chat path.

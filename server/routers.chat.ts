@@ -1,3 +1,4 @@
+import { capabilityReply, isCodeImplementationRequest, implementationPrompt, isUserNameQuestion, nameAnswerToPreviousQuestion, recoverExplicitUserName } from './core/AZCapabilityCatalog';
 import { router, publicProcedure, protectedProcedure } from './_core/trpc';
 import { z } from 'zod';
 import { TRPCError } from '@trpc/server';
@@ -102,6 +103,46 @@ export const chatRouter = router({
               throw new TRPCError({ code: 'CONFLICT', message: 'この指示には中断した実行記録があります。実行記録を確認してから、新しい指示で続行してください。' });
             }
           }
+        }
+        const dialogueRepository = (await import('./repositories/ChatRepository')).getSharedChatRepository();
+        const dialogueUserId = String(ctx.user?.id ?? 'mobile');
+        const dialogueSession = await dialogueRepository.getSession(input.sessionId);
+        if (!dialogueSession || dialogueSession.userId !== dialogueUserId) {
+          throw new TRPCError({ code: 'NOT_FOUND', message: 'チャットセッションが見つかりません' });
+        }
+        const recentDialogue = await dialogueRepository.getMessages(input.sessionId, 100);
+        const capability = capabilityReply(input.message.trim(), recentDialogue, Boolean(ctx.user), ctx.user?.role === 'admin');
+        if (capability) {
+          const askedAt = Date.now();
+          await dialogueRepository.saveMessage({ id: input.messageId ?? uuidv4(), userId: dialogueUserId,
+            role: 'user', content: input.message.trim(), timestamp: askedAt }, input.sessionId);
+          const message = { id: uuidv4(), userId: dialogueUserId, role: 'assistant' as const,
+            content: capability.answer, timestamp: Math.max(Date.now(), askedAt + 1),
+            metadata: { replyTo: input.messageId, capabilityMenu: capability.menu } };
+          await dialogueRepository.saveMessage(message, input.sessionId);
+          return { message, session: (await dialogueRepository.getSession(input.sessionId))!, relatedMemories: [], reasoning: 'Grounded PC capability catalogue and selection' };
+        }
+        if (isCodeImplementationRequest(input.message)) {
+          if (!ctx.user) throw new TRPCError({ code: 'UNAUTHORIZED', message: '機能の追加実装にはログインが必要です' });
+          if (ctx.user.role !== 'admin') throw new TRPCError({ code: 'FORBIDDEN', message: '機能の追加実装には管理者権限が必要です' });
+          const request = implementationPrompt(input.message.trim(), recentDialogue);
+          const askedAt = Date.now();
+          await dialogueRepository.saveMessage({ id: input.messageId ?? uuidv4(), userId: dialogueUserId,
+            role: 'user', content: input.message.trim(), timestamp: askedAt }, input.sessionId);
+          const { unifiedToolsRouter } = await import('./routers/unifiedTools');
+          let content: string;
+          let previewId: string | undefined;
+          try {
+            const preview = await unifiedToolsRouter.createCaller(ctx).codePreview({ request, sessionId: input.sessionId });
+            previewId = preview.previewId;
+            content = '機能の追加・修正の変更案を作成しました。変更案の確認・承認欄で内容を確認してください。まだ適用していません。';
+          } catch (error) {
+            content = '変更案を作成できませんでした。実装は完了していません。理由: ' + (error instanceof Error ? error.message : String(error));
+          }
+          const message = { id: uuidv4(), userId: dialogueUserId, role: 'assistant' as const,
+            content, timestamp: Math.max(Date.now(), askedAt + 1), metadata: { replyTo: input.messageId, codePreview: { previewId, applied: false } } };
+          await dialogueRepository.saveMessage(message, input.sessionId);
+          return { message, session: (await dialogueRepository.getSession(input.sessionId))!, relatedMemories: [], reasoning: previewId ? 'Code preview awaiting explicit approval' : 'Code preview generation failed' };
         }
         // All explicit tools share the authenticated unified router.
         const command = input.message.trim();
@@ -346,7 +387,8 @@ export const chatRouter = router({
 
         const originalMessage = input.message.trim();
         // AI and user identity are distinct, including corrections.
-        const userRename = originalMessage.match(/^(?:私の名前は|わたしの名前は|僕の名前は|俺の名前は|私の名前を|私を)[「『"]?(.{1,40}?)[」』"]?(?:です|だよ|にして|と呼んで|にしてください)?[。！!]*$/u);
+        const inferredUserName = nameAnswerToPreviousQuestion(originalMessage, recentDialogue);
+        const userRename = originalMessage.match(/^(?:私の名前は|わたしの名前は|僕の名前は|俺の名前は|私の名前を|私を)[「『"]?(.{1,40}?)[」』"]?(?:です|だよ|にして|と呼んで|にしてください)?[。！!]*$/u) ?? (inferredUserName ? [originalMessage, inferredUserName] : null);
         const aiRename = originalMessage.match(/^(?:あなたの名前|AIの名前|AZの呼び名)(?:を|は)[ \\t]*[「『"]?(.{1,40}?)[」』"]?[ \\t]*(?:にして|に変更して|に変えて|です|だよ|と呼んで|にしてください)[。！!]*$/u);
         // Reconcile the Android identity record without overwriting a newer PC identity.
         if (ctx.user) {
@@ -369,8 +411,20 @@ export const chatRouter = router({
         let directAnswer: string | undefined;
         if (/^(?:これからは|今後は)?名前は[「『"]?.{1,40}?(?:です|だよ|にして)[。！!]*$/u.test(originalMessage)) {
           directAnswer = '変更するのは、あなたの名前ですか？ それともAIの名前ですか？';
-        } else if (/^(?:私|わたし|僕|俺)の名前(?:は|って|を)?(?:[？?]|(?:教えて(?:ください)?|何(?:ですか)?|なん(?:ですか|だっけ)?|覚えて(?:いますか|る)?)[？?。！!]*)$/u.test(originalMessage)) {
-          const name = PoiPoiIdentity.getUserName(userId);
+        } else if (isUserNameQuestion(originalMessage)) {
+          let name = PoiPoiIdentity.getUserName(userId);
+          if (!name) {
+            const recovered = recoverExplicitUserName(recentDialogue);
+            if (recovered) {
+              name = PoiPoiIdentity.setUserName(userId, recovered);
+              if (ctx.user) {
+                const { syncUserPoiPoiUnifiedState } = await import('./core/PoiPoiUnifiedStateStore');
+                await syncUserPoiPoiUnifiedState(userId, { version: 1, records: [{
+                  id: 'az:user-name', category: 'memory', value: name, updatedAt: Date.now(), origin: 'pc',
+                }] });
+              }
+            }
+          }
           directAnswer = name ? `あなたの名前は「${name}」です。` : 'あなたの名前はまだ登録されていません。何とお呼びすればよいですか？';
         } else if (/^(?:あなた|AI|AZ)の名前(?:は|って|を)?(?:[？?]|(?:教えて(?:ください)?|何(?:ですか)?|なん(?:ですか|だっけ)?)[？?。！!]*)$/u.test(originalMessage) || /^名前は[？?]$/u.test(originalMessage)) {
           directAnswer = `私の名前は「${PoiPoiIdentity.getAIName(userId)}」です。`;
@@ -402,8 +456,9 @@ export const chatRouter = router({
           directAnswer = `AIの名前を「${aiName}」に変更しました。`;
         }
         if (directAnswer !== undefined) {
-          await repository.saveMessage({ id: input.messageId ?? uuidv4(), userId, role: 'user', content: originalMessage, timestamp: Date.now() }, input.sessionId);
-          const message = { id: uuidv4(), userId, role: 'assistant' as const, content: directAnswer, timestamp: Date.now(), metadata: { replyTo: input.messageId } };
+          const askedAt = Date.now();
+          await repository.saveMessage({ id: input.messageId ?? uuidv4(), userId, role: 'user', content: originalMessage, timestamp: askedAt }, input.sessionId);
+          const message = { id: uuidv4(), userId, role: 'assistant' as const, content: directAnswer, timestamp: Math.max(Date.now(), askedAt + 1), metadata: { replyTo: input.messageId } };
           await repository.saveMessage(message, input.sessionId);
           return { message, session: existingSession, relatedMemories: [], reasoning: 'AZ identity memory' };
         }

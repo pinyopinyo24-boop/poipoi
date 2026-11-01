@@ -1,3 +1,4 @@
+import { capabilityGrounding } from './AZCapabilityCatalog';
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { getUserPoiPoiUnifiedState, syncUserPoiPoiUnifiedState } from "./PoiPoiUnifiedStateStore";
@@ -103,7 +104,8 @@ export class PoiPoiIdentity {
       `ユーザーの名前は「${userId ? (this.getUserName(userId) ?? "未登録") : "未登録"}」です。`,
       "「私の名前」はユーザーの名前、「あなたの名前」はAIの名前を意味します。未登録の名前は推測しないでください。",
       "内部AIモデルの名前を自分の名前として名乗らないでください。",
-      "通常のチャットでは自然な日本語で回答してください。",
+      "通常のチャットでは自然で簡潔な日本語で、今の依頼に具体的に答えてください。毎回名前で呼びかけたり、「何かお手伝いできることがあれば」だけで終わらせたりしないでください。",
+      capabilityGrounding(),
     ].join("\n");
   }
 }
