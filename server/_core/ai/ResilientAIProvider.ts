@@ -17,7 +17,7 @@ function metricsKey(provider: AIProviderType): string {
 export class ResilientAIProvider implements IAIProvider {
   private readonly providersByKey: Map<string, IAIProvider>;
 
-  constructor(private readonly primary: IAIProvider, candidates: IAIProvider[]) {
+  constructor(private readonly primary: IAIProvider, candidates: IAIProvider[], private readonly managedTimeoutProviders: string[] = []) {
     this.providersByKey = new Map([[metricsKey(primary.getProviderType()), primary]]);
     for (const candidate of candidates) this.providersByKey.set(metricsKey(candidate.getProviderType()), candidate);
 
@@ -30,7 +30,7 @@ export class ResilientAIProvider implements IAIProvider {
       ]);
       // Bound retries to one retry per provider; avoid retry storms or surprise billing spikes.
       failsafeService.setRetryPolicy(key, {
-        maxAttempts: 2,
+        maxAttempts: this.managedTimeoutProviders.includes(key) ? 1 : 2,
         initialDelayMs: 250,
         maxDelayMs: 1000,
         backoffMultiplier: 2,
@@ -51,6 +51,9 @@ export class ResilientAIProvider implements IAIProvider {
         if (!provider) throw new Error(`AI provider '${key}' is not configured`);
         return provider.invoke(messages, options);
       },
+      // invokeLLM owns an abortable deadline. An outer Promise.race would
+      // leave Ollama working after timeout and overlap the next retry.
+      Object.fromEntries(this.managedTimeoutProviders.filter(key => this.providersByKey.has(key)).map(key => [key, 0])),
     );
   }
 

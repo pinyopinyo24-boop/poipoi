@@ -56,6 +56,8 @@ export type ToolChoice = ToolChoicePrimitive | ToolChoiceByName | ToolChoiceExpl
 
 export type LLMRequest = {
   userId?: string;
+  baseUrl?: string;
+  learningContextIncluded?: boolean;
   timeoutMs?: number;
   contextWindow?: number;
   model?: string;
@@ -115,7 +117,7 @@ export type LLMModel = {
 
 /** Invoke local Ollama models. */
 export async function invokeLLM(request: LLMRequest): Promise<LLMResponse> {
-  const baseUrl = (process.env.LOCAL_AI_URL || "http://localhost:11434").replace(/\/+$/, "");
+  const baseUrl = (request.baseUrl || process.env.LOCAL_AI_URL || "http://localhost:11434").replace(/\/+$/, "");
   const isCodeTask = request.messages.some(message =>
     typeof message.content === "string" &&
     /code implementation agent|code generation expert|software implementation agent/i.test(message.content)
@@ -132,7 +134,7 @@ export async function invokeLLM(request: LLMRequest): Promise<LLMResponse> {
     ...(request.messages || []),
   ];
   const userIndex = messages.findLastIndex(message => message.role === "user");
-  if (userIndex >= 0 && !request.response_format) {
+  if (userIndex >= 0 && !request.response_format && !request.learningContextIncluded) {
     const userMessage = messages[userIndex];
     if (typeof userMessage.content === "string") {
       messages[userIndex] = {
@@ -203,6 +205,8 @@ try {
     `Local AIがJSON以外を返しました: ${rawText.slice(0, 500)}`
   );
 }
+
+    if (typeof data.error === "string" && data.error.trim()) throw new Error("Ollama: " + data.error);
 
     return {
       id: data.id || `local-${Date.now()}`,

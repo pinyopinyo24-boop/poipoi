@@ -50,7 +50,7 @@ class CircuitBreaker {
   /**
    * リクエストを実行
    */
-  async execute<T>(fn: () => Promise<T>): Promise<T> {
+  async execute<T>(fn: () => Promise<T>, timeoutMs = this.config.timeout): Promise<T> {
     if (this.state === 'open') {
       if (this.isResetTimeout()) {
         this.state = 'half-open';
@@ -61,10 +61,11 @@ class CircuitBreaker {
 
     let timeoutHandle: ReturnType<typeof setTimeout> | undefined;
     try {
-      const result = await Promise.race([
+      // Zero delegates the deadline to a provider that aborts its own request.
+      const result = timeoutMs === 0 ? await fn() : await Promise.race([
         fn(),
         new Promise<T>((_, reject) => {
-          timeoutHandle = setTimeout(() => reject(new Error('Request timeout')), this.config.timeout);
+          timeoutHandle = setTimeout(() => reject(new Error('Request timeout')), timeoutMs);
         }),
       ]);
 
@@ -220,7 +221,8 @@ export class FailsafeService {
    */
   async executeWithFailsafe<T>(
     provider: string,
-    fn: () => Promise<T>
+    fn: () => Promise<T>,
+    timeoutMs?: number
   ): Promise<T> {
     const circuitBreaker = this.circuitBreakers.get(provider);
     const retryPolicy = this.retryPolicies.get(provider);
@@ -236,7 +238,7 @@ export class FailsafeService {
 
     for (let attempt = 0; attempt < retryPolicy.maxAttempts; attempt++) {
       try {
-        const result = await circuitBreaker.execute(fn);
+        const result = await circuitBreaker.execute(fn, timeoutMs);
         metrics.successfulRequests++;
         return result;
       } catch (error) {
@@ -269,7 +271,8 @@ export class FailsafeService {
    */
   async executeWithFallback<T>(
     primaryProvider: string,
-    fn: (provider: string) => Promise<T>
+    fn: (provider: string) => Promise<T>,
+    timeoutOverrides?: Record<string, number>
   ): Promise<T> {
     const providers = [primaryProvider, ...(this.fallbackProviders.get(primaryProvider) || [])];
 
@@ -277,7 +280,7 @@ export class FailsafeService {
 
     for (const provider of providers) {
       try {
-        const result = await this.executeWithFailsafe(provider, () => fn(provider));
+        const result = await this.executeWithFailsafe(provider, () => fn(provider), timeoutOverrides?.[provider]);
 
         // Record fallback usage if not primary provider
         if (provider !== primaryProvider) {

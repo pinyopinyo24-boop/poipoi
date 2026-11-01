@@ -1,3 +1,4 @@
+import { describeLocalAIError } from '../_core/ai/LocalAIError';
 import { recordLearningFeedback } from "./LearningContextIntegration";
 import { LearningContextIntegration } from "./LearningContextIntegration";
 import { enrichPromptWithLearning } from "./LearningContextIntegration";
@@ -387,7 +388,7 @@ export class ChatCoreManager {
         'AZはPoiPoiの会話・機能統合コアです。過去の会話や検索された記憶は参考情報として扱い、現在の指示と矛盾する場合は確認してください。書き込み・コード変更・外部操作を実行したと主張するのは、認証済みツールの成功結果がある場合のみです。承認が必要な操作は承認を求め、承認前に実行しないでください。PC未接続時はAndroid側のローカルAIに処理を委ね、未接続状態を成功と偽らないでください。'
       });
       const aiCore = getAICore() ?? await initializeAICore();
-      const aiMessage = await aiCore.invoke(messages, { metadata: { userId: identitySession.userId } });
+      const aiMessage = await aiCore.invoke(messages, { metadata: { userId: identitySession.userId, purpose: 'chat' } });
       if (!aiMessage?.trim()) throw new Error('AI Core returned an empty response');
       return aiMessage;
     } catch (error) {
@@ -397,7 +398,7 @@ export class ChatCoreManager {
       // 髯ｬ・ｽ鬨ｾ・ｰ隶鯉ｽｭ鬮｢・｢鬨ｾ・｣邵ｺ・ｮ髮会ｽｪ陜荳翫・陜｣・ｴ陷ｷ繝ｻ
 
 
-      throw new Error('AI Core response failed; check Ollama connection and allow mobile local AI fallback');
+      throw new Error('AZが回答を生成できませんでした。' + describeLocalAIError(error), { cause: error });
     }
   }
 

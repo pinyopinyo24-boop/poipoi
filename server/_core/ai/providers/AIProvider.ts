@@ -26,6 +26,8 @@ export interface AIResponse {
 
 export interface AIInvokeOptions {
   model?: string;
+  timeoutMs?: number;
+  contextWindow?: number;
   temperature?: number;
   maxTokens?: number;
   topP?: number;

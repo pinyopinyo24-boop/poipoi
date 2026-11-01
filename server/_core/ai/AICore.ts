@@ -47,14 +47,14 @@ export class AICore {
       this.providers.set('local', primaryProvider);
       this.connectionMonitor.registerProvider('Local', 'real', true);
 
-      // Skip validation for demo mode
-      const isValid = await primaryProvider.validateConfig();
-      if (!isValid) {
-        throw new Error('[AICore] Local provider unavailable');
+      // Check the same endpoint and configured chat model used for invocation.
+      const status = await primaryProvider.getStatus();
+      if (!status.isAvailable) {
+        throw new Error(status.errorMessage || 'Ollamaの接続先または指定モデルを確認できません。');
       }
 
       const fallbackProviders: IAIProvider[] = [];
-      const resilientProvider = new ResilientAIProvider(primaryProvider, fallbackProviders);
+      const resilientProvider = new ResilientAIProvider(primaryProvider, fallbackProviders, ['local']);
       this.runtimeProvider = resilientProvider;
 
       // Initialize AgentManager using retry/fallback across configured existing providers.
