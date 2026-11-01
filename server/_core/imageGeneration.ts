@@ -23,9 +23,15 @@ export async function generateImage(options: GenerateImageOptions): Promise<Gene
     if (!text?.trim()) throw new Error('画像生成の説明を準備できませんでした。');
     prompt = text.trim().slice(0, 4000);
   }
+  const dimension = (value: string | undefined) => {
+    const number = Number(value ?? 512);
+    if (!Number.isInteger(number) || number < 256 || number > 1024 || number % 64 !== 0) throw new Error('画像サイズは256〜1024の64刻みで設定してください。');
+    return number;
+  };
+  const width = dimension(process.env.LOCAL_IMAGE_WIDTH), height = dimension(process.env.LOCAL_IMAGE_HEIGHT);
   const response = await fetch(endpoint.replace(/\/+$/, '') + '/sdapi/v1/txt2img', {
     method: 'POST', headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ prompt, steps: 20, width: 768, height: 768, batch_size: 1, n_iter: 1 }),
+    body: JSON.stringify({ prompt, steps: 20, width, height, batch_size: 1, n_iter: 1 }),
     signal: AbortSignal.timeout(300000),
   });
   if (!response.ok) throw new Error(`画像生成エンジンがエラーを返しました（HTTP ${response.status}）。生成は未確認です。`);
