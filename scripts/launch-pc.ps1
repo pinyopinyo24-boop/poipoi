@@ -14,9 +14,12 @@ if ($InstallShortcut) {
             throw '同じ名前のショートカットがあります。既存のものは変更しませんでした。'
         }
     }
+    $iconPath = Join-Path $PSScriptRoot 'poipoi-app.ico'
+    if (-not (Test-Path -LiteralPath $iconPath)) { throw 'ポイポイのアイコンファイルがありません。更新を確認してください。' }
     $link = $shell.CreateShortcut($linkPath)
     $link.TargetPath = $target
     $link.WorkingDirectory = $root
+    $link.IconLocation = "$iconPath,0"
     $link.Description = 'ポイポイ（AZ）を起動'
     $link.Save()
     Write-Host 'デスクトップに「ポイポイ」を設置しました。ダブルクリックで起動できます。' -ForegroundColor Green
