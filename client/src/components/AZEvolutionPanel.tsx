@@ -4,7 +4,7 @@ import { useAuth } from '@/_core/hooks/useAuth';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 
-export default function AZEvolutionPanel() {
+export default function AZEvolutionPanel({ reviewOnly = false }: { reviewOnly?: boolean }) {
   const { user } = useAuth();
   const [request, setRequest] = useState('');
   const [reviewed, setReviewed] = useState<Record<string, boolean>>({});
@@ -41,13 +41,17 @@ export default function AZEvolutionPanel() {
     } catch (error) { setResult(error instanceof Error ? error.message : String(error)); }
   };
   if (!user) return <p className="text-sm"><a href="/login" className="text-blue-700 underline">ログイン</a>すると、記憶・実務操作・自己進化をアカウントに保存できます。</p>;
+  if (reviewOnly && user.role !== 'admin') return null;
   if (user.role !== 'admin') return <p className="text-sm">コード変更の生成・適用には管理者権限が必要です。</p>;
-  return <details className="rounded-lg border bg-white p-3" open={(pending.data?.length ?? 0) > 0}>
-    <summary className="cursor-pointer font-semibold">AZ 自己進化・承認待ちの変更（{pending.data?.length ?? 0}件）</summary>
+  if (reviewOnly && !pending.data?.length && !pending.error && !result) return null;
+  return <details className="rounded-lg border bg-white p-3" open={(pending.data?.length ?? 0) > 0 || Boolean(result) || Boolean(pending.error)}>
+    <summary className="cursor-pointer font-semibold">変更案の確認・承認（{pending.data?.length ?? 0}件）</summary>
     <div className="mt-3 space-y-3">
+      {!reviewOnly && <>
       <Textarea value={request} onChange={event => setRequest(event.target.value)}
         placeholder="追加・修正したい機能と条件を入力。対象ソースはAZが探します。" />
       <Button onClick={create} disabled={busy || !request.trim()}>変更案を生成（適用しない）</Button>
+      </>}
       {pending.error && <p role="alert">{pending.error.message}</p>}
       {result && <p role="status" className="whitespace-pre-wrap">{result}</p>}
       {pending.data?.map(preview => <section key={preview.previewId} className="space-y-3 rounded border p-3">

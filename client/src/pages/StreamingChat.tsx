@@ -7,7 +7,6 @@ import { Input } from "@/components/ui/input";
 import { Card } from "@/components/ui/card";
 import { Spinner } from "@/components/ui/spinner";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
 import { Textarea } from "@/components/ui/textarea";
 import FaceSwapPanel from "@/components/FaceSwapPanel";
@@ -59,7 +58,7 @@ export default function StreamingChat() {
   const [input, setInput] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [showMultimodal, setShowMultimodal] = useState(false);
-  const [activeTab, setActiveTab] = useState("chat");
+  const [showAuxiliaryTools, setShowAuxiliaryTools] = useState(false);
   const [evolutionFeedback, setEvolutionFeedback] = useState("");
   const [programRequirements, setProgramRequirements] = useState("");
   const [isEvolutionLoading, setIsEvolutionLoading] = useState(false);
@@ -67,7 +66,7 @@ export default function StreamingChat() {
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const [, navigate] = useLocation();
 
-  const openConversation = (id: string) => { const c = conversations.find(x => x.id === id); if (!c || isLoading) return; localStorage.setItem(lastConversationKey, id); setConversationId(id); setMessages(c.messages.map(m => ({ ...m, timestamp: new Date(m.timestamp) }))); setActiveTab("chat"); };
+  const openConversation = (id: string) => { const c = conversations.find(x => x.id === id); if (!c || isLoading) return; localStorage.setItem(lastConversationKey, id); setConversationId(id); setMessages(c.messages.map(m => ({ ...m, timestamp: new Date(m.timestamp) }))); };
   const deleteConversation = async (id: string) => {
     if (isLoading || historyAccount !== accountId || !window.confirm('この会話を削除しますか？')) return;
     const deletingAccount = accountId;
@@ -82,7 +81,7 @@ export default function StreamingChat() {
     } catch (error) { if (requestAccount.current === deletingAccount) setFileError(error instanceof Error ? error.message : String(error)); }
   };
   const renameConversation = (id: string) => { const c = conversations.find(x => x.id === id); if (!c) return; const title = window.prompt("新しい会話タイトル", c.title)?.trim(); if (!title) return; const next = conversations.map(x => x.id === id ? { ...x, title } : x); setConversations(next); saveConversations(next, historyAccount); };
-  const startNewConversation = () => { if (isLoading) return; const c = createConversation(); setConversations(prev => { const next = [c, ...prev]; return next; }); localStorage.setItem(lastConversationKey, c.id); setConversationId(c.id); setMessages([]); setInput(""); setActiveTab("chat"); };
+  const startNewConversation = () => { if (isLoading) return; const c = createConversation(); setConversations(prev => { const next = [c, ...prev]; return next; }); localStorage.setItem(lastConversationKey, c.id); setConversationId(c.id); setMessages([]); setInput(""); };
   const persistChatMessage = (id: string, message: Message) => { setConversations(prev => { const next = prev.map(c => c.id !== id ? c : { ...c, title: c.title === "新しいチャット" && message.role === "user" ? message.content.slice(0, 30) : c.title, updatedAt: new Date().toISOString(), messages: [...c.messages, { id: message.id, role: message.role, content: message.content, timestamp: message.timestamp.toISOString(), type: message.type, metadata: message.metadata }] }); return next; }); };
   useEffect(() => {
     if (authLoading || accountId === historyAccount) return;
@@ -229,6 +228,9 @@ export default function StreamingChat() {
 
       setMessages((prev) => [...prev, assistantMessage]);
       persistChatMessage(chatId, assistantMessage);
+      if (user?.role === 'admin') {
+        void serverHistoryUtils.unifiedTools.listCodePreviews.invalidate().catch(error => console.error('変更案の更新エラー:', error));
+      }
     } catch (error) {
       if (requestAccount.current !== sendingAccount) return;
       console.error("ストリーミングチャットエラー:", error);
@@ -363,7 +365,6 @@ export default function StreamingChat() {
         </button>
       </div>
 
-      <AZEvolutionPanel key={accountId} />
       {user && <details className="rounded-lg border bg-white p-3">
         <summary className="cursor-pointer">AZの実行履歴</summary>
         {taskHistory.error && <p>{taskHistory.error.message}</p>}
@@ -375,15 +376,8 @@ export default function StreamingChat() {
       </details>}
       <div className="flex flex-1 min-h-0 gap-4">
       <aside className="w-60 shrink-0 rounded-lg bg-white/80 p-3 flex flex-col gap-3"><button type="button" onClick={startNewConversation} className="rounded-lg bg-cyan-600 px-3 py-2 text-white">＋ 新しいチャット</button><div className="text-sm font-semibold">最近の会話</div><div className="flex-1 overflow-y-auto space-y-1">{conversations.map(c => <div key={c.id} className="flex items-center gap-2"><button key={c.id} type="button" onClick={() => openConversation(c.id)} className={`block w-full truncate rounded px-3 py-2 text-left text-sm ${conversationId === c.id ? "bg-cyan-100" : "hover:bg-gray-100"}`}>{c.title}</button><button type="button" onClick={() => renameConversation(c.id)} className="text-xs text-blue-600 hover:underline">編集</button><button type="button" onClick={() => deleteConversation(c.id)} className="text-xs text-red-600 hover:underline">削除</button></div>)}</div></aside>
-      <Tabs value={activeTab} onValueChange={setActiveTab} className="flex-1 flex flex-col">
-        <TabsList className="grid w-full grid-cols-3">
-          <TabsTrigger value="chat">💬 チャット</TabsTrigger>
-          <TabsTrigger value="evolution">🧬 自己進化</TabsTrigger>
-          <TabsTrigger value="program">🤖 プログラム生成</TabsTrigger>
-        </TabsList>
-
-        {/* チャットタブ */}
-        <TabsContent value="chat" className="flex-1 flex flex-col gap-4">
+      <div className="flex-1 min-w-0 flex flex-col gap-4">
+        <p className="text-sm text-gray-600">会話・実務操作・自己進化・プログラム作成は、下のチャットから依頼できます。コードの変更案は確認・承認後に適用します。</p>
           {/* STEP36_SEARCH_UI */}
           <div className="rounded-lg border bg-white p-3">
             <button type="button" onClick={()=>setMemoryOpen(!memoryOpen)} className="rounded bg-blue-600 px-3 py-2 text-white">長期記憶を検索</button>
@@ -444,6 +438,8 @@ export default function StreamingChat() {
             )}
           </Card>
 
+          <AZEvolutionPanel key={accountId} reviewOnly />
+
           <label className="text-sm">資料を追加（Excel / PDF）
             <input type="file" accept=".xlsx,.pdf" disabled={isLoading || upload.isPending}
               onChange={event => { const selected = event.target.files?.[0]; if (selected) void uploadFile(selected); event.target.value = ''; }} />
@@ -458,7 +454,7 @@ export default function StreamingChat() {
                   handleSendMessage();
                 }
               }}
-              placeholder="メッセージを入力..."
+              placeholder="AZへの依頼を入力..."
               disabled={isLoading}
               className="border-cyan-300 focus:border-cyan-500"
             />
@@ -470,10 +466,11 @@ export default function StreamingChat() {
               {isLoading ? <Spinner className="w-4 h-4" /> : "送信"}
             </Button>
           </div>
-        </TabsContent>
-
-        {/* 自己進化タブ */}
-        <TabsContent value="evolution" className="flex-1 flex flex-col gap-4">
+        <details className="rounded-lg border bg-white p-3" onToggle={event => setShowAuxiliaryTools(event.currentTarget.open)}>
+          <summary className="cursor-pointer text-sm text-gray-600">補助ツール（従来の分析・コード生成）</summary>
+          <div className="mt-3 space-y-4">
+          {showAuxiliaryTools && <AZEvolutionPanel key={accountId} />}
+          <section className="flex flex-col gap-4">
           <Card className="flex-1 overflow-y-auto p-4 space-y-4 bg-white">
             <div className="space-y-4">
               <h3 className="font-bold text-lg">🧬 自己進化システム</h3>
@@ -525,10 +522,8 @@ export default function StreamingChat() {
               )}
             </div>
           </Card>
-        </TabsContent>
-
-        {/* プログラム生成タブ */}
-        <TabsContent value="program" className="flex-1 flex flex-col gap-4">
+          </section>
+          <section className="flex flex-col gap-4">
           <Card className="flex-1 overflow-y-auto p-4 space-y-4 bg-white">
             <div className="space-y-4">
               <h3 className="font-bold text-lg">🤖 自動プログラム作成</h3>
@@ -572,8 +567,10 @@ export default function StreamingChat() {
               )}
             </div>
           </Card>
-        </TabsContent>
-      </Tabs>
+          </section>
+          </div>
+        </details>
+      </div>
       </div>
 
       {/* マルチモーダルダイアログ */}
