@@ -84,6 +84,7 @@ export default function StreamingChat() {
   const [isLoading, setIsLoading] = useState(false);
   const [showMultimodal, setShowMultimodal] = useState(false);
   const [showAuxiliaryTools, setShowAuxiliaryTools] = useState(false);
+  const [historyOpen, setHistoryOpen] = useState(false);
   const [evolutionFeedback, setEvolutionFeedback] = useState("");
   const [programRequirements, setProgramRequirements] = useState("");
   const [isEvolutionLoading, setIsEvolutionLoading] = useState(false);
@@ -429,7 +430,25 @@ export default function StreamingChat() {
         </details>)}
       </details>}
       <div className="flex flex-1 min-h-0 gap-4">
-      <aside className="w-60 shrink-0 rounded-lg bg-white/80 p-3 flex flex-col gap-3"><button type="button" onClick={startNewConversation} className="rounded-lg bg-cyan-600 px-3 py-2 text-white">＋ 新しいチャット</button><div className="text-sm font-semibold">最近の会話</div><div className="flex-1 overflow-y-auto space-y-1">{conversations.map(c => <div key={c.id} className="flex items-center gap-2"><button key={c.id} type="button" onClick={() => openConversation(c.id)} className={`block w-full truncate rounded px-3 py-2 text-left text-sm ${conversationId === c.id ? "bg-cyan-100" : "hover:bg-gray-100"}`}>{c.title}</button><button type="button" onClick={() => renameConversation(c.id)} className="text-xs text-blue-600 hover:underline">編集</button><button type="button" onClick={() => deleteConversation(c.id)} className="text-xs text-red-600 hover:underline">削除</button></div>)}</div></aside>
+      <aside className="w-60 shrink-0 rounded-lg bg-white/80 p-3 flex flex-col gap-3" aria-label="チャットのメニュー">
+        <button type="button" onClick={startNewConversation} className="rounded-lg bg-cyan-600 px-3 py-2 text-white">＋ 新しいチャット</button>
+        <button type="button" aria-expanded={historyOpen} aria-controls="az-conversation-history"
+          onClick={() => setHistoryOpen(current => !current)}
+          className={`flex items-center justify-between rounded-lg px-3 py-2 text-left text-sm font-semibold ${historyOpen ? "bg-cyan-100 text-cyan-900" : "hover:bg-gray-100"}`}>
+          <span>チャット履歴</span><span aria-hidden="true">{historyOpen ? "▾" : "▸"}</span>
+        </button>
+        {historyOpen && <section id="az-conversation-history" aria-label="チャット履歴" className="flex-1 min-h-0 overflow-y-auto space-y-2">
+          {conversations.length === 0 && <p className="px-3 text-sm text-gray-500">{serverSessions.isLoading ? "履歴を読み込んでいます..." : "まだ会話の履歴はありません。"}</p>}
+          {serverSessions.error && <p role="alert" className="px-3 text-xs text-red-700">サーバーの履歴を取得できません。保存済みの履歴を表示しています。</p>}
+          {conversations.map(conversation => <div key={conversation.id} className="flex items-center gap-2">
+            <button type="button" title={conversation.title} aria-current={conversationId === conversation.id ? "page" : undefined}
+              onClick={() => openConversation(conversation.id)}
+              className={`block min-w-0 flex-1 truncate rounded px-3 py-2 text-left text-sm ${conversationId === conversation.id ? "bg-cyan-100" : "hover:bg-gray-100"}`}>{conversation.title}</button>
+            <button type="button" aria-label={conversation.title + "の名前を編集"} onClick={() => renameConversation(conversation.id)} className="shrink-0 text-xs text-blue-600 hover:underline">編集</button>
+            <button type="button" aria-label={conversation.title + "を削除"} onClick={() => deleteConversation(conversation.id)} className="shrink-0 text-xs text-red-600 hover:underline">削除</button>
+          </div>)}
+        </section>}
+      </aside>
       <div className="flex-1 min-w-0 flex flex-col gap-4">
         <p className="text-sm text-gray-600">会話・実務操作・自己進化・プログラム作成は、下のチャットから依頼できます。コードの変更案は確認・承認後に適用します。</p>
           {/* STEP36_SEARCH_UI */}
