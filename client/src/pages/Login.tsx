@@ -4,7 +4,6 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card } from "@/components/ui/card";
-import { toast } from "sonner";
 import { trpc } from "@/lib/trpc";
 
 export default function Login() {
@@ -15,6 +14,23 @@ export default function Login() {
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [isLoading, setIsLoading] = useState(false);
+  const [errorMessage, setErrorMessage] = useState("");
+  const [notice, setNotice] = useState("");
+  const showError = (error: unknown, fallback: string) => {
+    const message = error instanceof Error ? error.message : fallback;
+    if (message.includes("Database not available")) {
+      setErrorMessage("アカウント保存用のデータベースに接続できません。PC側のデータベース設定を確認する必要があります。");
+      return;
+    }
+    try {
+      const issues: unknown = JSON.parse(message);
+      if (Array.isArray(issues)) {
+        setErrorMessage(issues.map(issue => typeof issue?.message === "string" ? issue.message : fallback).join("／"));
+        return;
+      }
+    } catch { /* The server may return a plain-language error. */ }
+    setErrorMessage(message || fallback);
+  };
 
   const utils = trpc.useUtils();
   const loginMutation = trpc.auth.login.useMutation();
@@ -22,19 +38,22 @@ export default function Login() {
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (isLoading) return;
+    setErrorMessage(""); setNotice("");
     if (!username || !password) {
-      toast.error("ユーザー名とパスワードを入力してください");
+      setErrorMessage("ユーザー名とパスワードを入力してください");
       return;
     }
 
     setIsLoading(true);
     try {
       await loginMutation.mutateAsync({ username, password });
-      toast.success("ログインしました");
+      setNotice("ログインしました");
       await utils.auth.me.invalidate();
       setLocation("/streaming");
-    } catch (error: any) {
-      toast.error(error.message || "ログインに失敗しました");
+    } catch (error: unknown) {
+      setNotice("");
+      showError(error, "ログインに失敗しました");
     } finally {
       setIsLoading(false);
     }
@@ -42,8 +61,10 @@ export default function Login() {
 
   const handleRegister = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (isLoading) return;
+    setErrorMessage(""); setNotice("");
     if (!username || !password || !name) {
-      toast.error("すべてのフィールドを入力してください");
+      setErrorMessage("名前・ユーザー名・パスワードを入力してください。メールは空欄で構いません。");
       return;
     }
 
@@ -53,13 +74,14 @@ export default function Login() {
         username,
         password,
         name,
-        email: email || null,
+        email: email.trim() || null,
       });
-      toast.success("登録しました。自動的にログインします");
+      setNotice("登録しました。ログイン状態を確認しています。");
       await utils.auth.me.invalidate();
       setLocation("/streaming");
-    } catch (error: any) {
-      toast.error(error.message || "登録に失敗しました");
+    } catch (error: unknown) {
+      setNotice("");
+      showError(error, "登録に失敗しました");
     } finally {
       setIsLoading(false);
     }
@@ -82,6 +104,9 @@ export default function Login() {
                     <Label htmlFor="name">名前</Label>
                     <Input
                       id="name"
+                      name="name"
+                      autoComplete="name"
+                      required
                       type="text"
                       placeholder="名前"
                       value={name}
@@ -93,6 +118,8 @@ export default function Login() {
                     <Label htmlFor="email">メール（オプション）</Label>
                     <Input
                       id="email"
+                      name="email"
+                      autoComplete="email"
                       type="email"
                       placeholder="メール"
                       value={email}
@@ -107,6 +134,10 @@ export default function Login() {
                 <Label htmlFor="username">ユーザー名</Label>
                 <Input
                   id="username"
+                  name="username"
+                  autoComplete="username"
+                  required
+                  minLength={3}
                   type="text"
                   placeholder="ユーザー名"
                   value={username}
@@ -119,6 +150,10 @@ export default function Login() {
                 <Label htmlFor="password">パスワード</Label>
                 <Input
                   id="password"
+                  name="password"
+                  autoComplete={isRegister ? "new-password" : "current-password"}
+                  required
+                  minLength={6}
                   type="password"
                   placeholder="パスワード"
                   value={password}
@@ -127,6 +162,9 @@ export default function Login() {
                 />
               </div>
 
+              <p className="text-xs text-gray-600">ユーザー名は3文字以上、パスワードは6文字以上です。</p>
+              {errorMessage && <p role="alert" className="rounded border border-red-300 bg-red-50 p-3 text-sm text-red-800 whitespace-pre-wrap">{errorMessage}</p>}
+              {notice && <p role="status" className="text-sm text-blue-700">{notice}</p>}
               <Button
                 type="submit"
                 className="w-full"
@@ -141,7 +179,8 @@ export default function Login() {
             <p className="text-sm text-gray-600">
               {isRegister ? "アカウントをお持ちですか？" : "アカウントをお持ちでないですか？"}
               <button
-                onClick={() => setIsRegister(!isRegister)}
+                disabled={isLoading}
+                onClick={() => { setIsRegister(!isRegister); setErrorMessage(""); setNotice(""); }}
                 className="ml-2 text-blue-600 hover:underline font-semibold"
               >
                 {isRegister ? "ログイン" : "無料で登録する"}
