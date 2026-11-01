@@ -2,7 +2,7 @@ import type { Express } from 'express';
 import { createHash, randomBytes, timingSafeEqual } from 'node:crypto';
 import { parse as parseCookies } from 'cookie';
 import { createRemoteJWKSet, jwtVerify } from 'jose';
-import { getDb, getUserByOpenId, upsertUser } from '../db';
+import { getUserByOpenId, upsertUser } from '../db';
 import { sdk } from './sdk';
 import { COOKIE_NAME, getSessionCookieOptions } from './localAuth';
 
@@ -21,7 +21,7 @@ function configuration() {
     validRedirect = (url.protocol === 'https:' || (url.protocol === 'http:' && ['localhost', '127.0.0.1', '[::1]'].includes(url.hostname)))
       && !url.username && !url.password && !url.search && !url.hash && url.pathname === '/api/oauth/google/callback';
   } catch { /* Invalid configuration is reported as unavailable. */ }
-  return { clientId, clientSecret, redirectUri, enabled: Boolean(clientId && clientSecret && sessionSecret && sessionSecret.length >= 32 && process.env.DATABASE_URL && validRedirect) };
+  return { clientId, clientSecret, redirectUri, enabled: Boolean(clientId && clientSecret && sessionSecret && sessionSecret.length >= 32 && validRedirect) };
 }
 function pruneTransactions() {
   for (const [state, entry] of transactions) if (entry.expires <= Date.now()) transactions.delete(state);
@@ -89,7 +89,6 @@ export function registerOAuthRoutes(app: Express) {
       }
       // Identity is based on Google's stable subject, never an unverified email merge.
       const openId = 'google_' + createHash('sha256').update(payload.sub).digest('base64url');
-      if (!await getDb()) { res.redirect('/login?google_error=storage'); return; }
       let user = await getUserByOpenId(openId);
       if (!user) {
         await upsertUser({ openId, name: typeof payload.name === 'string' && payload.name.trim() ? payload.name : payload.email,

@@ -4,6 +4,7 @@ import { InsertUser, users } from "../drizzle/schema";
 import { ENV } from './_core/env';
 
 let _db: ReturnType<typeof drizzle> | null = null;
+const usesLocalAccounts = () => !process.env.DATABASE_URL?.trim();
 
 // Lazily create the drizzle instance so local tooling can run without a DB.
 export async function getDb() {
@@ -23,6 +24,7 @@ export async function upsertUser(user: InsertUser): Promise<void> {
     throw new Error("User openId is required for upsert");
   }
 
+  if (usesLocalAccounts()) return (await import('./repositories/LocalUserStore')).upsertLocalUser(user);
   const db = await getDb();
   if (!db) {
     console.warn("[Database] Cannot upsert user: database not available");
@@ -85,6 +87,7 @@ export async function upsertUser(user: InsertUser): Promise<void> {
 }
 
 export async function getUserByOpenId(openId: string) {
+  if (usesLocalAccounts()) return (await import('./repositories/LocalUserStore')).getLocalUserByOpenId(openId);
   const db = await getDb();
   if (!db) {
     console.warn("[Database] Cannot get user: database not available");
@@ -101,6 +104,7 @@ export async function getUserByOpenId(openId: string) {
 
 // Local Auth Functions
 export async function getUserByUsername(username: string) {
+  if (usesLocalAccounts()) return (await import('./repositories/LocalUserStore')).getLocalUserByUsername(username);
   const db = await getDb();
   if (!db) {
     console.warn("[Database] Cannot get user: database not available");
@@ -139,6 +143,7 @@ export async function createUser(userData: {
   loginMethod?: string;
   role?: string;
 }) {
+  if (usesLocalAccounts()) return (await import('./repositories/LocalUserStore')).createLocalUser(userData);
   const db = await getDb();
   if (!db) {
     console.warn("[Database] Cannot create user: database not available");
@@ -175,6 +180,7 @@ export async function createUser(userData: {
 }
 
 export async function updateLastSignedIn(userId: number) {
+  if (usesLocalAccounts()) return (await import('./repositories/LocalUserStore')).updateLocalLastSignedIn(userId);
   const db = await getDb();
   if (!db) {
     console.warn("[Database] Cannot update user: database not available");

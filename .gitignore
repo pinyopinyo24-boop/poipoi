@@ -121,3 +121,6 @@ backup_old/
 # OAuth configuration backups and atomic writes contain secrets.
 .env.google-backup-*
 .env.*.tmp
+
+# Local account database and its SQLite journal files are private.
+/data/auth/
