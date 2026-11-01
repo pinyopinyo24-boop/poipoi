@@ -14,6 +14,12 @@ const domain = /製造|生産|原価|在庫|工程|Excel|エクセル|PDF|PPT|Po
 const action = /して|作って|作成|修正|追加|登録|変更|分析|比較|計算|一覧|見せて|調べて|探して|出力|生成|実行|改善|まとめて|整理|読んで|読み込|確認したい|教えて|入れて|設定|保存|記録|集計|取得/;
 export function shouldRunAZTask(request: string, previous: string[]) {
   if (/^(?:正しくは|正解は|訂正|私の名前|あなたの名前|AIの名前|AZの呼び名)/.test(request)) return false;
+  // Recognize the owner's direct request to fix AZ's unnatural conversation.
+  // Text rewriting and simple dialogue remain on the usual chat path.
+  if (/(?:会話|応答|返答|話し方)/.test(request)
+      && /(?:不自然|ふしぜん|おかしい|不具合)/.test(request)
+      && /(?:直して|なおして|修正して|改善して)/.test(request)
+      && !/(?:引用|台本|文章|作文|小説|翻訳)/.test(request)) return true;
   if (domain.test(request) && action.test(request)) return true;
   if (/(?:それ|これ|上記|さっき|先ほど)/.test(request) && action.test(request) && previous.slice(-4).some(turn => domain.test(turn))) return true;
   return /^(?:それで|そのまま|続けて|続き|お願い|はい|作成して|実行して|進めて|修正して|直して)[。！!\s]*$/.test(request)
@@ -122,7 +128,7 @@ export async function runAZTask(ctx: TrpcContext, sessionId: string, request: st
       }
       if (decision.type === 'finish') {
         if (!decision.needsInput && !result.steps.some(entry => entry.status === 'completed') &&
-            /作って|作成|修正|追加|登録|出力|生成|実行|保存|記録|集計/.test(request)) {
+            /作って|作成|修正|直して|なおして|改善して|追加|登録|出力|生成|実行|保存|記録|集計/.test(request)) {
           messages.push({ role: 'user', content: '依頼された操作の成功結果がまだありません。必要なツールを実行するか、不足条件をneedsInput:trueで質問してください。未実行のまま完了を報告できません。' });
           continue;
         }
