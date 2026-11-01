@@ -124,3 +124,6 @@ backup_old/
 
 # Local account database and its SQLite journal files are private.
 /data/auth/
+
+# Account-private chat photographs and generated images.
+/data/chat-images/

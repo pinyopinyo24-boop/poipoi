@@ -1,3 +1,4 @@
+import { saveChatImage, readChatImage } from '../core/ChatImageStore';
 import { createPDFParser } from '../managers/services/PDFParser';
 import { router, protectedProcedure } from '../_core/trpc';
 import { z } from 'zod';
@@ -76,6 +77,15 @@ async function extractOfficeEvidence(file: string, type: 'xlsx' | 'pdf', limit: 
 const presentationManager = new PresentationAIManager(getPresentationRepository());
 const presentationOwners = new Map<string, string>();
 export const unifiedToolsRouter = router({
+  uploadChatImage: protectedProcedure.input(z.object({
+    fileName: z.string().min(1).max(255), base64: z.string().min(4).max(7_000_000),
+  })).mutation(({ input, ctx }) => saveChatImage(String(ctx.user.id), input.fileName, input.base64)),
+  getChatImage: protectedProcedure.input(z.object({ id: z.string().max(64), accountId: z.string() }))
+    .query(async ({ input, ctx }) => {
+      if (input.accountId !== String(ctx.user.id)) throw new Error('別アカウントの写真は表示できません。');
+      const image = await readChatImage(String(ctx.user.id), input.id);
+      return { dataUri: 'data:' + image.mime + ';base64,' + image.base64 };
+    }),
   uploadDocument: protectedProcedure.input(z.object({
     fileName: z.string().min(1).max(255),
     type: z.enum(['xlsx', 'pdf']),

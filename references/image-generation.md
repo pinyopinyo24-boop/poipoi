@@ -1,50 +1,11 @@
-## Image Generation Integration
+## Local image generation integration
 
-Use the preconfigured image generation helper that connects to the internal ImageService, no manual setup required.
+The image helper uses a real local Stable Diffusion WebUI API. It does not connect to Manus Forge or return placeholder images. The engine must already be installed, have a model loaded and be running with --api. No engine or model is automatically downloaded.
 
-Example usage:
-```ts
-import { generateImage } from "./server/_core/imageGeneration.ts";
+Default endpoint: http://127.0.0.1:7860. Set LOCAL_IMAGE_API_URL to change it. The helper calls /sdapi/v1/txt2img for one 768x768 image at 20 steps and returns a data URI. Failures are reported as errors. Japanese prompts use the configured local text AI for English translation. Original-image editing is not supported by this helper.
 
-const { url: imageUrl } = await generateImage({
-  prompt: "A serene landscape with mountains"
-});
-// For editing:
-const { url: imageUrl } = await generateImage({
-  prompt: "Add a rainbow to this landscape",
-  originalImages: [{
-    url: "https://example.com/original.jpg",
-    mimeType: "image/jpeg"
-  }]
-});
-```
+Authenticated PC chat accepts direct requests such as 猫の画像を作って or /imagine a cat. Actual image bytes are validated, saved in an account-private directory and displayed only through authenticated image reads. Generated images include a save link.
 
-### Selecting a model
+Photo attachment and analysis are separate from generation. They use installed Ollama vision models, optionally selected with LOCAL_VISION_MODEL. See CHAT_PHOTOS.md for behavior and limitations.
 
-`generateImage()` defaults to **GPT Image 2** (`MODEL_GPT_IMAGE_2`) at `medium` quality. Pass `model` and/or `quality` to override:
-
-```ts
-const { url: imageUrl } = await generateImage({
-  prompt: "A neon cyberpunk city at night",
-  model: "MODEL_GPT_IMAGE_2",
-  quality: "high",
-});
-```
-
-When selecting a different model, omit `quality` unless that model supports the value you want to send.
-
-### Listing available models
-
-```ts
-import { listImageModels } from "./server/_core/imageGeneration.ts";
-
-const { models } = await listImageModels();
-// e.g. [{ model: "MODEL_GPT_IMAGE_2", id: "gpt-image-2" }, ...]
-```
-
-Feed a `model` value from this list into `generateImage({ model })`.
-
-Tips
-- Always call from server-side code (e.g., inside tRPC procedures) to avoid exposing API keys
-- Image generation can take 5-20 seconds, implement proper loading states
-- Implement proper error handling as image generation can fail
+Live PC vision and generation are unverified. No application build, test run, model download or restart was performed as part of implementation.

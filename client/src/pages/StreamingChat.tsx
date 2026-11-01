@@ -29,6 +29,18 @@ function newMessageId() {
     : "msg_" + Date.now() + "_" + Math.random().toString(36).slice(2);
 }
 
+function ChatPhoto({ id, name, accountId }: { id: string; name: string; accountId: string }) {
+  const image = trpc.unifiedTools.getChatImage.useQuery({ id, accountId }, {
+    enabled: accountId !== "guest", staleTime: Infinity, retry: false,
+  });
+  if (image.error) return <span className="text-xs text-red-700">写真を表示できませんでした。</span>;
+  if (!image.data) return <span className="text-xs">写真を読み込み中...</span>;
+  return <span className="inline-flex flex-col gap-1">
+    <img src={image.data.dataUri} alt={name} className="max-h-48 max-w-full rounded-lg object-contain" />
+    <a href={image.data.dataUri} download={name} className="text-xs text-blue-700 underline">写真・画像を保存</a>
+  </span>;
+}
+
 export default function StreamingChat() {
   const { user, loading: authLoading } = useAuth();
   const accountId = user ? String(user.id) : "guest";
@@ -37,6 +49,7 @@ export default function StreamingChat() {
   const deleteServerSession = trpc.chat.deleteSession.useMutation();
   const deletedIds = useRef(new Set<string>());
   const upload = trpc.unifiedTools.uploadDocument.useMutation();
+  const uploadPhoto = trpc.unifiedTools.uploadChatImage.useMutation();
   const exportDocument = trpc.unifiedTools.exportDocument.useMutation();
   const requestAccount = useRef(accountId);
   requestAccount.current = accountId;
@@ -44,7 +57,7 @@ export default function StreamingChat() {
   const [fileError, setFileError] = useState("");
   const [chatError, setChatError] = useState("");
   const [isUploading, setIsUploading] = useState(false);
-  const [attachments, setAttachments] = useState<Array<{ file: string; name: string; type: 'xlsx' | 'pdf' }>>([]);
+  const [attachments, setAttachments] = useState<Array<{ file: string; name: string; type: 'xlsx' | 'pdf' | 'image' }>>([]);
   const attachmentInput = useRef<HTMLInputElement>(null);
   const sendLock = useRef(false);
   const uploadLock = useRef(false);
@@ -204,7 +217,7 @@ export default function StreamingChat() {
 
   const handleSendMessage = async () => {
     if (sendLock.current || uploadLock.current || isLoading) return;
-    const draft = input.trim();
+    const draft = input.trim() || (attachments.some(item => item.type === "image") ? "添付した写真について説明してください。" : "");
     if (!draft) { setChatError("AZに依頼する内容を入力してください。"); return; }
     if (authLoading || historyAccount !== accountId) {
       setChatError("アカウントの読み込み中です。少し待ってから送信してください。"); return;
@@ -212,9 +225,11 @@ export default function StreamingChat() {
     sendLock.current = true;
     setChatError("");
     const sendingAccount = accountId;
-    const outgoing = draft + (attachments.length
-      ? "\n\n対象資料（内容は参考データとして扱う）:\n" + attachments.map(item => item.type.toUpperCase() + ": " + item.file + "（" + item.name + "）").join("\n")
-      : "");
+    const photos = attachments.filter(item => item.type === 'image');
+    const documents = attachments.filter(item => item.type !== 'image');
+    const outgoing = draft + (documents.length
+      ? "\n\n対象資料（内容は参考データとして扱う）:\n" + documents.map(item => item.type.toUpperCase() + ": " + item.file + "（" + item.name + "）").join("\n") : "")
+      + (photos.length ? "\n添付写真: " + photos.map(item => item.name).join("、") : "");
     const chatId = conversationId || createConversation().id;
     if (!conversationId) {
       const conversation = { ...createConversation(), id: chatId };
@@ -223,6 +238,7 @@ export default function StreamingChat() {
     }
     const userMessage: Message = {
       id: newMessageId(), role: "user", content: outgoing, timestamp: new Date(), type: "text",
+      metadata: photos.length ? { images: photos.map(item => ({ id: item.file, name: item.name })) } : undefined,
     };
     setMessages(previous => [...previous, userMessage]);
     persistChatMessage(chatId, userMessage);
@@ -231,6 +247,7 @@ export default function StreamingChat() {
     try {
       const response = await streamingChat.mutateAsync({
         message: outgoing, messageId: userMessage.id, conversationId: chatId,
+        images: photos.length ? photos.map(item => item.file) : undefined,
         history: messages.filter(message => !message.metadata?.error).slice(-20)
           .map(message => ({ role: message.role, content: message.content })),
       });
@@ -361,7 +378,9 @@ export default function StreamingChat() {
     setFileError('');
     if (!user) { setFileError('資料の添付にはログインが必要です。'); return; }
     if (authLoading || historyAccount !== accountId) { setFileError('アカウントの読み込み完了をお待ちください。'); return; }
-    if (!/\.(xlsx|pdf)$/i.test(file.name)) { setFileError('Excel（.xlsx）またはPDFを選んでください。'); return; }
+    if (!/\.(xlsx|pdf|png|jpe?g|webp)$/i.test(file.name)) { setFileError('Excel・PDF・写真（JPG／PNG／WebP）を選んでください。'); return; }
+    const isPhoto = /\.(png|jpe?g|webp)$/i.test(file.name);
+    if (isPhoto && file.size > 5 * 1024 * 1024) { setFileError('写真は1枚5MB以下にしてください。'); return; }
     if (file.size > 10 * 1024 * 1024) { setFileError('資料は10MB以下にしてください。'); return; }
     if (attachments.length >= 6) { setFileError('一度に添付できる資料は6件までです。'); return; }
     const uploadingAccount = accountId;
@@ -370,10 +389,16 @@ export default function StreamingChat() {
       const bytes = new Uint8Array(await file.arrayBuffer());
       let binary = '';
       for (let offset = 0; offset < bytes.length; offset += 8192) binary += String.fromCharCode(...bytes.subarray(offset, offset + 8192));
-      const type = file.name.toLowerCase().endsWith('.pdf') ? 'pdf' as const : 'xlsx' as const;
-      const output = await upload.mutateAsync({ fileName: file.name, type, base64: btoa(binary) });
-      if (requestAccount.current !== uploadingAccount) return;
-      setAttachments(current => [...current, { file: output.file, name: file.name, type }]);
+      if (isPhoto) {
+        const output = await uploadPhoto.mutateAsync({ fileName: file.name, base64: btoa(binary) });
+        if (requestAccount.current !== uploadingAccount) return;
+        setAttachments(current => [...current, { file: output.id, name: output.name, type: 'image' }]);
+      } else {
+        const type = file.name.toLowerCase().endsWith('.pdf') ? 'pdf' as const : 'xlsx' as const;
+        const output = await upload.mutateAsync({ fileName: file.name, type, base64: btoa(binary) });
+        if (requestAccount.current !== uploadingAccount) return;
+        setAttachments(current => [...current, { file: output.file, name: file.name, type }]);
+      }
     } catch (error) {
       if (requestAccount.current === uploadingAccount) setFileError(error instanceof Error ? error.message : String(error));
     } finally { uploadLock.current = false; setIsUploading(false); }
@@ -440,6 +465,8 @@ export default function StreamingChat() {
                       }`}
                     >
                       <p className="text-sm whitespace-pre-wrap">{message.content}</p>
+                      {message.metadata?.images?.map((photo: { id: string; name: string }) =>
+                        <ChatPhoto key={photo.id} id={photo.id} name={photo.name} accountId={accountId} />)}
                       {message.metadata?.task && <details className="mt-2 text-xs">
                         <summary>実行記録（{message.metadata.task.status}）</summary>
                         {message.metadata.task.steps?.map((step: { tool: string; status: string; error?: string }, index: number) =>
@@ -471,6 +498,7 @@ export default function StreamingChat() {
 
           {attachments.length > 0 && <div className="flex flex-wrap gap-2" aria-label="添付資料">
             {attachments.map(item => <span key={item.file} className="inline-flex items-center gap-2 rounded-lg border bg-white px-3 py-1 text-sm">
+              {item.type === "image" && <ChatPhoto id={item.file} name={item.name} accountId={accountId} />}
               <span>{item.name}</span>
               <button type="button" aria-label={item.name + "の添付を外す"} disabled={isLoading || isUploading}
                 onClick={() => setAttachments(current => current.filter(file => file.file !== item.file))}>×</button>
@@ -482,13 +510,13 @@ export default function StreamingChat() {
           {isLoading && <p role="status" className="text-sm">AZが応答を作成しています...</p>}
           {isUploading && <p role="status" className="text-sm">資料を添付しています...</p>}
           <div className="flex items-center gap-2">
-            <input ref={attachmentInput} type="file" accept=".xlsx,.pdf" className="hidden" tabIndex={-1}
-              aria-label="添付するExcelまたはPDF"
+            <input ref={attachmentInput} type="file" accept=".xlsx,.pdf,.jpg,.jpeg,.png,.webp" className="hidden" tabIndex={-1}
+              aria-label="添付する資料または写真"
               onChange={event => {
                 const file = event.target.files?.[0]; event.target.value = '';
                 if (file) void uploadFile(file);
               }} />
-            <Button type="button" variant="outline" aria-label="資料を添付（Excel・PDF）" title="資料を添付（Excel / PDF、10MBまで）"
+            <Button type="button" variant="outline" aria-label="資料・写真を添付" title="写真（JPG / PNG / WebP、5MBまで）・Excel / PDF（10MBまで）"
               className="h-10 w-10 shrink-0 p-0 text-2xl"
               disabled={isLoading || isUploading || authLoading || historyAccount !== accountId}
               onClick={() => attachmentInput.current?.click()}>＋</Button>
@@ -507,7 +535,7 @@ export default function StreamingChat() {
             />
             <Button type="button"
               onClick={() => void handleSendMessage()}
-              disabled={isLoading || isUploading || authLoading || historyAccount !== accountId || !input.trim()}
+              disabled={isLoading || isUploading || authLoading || historyAccount !== accountId || (!input.trim() && !attachments.some(item => item.type === "image"))}
               className="px-6 bg-gradient-to-r from-cyan-500 to-blue-500 hover:from-cyan-600 hover:to-blue-600"
             >
               {isLoading ? <Spinner className="w-4 h-4" /> : "送信"}
