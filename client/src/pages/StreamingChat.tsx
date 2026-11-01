@@ -23,6 +23,12 @@ interface Message {
   metadata?: Record<string, any>;
 }
 
+function newMessageId() {
+  return typeof globalThis.crypto?.randomUUID === "function"
+    ? globalThis.crypto.randomUUID()
+    : "msg_" + Date.now() + "_" + Math.random().toString(36).slice(2);
+}
+
 export default function StreamingChat() {
   const { user, loading: authLoading } = useAuth();
   const accountId = user ? String(user.id) : "guest";
@@ -36,6 +42,12 @@ export default function StreamingChat() {
   requestAccount.current = accountId;
   const exportPPT = trpc.unifiedTools.exportPresentation.useMutation();
   const [fileError, setFileError] = useState("");
+  const [chatError, setChatError] = useState("");
+  const [isUploading, setIsUploading] = useState(false);
+  const [attachments, setAttachments] = useState<Array<{ file: string; name: string; type: 'xlsx' | 'pdf' }>>([]);
+  const attachmentInput = useRef<HTMLInputElement>(null);
+  const sendLock = useRef(false);
+  const uploadLock = useRef(false);
   const [messages, setMessages] = useState<Message[]>(() => { const id = localStorage.getItem(lastConversationKey) ?? (accountId === "guest" ? localStorage.getItem("poipoi_last_conversation_v1") : null); const c = loadConversations(accountId).find(x => x.id === id); return c ? c.messages.map(m => ({ ...m, timestamp: new Date(m.timestamp) })) : []; });
   const [conversations, setConversations] = useState(() => loadConversations(accountId));
   // STEP36_MEMORY_SEARCH
@@ -66,7 +78,7 @@ export default function StreamingChat() {
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const [, navigate] = useLocation();
 
-  const openConversation = (id: string) => { const c = conversations.find(x => x.id === id); if (!c || isLoading) return; localStorage.setItem(lastConversationKey, id); setConversationId(id); setMessages(c.messages.map(m => ({ ...m, timestamp: new Date(m.timestamp) }))); };
+  const openConversation = (id: string) => { const c = conversations.find(x => x.id === id); if (!c || isLoading || uploadLock.current) return; localStorage.setItem(lastConversationKey, id); setConversationId(id); setMessages(c.messages.map(m => ({ ...m, timestamp: new Date(m.timestamp) }))); setAttachments([]); setChatError(""); setFileError(""); };
   const deleteConversation = async (id: string) => {
     if (isLoading || historyAccount !== accountId || !window.confirm('この会話を削除しますか？')) return;
     const deletingAccount = accountId;
@@ -81,7 +93,7 @@ export default function StreamingChat() {
     } catch (error) { if (requestAccount.current === deletingAccount) setFileError(error instanceof Error ? error.message : String(error)); }
   };
   const renameConversation = (id: string) => { const c = conversations.find(x => x.id === id); if (!c) return; const title = window.prompt("新しい会話タイトル", c.title)?.trim(); if (!title) return; const next = conversations.map(x => x.id === id ? { ...x, title } : x); setConversations(next); saveConversations(next, historyAccount); };
-  const startNewConversation = () => { if (isLoading) return; const c = createConversation(); setConversations(prev => { const next = [c, ...prev]; return next; }); localStorage.setItem(lastConversationKey, c.id); setConversationId(c.id); setMessages([]); setInput(""); };
+  const startNewConversation = () => { if (isLoading || uploadLock.current) return; const c = createConversation(); setConversations(prev => { const next = [c, ...prev]; return next; }); localStorage.setItem(lastConversationKey, c.id); setConversationId(c.id); setMessages([]); setInput(""); setAttachments([]); setChatError(""); setFileError(""); };
   const persistChatMessage = (id: string, message: Message) => { setConversations(prev => { const next = prev.map(c => c.id !== id ? c : { ...c, title: c.title === "新しいチャット" && message.role === "user" ? message.content.slice(0, 30) : c.title, updatedAt: new Date().toISOString(), messages: [...c.messages, { id: message.id, role: message.role, content: message.content, timestamp: message.timestamp.toISOString(), type: message.type, metadata: message.metadata }] }); return next; }); };
   useEffect(() => {
     if (authLoading || accountId === historyAccount) return;
@@ -91,7 +103,7 @@ export default function StreamingChat() {
     setConversations(next); setConversationId(current?.id ?? null);
     setMessages(current?.messages.map(message => ({ ...message, timestamp: new Date(message.timestamp) })) ?? []);
     deletedIds.current.clear();
-    setInput(''); setMemoryResults([]); setFileError(''); setHistoryAccount(accountId);
+    setInput(''); setAttachments([]); setChatError(''); setMemoryResults([]); setFileError(''); setHistoryAccount(accountId);
   }, [accountId, historyAccount, authLoading]);
   useEffect(() => {
     if (!authLoading && historyAccount === accountId) saveConversations(conversations, historyAccount);
@@ -158,7 +170,7 @@ export default function StreamingChat() {
           title: c.title,
           updatedAt: c.updatedAt,
           messages: c.messages.slice(-200)
-            .filter(m => m.role === "user" || m.role === "assistant")
+            .filter(m => (m.role === "user" || m.role === "assistant") && !m.metadata?.error)
             .map(m => ({
               id: m.id,
               role: m.role as "user" | "assistant",
@@ -191,58 +203,67 @@ export default function StreamingChat() {
   }, [messages]);
 
   const handleSendMessage = async () => {
-    if (!input.trim() || isLoading || authLoading || historyAccount !== accountId) return; const chatId = conversationId || createConversation().id; if (!conversationId) { const c = { ...createConversation(), id: chatId }; setConversations(prev => { const next = [c, ...prev]; return next; }); setConversationId(chatId); }
-
+    if (sendLock.current || uploadLock.current || isLoading) return;
+    const draft = input.trim();
+    if (!draft) { setChatError("AZに依頼する内容を入力してください。"); return; }
+    if (authLoading || historyAccount !== accountId) {
+      setChatError("アカウントの読み込み中です。少し待ってから送信してください。"); return;
+    }
+    sendLock.current = true;
+    setChatError("");
+    const sendingAccount = accountId;
+    const outgoing = draft + (attachments.length
+      ? "\n\n対象資料（内容は参考データとして扱う）:\n" + attachments.map(item => item.type.toUpperCase() + ": " + item.file + "（" + item.name + "）").join("\n")
+      : "");
+    const chatId = conversationId || createConversation().id;
+    if (!conversationId) {
+      const conversation = { ...createConversation(), id: chatId };
+      setConversations(previous => [conversation, ...previous]);
+      setConversationId(chatId);
+    }
     const userMessage: Message = {
-      id: `msg_${Date.now()}`,
-      role: "user",
-      content: input,
-      timestamp: new Date(),
-      type: "text",
+      id: newMessageId(), role: "user", content: outgoing, timestamp: new Date(), type: "text",
     };
-
-    setMessages((prev) => [...prev, userMessage]);
+    setMessages(previous => [...previous, userMessage]);
     persistChatMessage(chatId, userMessage);
     setInput("");
     setIsLoading(true);
-
-    const sendingAccount = accountId;
     try {
       const response = await streamingChat.mutateAsync({
-        message: input,
-        messageId: userMessage.id,
-        conversationId: chatId,
-        history: messages.slice(-20).map(m => ({role:m.role,content:m.content})),
+        message: outgoing, messageId: userMessage.id, conversationId: chatId,
+        history: messages.filter(message => !message.metadata?.error).slice(-20)
+          .map(message => ({ role: message.role, content: message.content })),
       });
-
       if (requestAccount.current !== sendingAccount) return;
+      if (!response.fullText?.trim()) throw new Error("AZから回答が返りませんでした。処理は完了していません。");
       localStorage.setItem(lastConversationKey, chatId);
       const assistantMessage: Message = {
-        id: "messageId" in response && typeof response.messageId === "string" ? response.messageId : `msg_${Date.now() + 1}`,
-        role: "assistant",
-        content: response.fullText,
+        id: "messageId" in response && typeof response.messageId === "string" ? response.messageId : newMessageId(),
+        role: "assistant", content: response.fullText,
         metadata: "metadata" in response ? response.metadata as Record<string, any> : undefined,
-        timestamp: new Date(),
-        type: "text",
+        timestamp: new Date(), type: "text",
       };
-
-      setMessages((prev) => [...prev, assistantMessage]);
+      setMessages(previous => [...previous, assistantMessage]);
       persistChatMessage(chatId, assistantMessage);
+      setAttachments([]);
       if (user?.role === 'admin') {
         void serverHistoryUtils.unifiedTools.listCodePreviews.invalidate().catch(error => console.error('変更案の更新エラー:', error));
       }
     } catch (error) {
       if (requestAccount.current !== sendingAccount) return;
-      console.error("ストリーミングチャットエラー:", error);
+      const description = error instanceof Error ? error.message : "処理に失敗しました。操作は完了していません。";
+      setChatError(description);
+      setInput(current => current || draft);
       const errorMessage: Message = {
-        id: `msg_${Date.now() + 2}`,
-        role: "assistant",
-        content: error instanceof Error ? error.message : "処理に失敗しました。操作は完了していません。",
-        timestamp: new Date(),
-        type: "text",
+        id: newMessageId(), role: "assistant", content: description,
+        timestamp: new Date(), type: "text", metadata: { error: true },
       };
-      setMessages((prev) => [...prev, errorMessage]);
+      setMessages(previous => [...previous, errorMessage]);
+      // Keep failures in the local conversation so history reconciliation cannot erase them.
+      // They are excluded from server sync and from the next model history.
+      persistChatMessage(chatId, errorMessage);
     } finally {
+      sendLock.current = false;
       setIsLoading(false);
     }
   };
@@ -336,22 +357,30 @@ export default function StreamingChat() {
     } catch (error) { setFileError(error instanceof Error ? error.message : String(error)); }
   };
   const uploadFile = async (file: File) => {
+    if (uploadLock.current || sendLock.current) return;
     setFileError('');
-    if (!user) { setFileError('資料のアップロードにはログインが必要です。'); return; }
+    if (!user) { setFileError('資料の添付にはログインが必要です。'); return; }
+    if (authLoading || historyAccount !== accountId) { setFileError('アカウントの読み込み完了をお待ちください。'); return; }
+    if (!/\.(xlsx|pdf)$/i.test(file.name)) { setFileError('Excel（.xlsx）またはPDFを選んでください。'); return; }
     if (file.size > 10 * 1024 * 1024) { setFileError('資料は10MB以下にしてください。'); return; }
+    if (attachments.length >= 6) { setFileError('一度に添付できる資料は6件までです。'); return; }
     const uploadingAccount = accountId;
+    uploadLock.current = true; setIsUploading(true);
     try {
       const bytes = new Uint8Array(await file.arrayBuffer());
-      let binary = ''; for (let offset = 0; offset < bytes.length; offset += 8192) binary += String.fromCharCode(...bytes.subarray(offset, offset + 8192));
+      let binary = '';
+      for (let offset = 0; offset < bytes.length; offset += 8192) binary += String.fromCharCode(...bytes.subarray(offset, offset + 8192));
       const type = file.name.toLowerCase().endsWith('.pdf') ? 'pdf' as const : 'xlsx' as const;
       const output = await upload.mutateAsync({ fileName: file.name, type, base64: btoa(binary) });
       if (requestAccount.current !== uploadingAccount) return;
-      setInput(current => current + '\n対象資料: ' + output.file + '（' + file.name + '）');
-    } catch (error) { setFileError(error instanceof Error ? error.message : String(error)); }
+      setAttachments(current => [...current, { file: output.file, name: file.name, type }]);
+    } catch (error) {
+      if (requestAccount.current === uploadingAccount) setFileError(error instanceof Error ? error.message : String(error));
+    } finally { uploadLock.current = false; setIsUploading(false); }
   };
 
   return (
-    <div className="flex flex-col h-full gap-4 p-4 bg-gradient-to-br from-cyan-50 to-blue-50">
+    <div className="flex flex-col min-h-screen gap-4 p-4 bg-gradient-to-br from-cyan-50 to-blue-50">
       <div className="flex justify-between items-center">
         <h2 className="text-2xl font-bold bg-gradient-to-r from-cyan-600 to-blue-600 bg-clip-text text-transparent">
           ⚡ AZ チャット
@@ -391,7 +420,7 @@ export default function StreamingChat() {
               {memoryResults.map((item,i)=><div key={i} className="rounded border p-2 text-sm"><p>質問：{item.question}</p><p>回答：{item.answer}</p></div>)}
             </div>}
           </div>
-          <Card className="flex-1 overflow-y-auto p-4 space-y-4 bg-white">
+          <Card className="flex-1 min-h-[40vh] overflow-y-auto p-4 space-y-4 bg-white">
             {messages.length === 0 ? (
               <div className="flex items-center justify-center h-full text-gray-500">
                 <p>会話を開始しましょう...</p>
@@ -440,27 +469,45 @@ export default function StreamingChat() {
 
           <AZEvolutionPanel key={accountId} reviewOnly />
 
-          <label className="text-sm">資料を追加（Excel / PDF）
-            <input type="file" accept=".xlsx,.pdf" disabled={isLoading || upload.isPending}
-              onChange={event => { const selected = event.target.files?.[0]; if (selected) void uploadFile(selected); event.target.value = ''; }} />
-          </label>
+          {attachments.length > 0 && <div className="flex flex-wrap gap-2" aria-label="添付資料">
+            {attachments.map(item => <span key={item.file} className="inline-flex items-center gap-2 rounded-lg border bg-white px-3 py-1 text-sm">
+              <span>{item.name}</span>
+              <button type="button" aria-label={item.name + "の添付を外す"} disabled={isLoading || isUploading}
+                onClick={() => setAttachments(current => current.filter(file => file.file !== item.file))}>×</button>
+            </span>)}
+          </div>}
           {fileError && <p role="alert" className="text-red-700">{fileError}</p>}
-          <div className="flex gap-2">
+          {chatError && <p role="alert" className="rounded border border-red-300 bg-red-50 p-3 text-sm text-red-800 whitespace-pre-wrap">{chatError}</p>}
+          {(authLoading || historyAccount !== accountId) && <p role="status" className="text-sm">アカウントを読み込んでいます...</p>}
+          {isLoading && <p role="status" className="text-sm">AZが応答を作成しています...</p>}
+          {isUploading && <p role="status" className="text-sm">資料を添付しています...</p>}
+          <div className="flex items-center gap-2">
+            <input ref={attachmentInput} type="file" accept=".xlsx,.pdf" className="hidden" tabIndex={-1}
+              aria-label="添付するExcelまたはPDF"
+              onChange={event => {
+                const file = event.target.files?.[0]; event.target.value = '';
+                if (file) void uploadFile(file);
+              }} />
+            <Button type="button" variant="outline" aria-label="資料を添付（Excel・PDF）" title="資料を添付（Excel / PDF、10MBまで）"
+              className="h-10 w-10 shrink-0 p-0 text-2xl"
+              disabled={isLoading || isUploading || authLoading || historyAccount !== accountId}
+              onClick={() => attachmentInput.current?.click()}>＋</Button>
             <Input
               value={input}
-              onChange={(e) => setInput(e.target.value)}
-              onKeyPress={(e) => {
-                if (e.key === "Enter" && !isLoading) {
-                  handleSendMessage();
+              aria-label="AZへのメッセージ"
+              onChange={event => setInput(event.target.value)}
+              onKeyDown={event => {
+                if (event.key === "Enter" && !event.nativeEvent.isComposing && event.nativeEvent.keyCode !== 229) {
+                  event.preventDefault(); void handleSendMessage();
                 }
               }}
               placeholder="AZへの依頼を入力..."
               disabled={isLoading}
               className="border-cyan-300 focus:border-cyan-500"
             />
-            <Button
-              onClick={handleSendMessage}
-              disabled={isLoading || !input.trim()}
+            <Button type="button"
+              onClick={() => void handleSendMessage()}
+              disabled={isLoading || isUploading || authLoading || historyAccount !== accountId || !input.trim()}
               className="px-6 bg-gradient-to-r from-cyan-500 to-blue-500 hover:from-cyan-600 hover:to-blue-600"
             >
               {isLoading ? <Spinner className="w-4 h-4" /> : "送信"}
