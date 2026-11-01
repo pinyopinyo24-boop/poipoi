@@ -19,6 +19,12 @@ export interface CodeChange {
   previousContent?: string;
 }
 
+type GeneratedCodeChange = {
+  path: string;
+  content?: string;
+  edits?: Array<{ oldText: string; newText: string }>;
+};
+
 export interface CodeTaskResult {
   success: boolean;
   changes: CodeChange[];
@@ -93,7 +99,7 @@ export class PoipoiCodeAgent {
     return absolute;
   }
 
-  private extractJson(text: string): { changes: CodeChange[] } {
+  private extractJson(text: string): { changes: GeneratedCodeChange[] } {
     const cleaned = text
       .replace(/```json/gi, "")
       .replace(/```typescript/gi, "")
@@ -121,7 +127,7 @@ export class PoipoiCodeAgent {
         if (
           !change ||
           typeof change.path !== "string" ||
-          typeof change.content !== "string"
+          (typeof change.content !== "string" && !Array.isArray(change.edits))
         ) {
           throw new Error("Invalid code change");
         }
@@ -152,7 +158,7 @@ export class PoipoiCodeAgent {
         if (
           !change ||
           typeof change.path !== "string" ||
-          typeof change.content !== "string"
+          (typeof change.content !== "string" && !Array.isArray(change.edits))
         ) {
           throw new Error("Invalid code change");
         }
@@ -229,7 +235,15 @@ export class PoipoiCodeAgent {
       if (Number.isFinite(configuredContext) && configuredContext >= 4096) return Math.min(32768, configuredContext);
       return characters <= 16000 ? 8192 : characters <= 40000 ? 16384 : 32768;
     };
-    const planResponse = await invokeLLM({ userId, timeoutMs,
+    const callCoder = async (stage: string, request: Parameters<typeof invokeLLM>[0]) => {
+      console.log("[AZ CODE GENERATION]", { stage, contextWindow: request.contextWindow, maxTokens: request.max_tokens });
+      try {
+        return await invokeLLM(request);
+      } catch (error) {
+        throw new Error(stage + "に失敗しました: " + (error instanceof Error ? error.message : String(error)));
+      }
+    };
+    const planResponse = await callCoder("変更計画", { userId, timeoutMs,
       contextWindow: contextFor(task.length + 2000),
       max_tokens: 256,
       model: process.env.LOCAL_CODER_MODEL || "qwen2.5-coder:7b",
@@ -248,6 +262,8 @@ export class PoipoiCodeAgent {
       "Modify the existing TypeScript project according to the user's request.",
       "Preserve existing functionality.",
       "Make the minimum necessary file changes.",
+      "For existing files, return compact exact-text edits, never copy the entire file. Each oldText must occur exactly once in that supplied file. Apply edits in array order. Include sufficient unchanged text in oldText to identify a unique location.",
+      "For new files only, return complete content. Never return both edits and content for one path. Do not omit requested functionality or return placeholder implementations.",
       "First reason about dependencies and preserve all existing exports. Wire user-facing features into reviewed entry points when requested. For an explicitly requested standalone module, respect its requested path and do not invent entry-point changes.",
       "Do not fabricate unknown existing file contents; return an empty changes array if necessary.",
       "Only modify existing files whose full contents are supplied below. You may also CREATE new TypeScript/JavaScript source files under server/, client/src/, shared/, src/ or mobile/src/ when necessary. Never replace an existing file whose content is absent. Connect new exports to the existing implementation; preserve compatibility.",
@@ -263,14 +279,16 @@ export class PoipoiCodeAgent {
       "Return JSON only.",
       "",
       "Required format:",
-      '{"changes":[{"path":"server/example.ts","content":"complete file content"}]}',
+      '{"changes":[{"path":"server/existing.ts","edits":[{"oldText":"unique existing text","newText":"replacement text"}]},{"path":"server/new.ts","content":"complete new file content"}]}',
       "",
       "User request:",
       task,
     ].join("\n");
 
-    const response = await invokeLLM({ userId, timeoutMs,
-      contextWindow: contextFor(prompt.length + contextSize),
+    const response = await callCoder("コード生成", { userId, timeoutMs,
+      // prompt already contains the source context; do not count it twice.
+      contextWindow: contextFor(prompt.length + 8192),
+      max_tokens: 4096,
       model: process.env.LOCAL_CODER_MODEL || "qwen2.5-coder:7b",
       temperature: 0.1,
       response_format: {
@@ -284,8 +302,21 @@ export class PoipoiCodeAgent {
                 type: "array",
                 items: {
                   type: "object",
-                  properties: { path: { type: "string" }, content: { type: "string" } },
-                  required: ["path", "content"],
+                  properties: {
+                    path: { type: "string" },
+                    content: { type: "string" },
+                    edits: { type: "array", minItems: 1, items: {
+                      type: "object",
+                      properties: { oldText: { type: "string", minLength: 1 }, newText: { type: "string" } },
+                      required: ["oldText", "newText"], additionalProperties: false,
+                    } },
+                  },
+                  required: ["path"],
+                  oneOf: [
+                    { required: ["content"], not: { required: ["edits"] } },
+                    { required: ["edits"], not: { required: ["content"] } },
+                  ],
+                  additionalProperties: false,
                 },
               },
             },
@@ -315,20 +346,49 @@ export class PoipoiCodeAgent {
       throw new Error("LLM returned empty response");
     }
 
-    const generated = this.extractJson(content).changes;
-    if (generated.length > 5) throw new Error("Generated changes exceed the five-file safety limit");
+    const proposals = this.extractJson(content).changes;
+    const generated: CodeChange[] = [];
+    if (proposals.length > 5) throw new Error("Generated changes exceed the five-file safety limit");
     const allowed = new Set(context.map(item => item.slice("Existing source: ".length).split("\n", 1)[0]));
-    for (const change of generated) {
-      const normalizedPath = change.path.replace(/\\/g, "/");
+    for (const proposal of proposals) {
+      const normalizedPath = proposal.path.replace(/\\/g, "/");
       const isNewSource = /^(?:server|client\/src|shared|src|mobile\/src)\/[a-zA-Z0-9_./-]+\.[jt]sx?$/.test(normalizedPath)
         && !existsSync(this.safePath(normalizedPath));
       if (!allowed.has(normalizedPath) && !isNewSource) {
-        throw new Error("Generated change targets an unreviewed file: " + change.path);
+        throw new Error("Generated change targets an unreviewed file: " + proposal.path);
       }
       const absolute = this.safePath(normalizedPath);
-      change.path = normalizedPath;
-      change.baseHash = existsSync(absolute) ? sourceHashes.get(normalizedPath) : null;
-      change.previousContent = change.baseHash === null ? '' : sourceContents.get(normalizedPath);
+      let nextContent: string;
+      if (proposal.edits !== undefined) {
+        if (proposal.content !== undefined || !Array.isArray(proposal.edits) || !proposal.edits.length) {
+          throw new Error("Invalid exact-text edits: " + normalizedPath);
+        }
+        const previous = sourceContents.get(normalizedPath);
+        if (previous === undefined) throw new Error("Edits require reviewed existing source: " + normalizedPath);
+        nextContent = previous;
+        for (const edit of proposal.edits) {
+          if (!edit || typeof edit.oldText !== "string" || !edit.oldText.length || typeof edit.newText !== "string") {
+            throw new Error("Invalid exact-text edit: " + normalizedPath);
+          }
+          const position = nextContent.indexOf(edit.oldText);
+          if (position < 0 || nextContent.indexOf(edit.oldText, position + 1) >= 0) {
+            throw new Error("Edit does not match exactly one source location: " + normalizedPath);
+          }
+          nextContent = nextContent.slice(0, position) + edit.newText + nextContent.slice(position + edit.oldText.length);
+        }
+      } else {
+        if (typeof proposal.content !== "string") throw new Error("Missing generated source: " + normalizedPath);
+        nextContent = proposal.content;
+      }
+      if (!nextContent.trim()) throw new Error("Empty generated source: " + normalizedPath);
+      if (nextContent === sourceContents.get(normalizedPath)) throw new Error("Generated proposal contains no change: " + normalizedPath);
+      if (generated.some(change => change.path === normalizedPath)) throw new Error("Duplicate generated path: " + normalizedPath);
+      generated.push({
+        path: normalizedPath,
+        content: nextContent,
+        baseHash: existsSync(absolute) ? sourceHashes.get(normalizedPath) : null,
+        previousContent: existsSync(absolute) ? sourceContents.get(normalizedPath) : '',
+      });
     }
     return generated;
   }
