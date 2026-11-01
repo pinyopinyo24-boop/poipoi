@@ -1,3 +1,4 @@
+import { listPersonalTasks, changePersonalTask, claimPersonalReminder } from '../core/AZPersonalTasks';
 import { saveChatImage, readChatImage } from '../core/ChatImageStore';
 import { createPDFParser } from '../managers/services/PDFParser';
 import { router, protectedProcedure } from '../_core/trpc';
@@ -77,6 +78,15 @@ async function extractOfficeEvidence(file: string, type: 'xlsx' | 'pdf', limit: 
 const presentationManager = new PresentationAIManager(getPresentationRepository());
 const presentationOwners = new Map<string, string>();
 export const unifiedToolsRouter = router({
+  listPersonalTasks: protectedProcedure.input(z.object({ accountId: z.string() })).query(({ ctx, input }) => {
+    if (input.accountId !== String(ctx.user.id)) throw new Error('アカウントが一致しません。');
+    return listPersonalTasks(String(ctx.user.id));
+  }),
+  changePersonalTask: protectedProcedure.input(z.object({ id: z.string().uuid(), action: z.enum(['complete', 'delete', 'reopen']) }))
+    .mutation(({ ctx, input }) => changePersonalTask(String(ctx.user.id), input.id, input.action)),
+  claimPersonalReminder: protectedProcedure.input(z.object({ id: z.string().uuid() }))
+    .mutation(({ ctx, input }) => claimPersonalReminder(String(ctx.user.id), input.id)),
+
   uploadChatImage: protectedProcedure.input(z.object({
     fileName: z.string().min(1).max(255), base64: z.string().min(4).max(7_000_000),
   })).mutation(({ input, ctx }) => saveChatImage(String(ctx.user.id), input.fileName, input.base64)),

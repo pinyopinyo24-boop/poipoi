@@ -1,3 +1,5 @@
+import AZMusicPlayer from '@/components/AZMusicPlayer';
+import AZPersonalTasksPanel from '@/components/AZPersonalTasksPanel';
 import { useState, useRef, useEffect } from "react";
 import { loadConversations, saveConversations, createConversation } from "@/lib/poipoiChatHistory";
 import { useLocation } from "wouter";
@@ -264,6 +266,7 @@ export default function StreamingChat() {
       setMessages(previous => [...previous, assistantMessage]);
       persistChatMessage(chatId, assistantMessage);
       setAttachments([]);
+      if (user) void serverHistoryUtils.unifiedTools.listPersonalTasks.invalidate().catch(console.error);
       if (user?.role === 'admin') {
         void serverHistoryUtils.unifiedTools.listCodePreviews.invalidate().catch(error => console.error('変更案の更新エラー:', error));
       }
@@ -484,6 +487,10 @@ export default function StreamingChat() {
                       }`}
                     >
                       <p className="text-sm whitespace-pre-wrap">{message.content}</p>
+                      {message.metadata?.everyday?.links?.map((link: { label: string; url: string }) =>
+                        /^https:\/\//.test(link.url) ? <a key={link.url} href={link.url} target="_blank" rel="noopener noreferrer" className="mt-1 block text-sm text-blue-700 underline">{link.label}</a> : null)}
+                      {(message.metadata?.everyday?.kind === 'music' || message.metadata?.task?.steps?.some((step: { tool: string }) => step.tool === 'playMusic')) &&
+                        <AZMusicPlayer accountId={accountId} action={message.metadata?.everyday?.action} />}
                       {message.metadata?.images?.map((photo: { id: string; name: string }) =>
                         <ChatPhoto key={photo.id} id={photo.id} name={photo.name} accountId={accountId} />)}
                       {message.metadata?.task && <details className="mt-2 text-xs">
@@ -491,6 +498,8 @@ export default function StreamingChat() {
                         {message.metadata.task.steps?.map((step: { tool: string; status: string; error?: string }, index: number) =>
                           <p key={index}>{step.tool}: {step.status}{step.error ? ' / ' + step.error : ''}</p>)}
                       </details>}
+                      {message.metadata?.task?.steps?.map((step: { tool: string; result?: { sourceUrl?: string; roadUrl?: string } }, index: number) =>
+                        step.result?.sourceUrl && /^https:\/\//.test(step.result.sourceUrl) ? <a key={index} href={step.result.sourceUrl} target="_blank" rel="noopener noreferrer" className="mt-1 block text-blue-700 underline">{step.tool}の出典を開く</a> : null)}
                       {message.metadata?.task?.documents?.map((output: { file: string; type: 'xlsx' | 'pdf' }) =>
                         <button key={output.file} className="mt-2 block text-blue-700 underline" onClick={() => downloadDocument(output.file, output.type)} disabled={exportDocument.isPending}>{output.type.toUpperCase()}をダウンロード</button>)}
                       {message.metadata?.task?.presentations?.map((id: string) =>
@@ -514,6 +523,7 @@ export default function StreamingChat() {
           </Card>
 
           <AZEvolutionPanel key={accountId} reviewOnly />
+          <AZPersonalTasksPanel key={"personal-" + accountId} accountId={accountId} />
 
           {attachments.length > 0 && <div className="flex flex-wrap gap-2" aria-label="添付資料">
             {attachments.map(item => <span key={item.file} className="inline-flex items-center gap-2 rounded-lg border bg-white px-3 py-1 text-sm">

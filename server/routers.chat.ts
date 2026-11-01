@@ -1,4 +1,4 @@
-import { capabilityReply, isCodeImplementationRequest, implementationPrompt, isUserNameQuestion, nameAnswerToPreviousQuestion, recoverExplicitUserName } from './core/AZCapabilityCatalog';
+import { capabilityReply, isCodeImplementationRequest, resolveImplementationRequest, implementationPrompt, isUserNameQuestion, nameAnswerToPreviousQuestion, recoverExplicitUserName } from './core/AZCapabilityCatalog';
 import { router, publicProcedure, protectedProcedure } from './_core/trpc';
 import { z } from 'zod';
 import { TRPCError } from '@trpc/server';
@@ -111,6 +111,26 @@ export const chatRouter = router({
           throw new TRPCError({ code: 'NOT_FOUND', message: 'チャットセッションが見つかりません' });
         }
         const recentDialogue = await dialogueRepository.getMessages(input.sessionId, 100);
+        // Practical requests use real fetch/storage/player actions before the help catalogue.
+        if (!isCodeImplementationRequest(input.message)) {
+          const { handleEverydayRequest } = await import('./core/AZEverydayAssistant');
+          let everyday: Awaited<ReturnType<typeof handleEverydayRequest>>;
+          try {
+            everyday = await handleEverydayRequest(input.message, ctx.user ? String(ctx.user.id) : undefined, recentDialogue,
+              input.messageId ? input.sessionId + ':' + input.messageId : undefined);
+          } catch (error) {
+            everyday = { answer: '処理を完了できませんでした。' + (error instanceof Error ? error.message : String(error)), metadata: { everyday: { failed: true } } };
+          }
+          if (everyday) {
+            const askedAt = Date.now();
+            await dialogueRepository.saveMessage({ id: input.messageId ?? uuidv4(), userId: dialogueUserId,
+              role: 'user', content: input.message.trim(), timestamp: askedAt }, input.sessionId);
+            const message = { id: uuidv4(), userId: dialogueUserId, role: 'assistant' as const, content: everyday.answer,
+              timestamp: Math.max(Date.now(), askedAt + 1), metadata: { ...everyday.metadata, replyTo: input.messageId } };
+            await dialogueRepository.saveMessage(message, input.sessionId);
+            return { message, session: (await dialogueRepository.getSession(input.sessionId))!, relatedMemories: [], reasoning: 'Real information, personal tasks and local music controls' };
+          }
+        }
         const capability = capabilityReply(input.message.trim(), recentDialogue, Boolean(ctx.user), ctx.user?.role === 'admin');
         if (capability) {
           const askedAt = Date.now();
@@ -118,14 +138,15 @@ export const chatRouter = router({
             role: 'user', content: input.message.trim(), timestamp: askedAt }, input.sessionId);
           const message = { id: uuidv4(), userId: dialogueUserId, role: 'assistant' as const,
             content: capability.answer, timestamp: Math.max(Date.now(), askedAt + 1),
-            metadata: { replyTo: input.messageId, capabilityMenu: capability.menu } };
+            metadata: { replyTo: input.messageId, capabilityMenu: capability.menu, everyday: capability.action } };
           await dialogueRepository.saveMessage(message, input.sessionId);
           return { message, session: (await dialogueRepository.getSession(input.sessionId))!, relatedMemories: [], reasoning: 'Grounded PC capability catalogue and selection' };
         }
         if (isCodeImplementationRequest(input.message)) {
           if (!ctx.user) throw new TRPCError({ code: 'UNAUTHORIZED', message: '機能の追加実装にはログインが必要です' });
           if (ctx.user.role !== 'admin') throw new TRPCError({ code: 'FORBIDDEN', message: '機能の追加実装には管理者権限が必要です' });
-          const request = implementationPrompt(input.message.trim(), recentDialogue);
+          const resolvedRequest = resolveImplementationRequest(input.message.trim(), recentDialogue);
+          const request = implementationPrompt(resolvedRequest, recentDialogue);
           const askedAt = Date.now();
           await dialogueRepository.saveMessage({ id: input.messageId ?? uuidv4(), userId: dialogueUserId,
             role: 'user', content: input.message.trim(), timestamp: askedAt }, input.sessionId);
@@ -140,7 +161,7 @@ export const chatRouter = router({
             content = '変更案を作成できませんでした。実装は完了していません。理由: ' + (error instanceof Error ? error.message : String(error));
           }
           const message = { id: uuidv4(), userId: dialogueUserId, role: 'assistant' as const,
-            content, timestamp: Math.max(Date.now(), askedAt + 1), metadata: { replyTo: input.messageId, codePreview: { previewId, applied: false } } };
+            content, timestamp: Math.max(Date.now(), askedAt + 1), metadata: { replyTo: input.messageId, codePreview: { previewId, applied: false, request: resolvedRequest } } };
           await dialogueRepository.saveMessage(message, input.sessionId);
           return { message, session: (await dialogueRepository.getSession(input.sessionId))!, relatedMemories: [], reasoning: previewId ? 'Code preview awaiting explicit approval' : 'Code preview generation failed' };
         }
@@ -817,10 +838,3 @@ export const chatRouter = router({
       );
     }),
 });
-
-
-
-
-
-
-

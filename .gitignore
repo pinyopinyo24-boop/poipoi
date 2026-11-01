@@ -127,3 +127,6 @@ backup_old/
 
 # Account-private chat photographs and generated images.
 /data/chat-images/
+
+# Account-private personal tasks and reminders.
+/data/az-personal-tasks/

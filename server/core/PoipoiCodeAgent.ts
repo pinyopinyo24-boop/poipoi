@@ -25,6 +25,12 @@ type GeneratedCodeChange = {
   edits?: Array<{ oldText: string; newText: string }>;
 };
 
+type GeneratedCodeProposal = {
+  changes: GeneratedCodeChange[];
+  readFiles?: Array<{ path: string; startLine?: number; endLine?: number }>;
+  reason?: string;
+};
+
 export interface CodeTaskResult {
   success: boolean;
   changes: CodeChange[];
@@ -38,6 +44,7 @@ export class PoipoiCodeAgent {
   private static instance: PoipoiCodeAgent | null = null;
   private readonly root: string;
   private applying = false;
+  private generating = false;
 
   private constructor(root = process.cwd()) {
     this.root = resolve(root);
@@ -99,7 +106,7 @@ export class PoipoiCodeAgent {
     return absolute;
   }
 
-  private extractJson(text: string): { changes: GeneratedCodeChange[] } {
+  private extractJson(text: string): GeneratedCodeProposal {
     const cleaned = text
       .replace(/```json/gi, "")
       .replace(/```typescript/gi, "")
@@ -173,20 +180,26 @@ export class PoipoiCodeAgent {
       throw new Error("Code generation task is empty");
     }
 
+    if (this.generating) throw new Error('別のコード変更案を生成中です。完了後に依頼してください。');
+    this.generating = true;
+    try {
     // Discover relevant tracked source context when a user names a capability rather
     // than a path. Never run project code or expose configuration/secrets.
-    const explicit = task.match(/(?:server|mobile|client|shared|src)\/[a-zA-Z0-9_./-]+\.(?:ts|tsx|js|jsx)/g) ?? [];
-    const tokens: string[] = task.normalize('NFKC').toLowerCase().match(/[a-z][a-z0-9_-]{2,}/g) ?? [];
+    // Route from the actual request, not from the generic evolution instructions.
+    const intent = task.split("\n現在のユーザー依頼:\n")[1]?.split("\n直前の参考会話")[0] ?? task;
+    const explicit = intent.match(/(?:server|mobile|client|shared|src)\/[a-zA-Z0-9_./-]+\.(?:ts|tsx|js|jsx)/g) ?? [];
+    const tokens: string[] = intent.normalize('NFKC').toLowerCase().match(/[a-z][a-z0-9_-]{2,}/g) ?? [];
     const hints = [
       [/会話|チャット|文脈/, ['chat', 'conversation']],
       [/記憶|訂正|学習/, ['memory', 'learning']],
       [/自己進化|プログラム|コード/, ['codeagent', 'evolution']],
       [/画面|アプリ|電卓|ゲーム|ツール/, ['client/src/app', 'unifiedtools']],
       [/製造|生産|原価|在庫/, ['manufacturing', 'production', 'cost', 'inventory']],
-      [/予定|スケジュール/, ['schedule']],
+      [/予定|スケジュール|リマインダー|通知/, ['schedule', 'aztaskrunner']],
+      [/ニュース|天気|交通|音楽|再生/, ['azeverydayassistant', 'azliveinformation', 'azpersonaltasks', 'routers.chat', 'azcapabilitycatalog', 'unifiedtools', 'aztaskrunner']],
       [/資料|Excel|PDF|PowerPoint|PPT/i, ['unifiedtools', 'analysis', 'presentation']],
     ] as const;
-    for (const [pattern, words] of hints) if (pattern.test(task)) tokens.push(...words);
+    for (const [pattern, words] of hints) if (pattern.test(intent)) tokens.push(...words);
     const candidates: string[] = [];
     const walk = (directory: string) => {
       for (const entry of readdirSync(directory, { withFileTypes: true })) {
@@ -208,23 +221,54 @@ export class PoipoiCodeAgent {
     // A concrete reference/target is already grounded context. Do not inflate a
     // one-file request with unrelated source, inventories or entry points.
     const explicitExisting = [...new Set(explicit)].filter(file => existsSync(this.safePath(file)));
+    const chatFeature = /チャット|会話|ニュース|天気|交通|音楽|リマインダー|通知/.test(intent);
+    const entryPoints = chatFeature
+      ? ['server/core/AZEverydayAssistant.ts', 'server/core/AZLiveInformation.ts', 'server/routers.chat.ts', 'server/core/AZCapabilityCatalog.ts', 'server/core/AZTaskRunner.ts', 'server/routers/unifiedTools.ts']
+      : ['client/src/App.tsx', 'server/routers.ts', 'server/routers/unifiedTools.ts'];
+    const inventory = [...new Set([...explicitExisting, ...entryPoints, ...ranked.map(item => item.file), ...candidates])];
     const sourceFiles = explicitExisting.length
       ? explicitExisting.slice(0, 5)
-      : [...new Set([...ranked.map(item => item.file),
-          'client/src/App.tsx', 'server/routers.ts', 'server/routers/unifiedTools.ts'])].slice(0, 5);
+      : [...new Set([...(chatFeature ? entryPoints.filter(file => candidates.includes(file)) : ranked.map(item => item.file)), ...entryPoints.filter(file => candidates.includes(file)), ...ranked.map(item => item.file)])].slice(0, 5);
     const context: string[] = [];
     const sourceHashes = new Map<string, string>();
     const sourceContents = new Map<string, string>();
+    const completeSources = new Set<string>();
+    const viewedRanges = new Set<string>();
     let contextSize = 0;
-    for (const file of sourceFiles) {
+    // Keep full originals for hash checks and reconstruction. Large sources are
+    // shown as bounded excerpts; the model can explicitly request more lines.
+    const loadSource = (file: string, startLine?: number, endLine?: number) => {
+      if (!candidates.includes(file)) throw new Error('未確認のソース読取要求です: ' + file);
       const fullPath = this.safePath(file);
-      if (!existsSync(fullPath)) continue;
-      const source = readFileSync(fullPath, 'utf8');
-      if (source.length > 60000 || contextSize + source.length > 60000) continue;
-      contextSize += source.length;
-      context.push('Existing source: ' + file + '\n' + source);
+      const source = sourceContents.get(file) ?? readFileSync(fullPath, 'utf8');
+      const lines = source.split(/\r?\n/);
+      const start = startLine ?? 1;
+      const end = endLine ?? ((source.length <= 12000 || explicitExisting.includes(file)) ? lines.length : Math.min(lines.length, 150));
+      if (!Number.isInteger(start) || !Number.isInteger(end) || start < 1 || end < start || start > lines.length) {
+        throw new Error('ソースの読取行が不正です: ' + file);
+      }
+      const stop = Math.min(lines.length, end);
+      const key = file + ':' + start + ':' + stop;
+      if (viewedRanges.has(key)) return false;
+      const limit = explicitExisting.includes(file) && startLine === undefined ? 60000 : 12000;
+      const selected: string[] = [];
+      let size = 0;
+      for (let index = start - 1; index < stop; index++) {
+        if (size + lines[index].length + 1 > limit || contextSize + size + lines[index].length + 1 > 60000) break;
+        selected.push(lines[index]); size += lines[index].length + 1;
+      }
+      if (!selected.length) return false;
+      const shownEnd = start + selected.length - 1;
+      context.push('Existing source: ' + file + '\nLines ' + start + '-' + shownEnd + ' of ' + lines.length + '\n' + selected.join('\n'));
+      contextSize += size;
+      viewedRanges.add(key);
       sourceHashes.set(file, createHash('sha256').update(source).digest('hex'));
       sourceContents.set(file, source);
+      if (start === 1 && shownEnd === lines.length) completeSources.add(file);
+      return true;
+    };
+    for (const file of sourceFiles) {
+      if (candidates.includes(file)) loadSource(file);
     }
     if (!context.length) throw new Error('関連する既存ソースを特定できません。対象機能またはソースパスを指定してください。');
     const configuredTimeout = Number(process.env.LOCAL_CODER_TIMEOUT_MS);
@@ -235,10 +279,13 @@ export class PoipoiCodeAgent {
       if (Number.isFinite(configuredContext) && configuredContext >= 4096) return Math.min(32768, configuredContext);
       return characters <= 16000 ? 8192 : characters <= 40000 ? 16384 : 32768;
     };
+    const deadline = Date.now() + timeoutMs;
     const callCoder = async (stage: string, request: Parameters<typeof invokeLLM>[0]) => {
       console.log("[AZ CODE GENERATION]", { stage, contextWindow: request.contextWindow, maxTokens: request.max_tokens });
       try {
-        return await invokeLLM(request);
+        const remaining = deadline - Date.now();
+        if (remaining < 1000) throw new Error('自己進化の生成時間の上限に達しました。変更は適用していません。');
+        return await invokeLLM({ ...request, timeoutMs: Math.min(request.timeoutMs ?? timeoutMs, remaining) });
       } catch (error) {
         throw new Error(stage + "に失敗しました: " + (error instanceof Error ? error.message : String(error)));
       }
@@ -251,13 +298,13 @@ export class PoipoiCodeAgent {
       messages: [
         { role: "system", content: "Plan a minimal, dependency-aware code change. Do not write code. Keep the plan concise." },
         { role: "user", content: "Task:\n" + task + "\nAvailable files:\n" +
-          [...sourceHashes.keys()].join("\n") +
+          inventory.slice(0, 60).join("\n") +
           "\nExplain implementation steps, compatibility risks, and how to validate." },
       ],
     });
     const plan = planResponse.choices?.[0]?.message?.content?.trim();
     if (!plan) throw new Error("Unable to plan code evolution");
-    const prompt = [
+    const buildPrompt = (followUp = '') => [
       "You are Poipoi's code implementation agent.",
       "Modify the existing TypeScript project according to the user's request.",
       "Preserve existing functionality.",
@@ -265,12 +312,12 @@ export class PoipoiCodeAgent {
       "For existing files, return compact exact-text edits, never copy the entire file. Each oldText must occur exactly once in that supplied file. Apply edits in array order. Include sufficient unchanged text in oldText to identify a unique location.",
       "For new files only, return complete content. Never return both edits and content for one path. Do not omit requested functionality or return placeholder implementations.",
       "First reason about dependencies and preserve all existing exports. Wire user-facing features into reviewed entry points when requested. For an explicitly requested standalone module, respect its requested path and do not invent entry-point changes.",
-      "Do not fabricate unknown existing file contents; return an empty changes array if necessary.",
-      "Only modify existing files whose full contents are supplied below. You may also CREATE new TypeScript/JavaScript source files under server/, client/src/, shared/, src/ or mobile/src/ when necessary. Never replace an existing file whose content is absent. Connect new exports to the existing implementation; preserve compatibility.",
+      "Do not fabricate unknown source. If you need more context, return changes:[] and readFiles:[{path,startLine,endLine}]. Request specific inventory paths and up to 200 lines per read. The host will read source without executing it. Explain a blocker in reason if implementation is impossible; an empty changes array is not success.",
+      "Only edit exact text from supplied existing source excerpts. You may also CREATE new TypeScript/JavaScript source files under server/, client/src/, shared/, src/ or mobile/src/ when necessary. Never replace an existing file whose content is absent. Connect new exports to the existing implementation; preserve compatibility.",
       "Implementation plan (check against the actual source):",
       plan.slice(0, 6000),
       "Existing source path inventory (names only; do not modify without supplied content):",
-      (explicitExisting.length ? explicit : sourceFiles).slice(0, 20).join("\n"),
+      inventory.slice(0, 60).join("\n"),
       "Use only dependencies already declared by the project. Do not add packages or configuration changes.",
       "Existing dependency names:",
       Object.keys(JSON.parse(readFileSync(resolve(this.root, 'package.json'), 'utf8')).dependencies ?? {}).join(', '),
@@ -283,9 +330,14 @@ export class PoipoiCodeAgent {
       "",
       "User request:",
       task,
+      followUp,
     ].join("\n");
 
-    const response = await callCoder("コード生成", { userId, timeoutMs,
+    let proposals: GeneratedCodeChange[] = [];
+    let followUp = '';
+    for (let attempt = 0; attempt < 2; attempt++) {
+      const prompt = buildPrompt(followUp);
+      const response = await callCoder(attempt ? "追加ソース確認後のコード生成" : "コード生成", { userId, timeoutMs,
       // prompt already contains the source context; do not count it twice.
       contextWindow: contextFor(prompt.length + 8192),
       max_tokens: 4096,
@@ -319,6 +371,13 @@ export class PoipoiCodeAgent {
                   additionalProperties: false,
                 },
               },
+            readFiles: {
+              type: "array", maxItems: 3, items: {
+                type: "object", properties: { path: { type: "string" }, startLine: { type: "integer", minimum: 1 }, endLine: { type: "integer", minimum: 1 } },
+                required: ["path"], additionalProperties: false,
+              },
+            },
+            reason: { type: "string" },
             },
             required: ["changes"],
           },
@@ -346,10 +405,29 @@ export class PoipoiCodeAgent {
       throw new Error("LLM returned empty response");
     }
 
-    const proposals = this.extractJson(content).changes;
+      const proposal = this.extractJson(content);
+      proposals = proposal.changes;
+      if (proposals.length) {
+        if (proposal.readFiles?.length) throw new Error('変更案と追加ソース要求が混在しています。未確認の変更案は保存しません。');
+        break;
+      }
+      if (attempt === 1) throw new Error('AIが有効な変更案を生成できませんでした。' + (typeof proposal.reason === 'string' ? proposal.reason.slice(0, 500) : '未実装のままです。'));
+      const requests: NonNullable<GeneratedCodeProposal['readFiles']> = proposal.readFiles?.length ? proposal.readFiles : inventory
+        .filter(file => !sourceContents.has(file)).slice(0, 2).map(path => ({ path }));
+      if (!Array.isArray(requests) || requests.length > 3) throw new Error('追加ソースの要求件数が不正です。');
+      let added = false;
+      for (const requested of requests) {
+        if (!requested || typeof requested.path !== 'string') throw new Error('ソース読取要求が不正です。');
+        const file = requested.path.replace(/\\/g, '/');
+        if (!candidates.includes(file)) throw new Error('プロジェクトのソース以外は読み取れません: ' + file);
+        added = loadSource(file, requested.startLine, requested.endLine) || added;
+      }
+      if (!added) throw new Error('AIが変更案を作成できず、追加で確認できるソースもありません。未実装です。');
+      followUp = 'The previous response produced no changes. Additional requested source is now included. Implement the complete user request with exact edits and new modules as needed. Do not treat the catalogue saying unsupported as a prohibition on implementing a feature. Do not replace the request with only a help-text change. If still blocked, provide a concrete reason.';
+    }
     const generated: CodeChange[] = [];
     if (proposals.length > 5) throw new Error("Generated changes exceed the five-file safety limit");
-    const allowed = new Set(context.map(item => item.slice("Existing source: ".length).split("\n", 1)[0]));
+    const allowed = new Set(sourceContents.keys());
     for (const proposal of proposals) {
       const normalizedPath = proposal.path.replace(/\\/g, "/");
       const isNewSource = /^(?:server|client\/src|shared|src|mobile\/src)\/[a-zA-Z0-9_./-]+\.[jt]sx?$/.test(normalizedPath)
@@ -365,21 +443,27 @@ export class PoipoiCodeAgent {
         }
         const previous = sourceContents.get(normalizedPath);
         if (previous === undefined) throw new Error("Edits require reviewed existing source: " + normalizedPath);
-        nextContent = previous;
+        nextContent = previous.replace(/\r\n/g, "\n");
         for (const edit of proposal.edits) {
           if (!edit || typeof edit.oldText !== "string" || !edit.oldText.length || typeof edit.newText !== "string") {
             throw new Error("Invalid exact-text edit: " + normalizedPath);
           }
-          const position = nextContent.indexOf(edit.oldText);
-          if (position < 0 || nextContent.indexOf(edit.oldText, position + 1) >= 0) {
+          const oldText = edit.oldText.replace(/\r\n/g, "\n");
+          const newText = edit.newText.replace(/\r\n/g, "\n");
+          const position = nextContent.indexOf(oldText);
+          if (position < 0 || nextContent.indexOf(oldText, position + 1) >= 0) {
             throw new Error("Edit does not match exactly one source location: " + normalizedPath);
           }
-          nextContent = nextContent.slice(0, position) + edit.newText + nextContent.slice(position + edit.oldText.length);
+          nextContent = nextContent.slice(0, position) + newText + nextContent.slice(position + oldText.length);
         }
       } else {
         if (typeof proposal.content !== "string") throw new Error("Missing generated source: " + normalizedPath);
+        if (sourceContents.has(normalizedPath) && !completeSources.has(normalizedPath)) {
+          throw new Error('一部のみ確認した既存ファイルの全文置換を拒否しました: ' + normalizedPath);
+        }
         nextContent = proposal.content;
       }
+      if (sourceContents.get(normalizedPath)?.includes('\r\n')) nextContent = nextContent.replace(/\r?\n/g, '\r\n');
       if (!nextContent.trim()) throw new Error("Empty generated source: " + normalizedPath);
       if (nextContent === sourceContents.get(normalizedPath)) throw new Error("Generated proposal contains no change: " + normalizedPath);
       if (generated.some(change => change.path === normalizedPath)) throw new Error("Duplicate generated path: " + normalizedPath);
@@ -391,6 +475,7 @@ export class PoipoiCodeAgent {
       });
     }
     return generated;
+    } finally { this.generating = false; }
   }
 
   async applyAndTest(changes: CodeChange[], options: { typeCheck?: boolean } = {}): Promise<CodeTaskResult> {
