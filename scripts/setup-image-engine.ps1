@@ -43,8 +43,34 @@ function Get-Download([string]$Url, [string]$Destination, [long]$Size = 0, [stri
         }
         throw 'The retained partial download has an unexpected checksum.'
     }
-    & curl.exe --fail --location --retry 3 --continue-at - --output $partial $Url
-    if ($LASTEXITCODE -ne 0) { throw "Download failed. Partial data was retained for retry: $Destination" }
+    $downloaded = $false
+    for ($attempt = 1; $attempt -le 20; $attempt++) {
+        $retained = 0
+        if (Test-Path -LiteralPath $partial) { $retained = (Get-Item -LiteralPath $partial).Length }
+        if ($Size -gt 0 -and $retained -gt $Size) { throw "Retained data exceeds expected download size: $partial" }
+        # A connection may fail just after the final bytes reached disk.
+        if ($Size -gt 0 -and $retained -eq $Size) {
+            $downloaded = $true
+            break
+        }
+        Write-Host ("Download attempt {0}/20; retained {1:N1} MB." -f $attempt, ($retained / 1MB))
+        # Each attempt resumes from the CURRENT length. Avoid curl's internal
+        # retry handling here so data received before an interruption is retained.
+        & curl.exe --fail --location --connect-timeout 20 --speed-limit 1024 --speed-time 60 --continue-at - --output $partial $Url
+        $downloadExit = $LASTEXITCODE
+        if ($downloadExit -eq 0) {
+            $downloaded = $true
+            break
+        }
+        if ($downloadExit -eq 33 -or $downloadExit -eq 36 -or $downloadExit -eq 60) {
+            throw "Resume or certificate validation failed (curl $downloadExit). Partial data was retained: $partial"
+        }
+        if ($attempt -lt 20) {
+            Write-Warning ("Transfer interrupted (curl {0}). Reconnecting in 5 seconds. Partial data is retained." -f $downloadExit)
+            Start-Sleep -Seconds 5
+        }
+    }
+    if (-not $downloaded) { throw "Download failed after 20 attempts. Partial data was retained for retry: $partial" }
     if ($Size -gt 0 -and (Get-Item -LiteralPath $partial).Length -ne $Size) { throw 'Download size mismatch.' }
     if ($Sha256 -and (Get-FileHash -LiteralPath $partial -Algorithm SHA256).Hash -ne $Sha256) { throw 'Download checksum mismatch.' }
     Move-Item -LiteralPath $partial -Destination $Destination
