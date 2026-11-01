@@ -26,6 +26,29 @@ if ($InstallShortcut) {
     exit 0
 }
 
+# Use Chrome for PoiPoi without changing the Windows default browser.
+$chromeCandidates = @()
+foreach ($key in @(
+    'HKCU:\Software\Microsoft\Windows\CurrentVersion\App Paths\chrome.exe',
+    'HKLM:\Software\Microsoft\Windows\CurrentVersion\App Paths\chrome.exe',
+    'HKLM:\Software\WOW6432Node\Microsoft\Windows\CurrentVersion\App Paths\chrome.exe'
+)) {
+    if (Test-Path -LiteralPath $key) {
+        $chromeCandidates += (Get-Item -LiteralPath $key).GetValue('')
+    }
+}
+foreach ($folder in @($env:LOCALAPPDATA, $env:ProgramFiles, ${env:ProgramFiles(x86)})) {
+    if ($folder) { $chromeCandidates += Join-Path $folder 'Google\Chrome\Application\chrome.exe' }
+}
+$chromeCommand = Get-Command chrome.exe -CommandType Application -ErrorAction SilentlyContinue | Select-Object -First 1
+if ($chromeCommand) { $chromeCandidates += $chromeCommand.Source }
+$chromePath = $chromeCandidates | Where-Object { $_ } | ForEach-Object { $_.Trim('"') } |
+    Where-Object { Test-Path -LiteralPath $_ -PathType Leaf } | Select-Object -First 1
+if (-not $chromePath) { throw 'Google Chromeが見つかりません。Chromeをインストールしてから起動してください。' }
+function Open-PoiPoiBrowser {
+    Start-Process -FilePath $chromePath -ArgumentList 'http://localhost:3000/'
+}
+
 # A per-folder mutex prevents simultaneous clicks from launching two servers.
 $hasher = [Security.Cryptography.SHA256]::Create()
 $hash = [BitConverter]::ToString($hasher.ComputeHash([Text.Encoding]::UTF8.GetBytes($root.ToLowerInvariant()))).Replace('-', '')
@@ -44,12 +67,12 @@ try {
     if (-not $locked) {
         Write-Host 'ポイポイは起動中です。画面が開くまでお待ちください。'
         for ($i = 0; $i -lt 120; $i++) {
-            if (Test-PoiPoiReady) { Start-Process 'http://localhost:3000/'; exit 0 }
+            if (Test-PoiPoiReady) { Open-PoiPoiBrowser; exit 0 }
             Start-Sleep -Seconds 1
         }
         throw '起動を確認できませんでした。ポイポイの起動ウィンドウを確認してください。'
     }
-    if (Test-PoiPoiReady) { Start-Process 'http://localhost:3000/'; exit 0 }
+    if (Test-PoiPoiReady) { Open-PoiPoiBrowser; exit 0 }
     if (@(Get-NetTCPConnection -LocalPort 3000 -State Listen -ErrorAction SilentlyContinue).Count -gt 0) {
         throw '3000番ポートが使用中です。既存のプログラムは停止しませんでした。'
     }
@@ -70,7 +93,7 @@ try {
         if (Test-PoiPoiReady) { $ready = $true; break }
         Start-Sleep -Seconds 1
     }
-    if ($ready) { Start-Process 'http://localhost:3000/' }
+    if ($ready) { Open-PoiPoiBrowser }
     else { Write-Warning '起動に時間がかかっています。上の表示を確認してください。準備後は http://localhost:3000/ を開けます。' }
     $server.WaitForExit()
     if ($server.ExitCode -ne 0) { throw "ポイポイが終了しました（終了コード：$($server.ExitCode)）。" }
