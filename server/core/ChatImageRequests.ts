@@ -1,7 +1,7 @@
 import { imageAppearanceIntent, normalizeImageEditText } from './ImageEditIntent';
 import type { ChatMessage } from '../repositories/ChatRepository';
 import { isCodeImplementationRequest } from './AZCapabilityCatalog';
-export type ImageChatRequest = { prompt: string; rootPrompt: string; query?: string; webMode: 'auto' | 'required' | 'off'; identityCorrection?: boolean; previousImageId?: string; inputImageId?: string; editInstruction?: string; editStrength?: number; accepted?: boolean };
+export type ImageChatRequest = { prompt: string; rootPrompt: string; query?: string; webMode: 'auto' | 'required' | 'off'; identityCorrection?: boolean; previousImageId?: string; inputImageId?: string; editInstruction?: string; editStrength?: number; priorPrompt?: string; headToBodyRatio?: number; accepted?: boolean };
 function editPrompt(root: string, previous: string, instruction: string) {
   if (instruction.length > 2500) throw new Error('画像の編集指示は2500文字以内にしてください。');
   const original = root.slice(0, 1000);
@@ -23,19 +23,20 @@ export function resolveChatImageRequest(message: string, turns: ChatMessage[], h
   const editFragment = /(?:に|く)(?:してください|して|してほしい)?[。！!\s]*$/u.test(operationText);
   const editingQuestion = /[?？]|教えて|おしえて|説明して|解析|分析|読み取|できますか|できるか|可能ですか|なぜ|どうして/u.test(text);
   const forbiddenEdit = /しない|するな|ないで|はいけない|禁止|作るな|描くな/u.test(operationText);
-  const otherOperation = /Excel|PDF|PowerPoint|資料|文書|文章|回答|答え|説明文|チャット|印刷|メール|送信|共有|ダウンロード/i.test(text);
+  const otherOperation = /Excel|PDF|PowerPoint|資料|文書|文章|回答|答え|説明文|チャット|名前|記憶|人格|口調|ニュース|天気|原価|製造|在庫|予定|タスク|プログラム|印刷|メール|送信|共有|ダウンロード/i.test(text);
   if (selectedImageId && hasAttachments) throw new Error('履歴の編集対象と新しい添付写真を同時には指定できません。編集する画像を1枚選んでください。');
   const targetIndex = turns.findLastIndex(turn => (turn.role === 'user' || turn.metadata?.generated) &&
     (selectedImageId ? turn.metadata?.images?.some((image: { id?: string }) => image.id === selectedImageId) : turn.metadata?.images?.[0]?.id));
   if (selectedImageId && targetIndex < 0) throw new Error('選択した画像はこの会話にありません。画像のある会話で選び直してください。');
   const target = targetIndex >= 0 ? turns[targetIndex] : undefined;
   const appearanceIntent = imageAppearanceIntent(text);
+  const abbreviatedEdit = appearanceIntent.appearance && /^(?:もっと|さらに|少し|もう少し|もうすこし)|(?:は|を).+|(?:風|っぽく|みたい|のよう|だけ|程度|ぐらい|くらい)[。！!\s]*$/u.test(text);
   const replacement = text.match(/^(.*?)(?:じゃなく|ではなく)/u);
   const explicitSubjectReplacement = Boolean(replacement && !imageAppearanceIntent(replacement[1]).appearance);
   const identityLanguage = explicitSubjectReplacement || /別人|(?:違う|ちがう)(?:キャラ|人物|被写体)|(?:人物|キャラ(?:クター)?|被写体)(?:が|は|自体が)?(?:違う|ちがう)/.test(text) || (/じゃない|ではない|似てない|似ていない/.test(text) && !appearanceIntent.appearance);
   const changedTopic = target ? turns.slice(targetIndex + 1).some(turn => turn.role === 'user' && /ニュース|天気|原価|製造|在庫|予定|タスク|コード|プログラム/.test(turn.content)) : false;
   if (!explicit && !isCodeImplementationRequest(text) && !editingQuestion && !forbiddenEdit && !otherOperation && (!identityLanguage || selectedImageId || hasAttachments) &&
-      (editAction || editFragment || (selectedImageId && identityLanguage) || ((hasAttachments || selectedImageId || explicitTarget) && /生成して|せいせいして|作成して|さくせいして|作って|つくって|描いて|かいて|風(?:で|に)?[。！!\s]*$/u.test(text))) && (hasAttachments || selectedImageId || explicitTarget || (target && !changedTopic && targetIndex >= turns.length - 6))) {
+      (editAction || editFragment || abbreviatedEdit || appearanceIntent.continuation || (selectedImageId && identityLanguage) || ((hasAttachments || selectedImageId || explicitTarget) && /生成して|せいせいして|作成して|さくせいして|作って|つくって|描いて|かいて|風(?:で|に)?[。！!\s]*$/u.test(text))) && (hasAttachments || selectedImageId || explicitTarget || (target && !changedTopic && targetIndex >= turns.length - 6))) {
     if (hasAttachments && attachmentIds.length !== 1) throw new Error('編集する画像を1枚選んでください。写真の解析は複数枚に対応しています。');
     if (!selectedImageId && !hasAttachments && target?.metadata?.images?.length > 1) throw new Error('元画像が複数あります。編集したい画像の「この画像を編集」を押して選んでください。');
     const inputImageId = selectedImageId ?? (hasAttachments ? attachmentIds[0] : target?.metadata?.images?.[0]?.id);
@@ -45,10 +46,12 @@ export function resolveChatImageRequest(message: string, turns: ChatMessage[], h
     const currentPrompt = hasAttachments ? rootPrompt : target?.metadata?.imageRequest?.prompt ?? rootPrompt;
     return { rootPrompt, prompt: editPrompt(rootPrompt, currentPrompt, text),
       query: target?.metadata?.imageRequest?.query, inputImageId, editInstruction: text,
+      priorPrompt: hasAttachments ? undefined : target?.metadata?.imageRequest?.preparedPrompt,
+      headToBodyRatio: appearanceIntent.headToBodyRatio ?? (hasAttachments ? undefined : target?.metadata?.imageRequest?.headToBodyRatio),
       editStrength: appearanceIntent.bodybuilder ? 0.62 : appearanceIntent.muscle || /体型|太く|細く|大きく|小さく|ポーズ/u.test(text) ? 0.55 : 0.45,
       webMode: mode === 'required' ? 'required' : 'off' };
   }
-  if (explicit || create || researchedCreation) return { prompt: explicit || text, rootPrompt: explicit || text, webMode: mode };
+  if (explicit || create || researchedCreation) return { prompt: explicit || text, rootPrompt: explicit || text, webMode: mode, headToBodyRatio: appearanceIntent.headToBodyRatio };
   if (hasAttachments || isCodeImplementationRequest(text) || editingQuestion || forbiddenEdit || otherOperation) return undefined;
   if (selectedImageId && !explicit && !create && !researchedCreation && !identityLanguage) throw new Error('選択した画像をどのように編集するか入力してください。');
   if (/ニュース|天気|原価|製造|在庫|予定|タスク|プログラム|コード|機能/.test(text) && !/画像|イラスト|絵|写真/.test(text)) return undefined;
@@ -70,6 +73,8 @@ export function resolveChatImageRequest(message: string, turns: ChatMessage[], h
   if (renamedTarget) rootPrompt = renamedTarget + 'の画像を作成してください。';
   const identityCorrection = Boolean(renamedTarget) || identityLanguage;
   return { rootPrompt, query: renamedTarget || generated.metadata?.imageRequest?.query,
+    editInstruction: text, priorPrompt: identityCorrection ? undefined : generated.metadata?.imageRequest?.preparedPrompt,
+    headToBodyRatio: appearanceIntent.headToBodyRatio ?? (identityCorrection ? undefined : generated.metadata?.imageRequest?.headToBodyRatio),
     prompt: editPrompt(rootPrompt, currentPrompt, text + (renamedTarget ? '\n対象を「' + renamedTarget + '」に変更してください。' : '\n元の対象を保ち、前の誤った見た目を修正してください。')),
     webMode: identityCorrection ? (mode === 'off' ? 'off' : 'required') : mode === 'required' ? 'required' : 'off', identityCorrection,
     previousImageId: identityCorrection ? (mode === 'off' ? generated.metadata?.referenceImages?.[0]?.id : undefined) : generated.metadata.images[0].id };
