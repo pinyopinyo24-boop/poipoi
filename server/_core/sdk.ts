@@ -94,15 +94,12 @@ class SDKServer {
 
       const { openId, appId, name } = payload as Record<string, unknown>;
       
-      // Debug logging
-      console.log("[Auth] Payload content:", { openId, appId, name, fullPayload: payload });
-
       if (
         !isNonEmptyString(openId) ||
         !isNonEmptyString(appId) ||
         !isNonEmptyString(name)
       ) {
-        console.warn("[Auth] Session payload missing required fields", { openId, appId, name });
+        console.warn("[Auth] Session payload missing required fields");
         return null;
       }
 
@@ -112,7 +109,7 @@ class SDKServer {
         name,
       };
     } catch (error) {
-      console.warn("[Auth] Session verification failed", String(error));
+      console.warn("[Auth] Session verification failed:", error instanceof Error ? error.name : "UnknownError");
       return null;
     }
   }
@@ -142,7 +139,7 @@ class SDKServer {
 
     // If user not in DB, it's an error (local authentication requires user to be pre-registered)
     if (!user) {
-      console.error("[Auth] User not found in database:", sessionUserId);
+      console.error("[Auth] User not found in database");
       throw ForbiddenError("User not found in database");
     }
 

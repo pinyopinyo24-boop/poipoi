@@ -32,12 +32,10 @@ export async function createSessionToken(
     appId: payload.appId,
     name: payload.name,
   };
-  console.log("[LocalAuth] createSessionToken payload:", tokenPayload);
   const token = await new SignJWT(tokenPayload)
     .setProtectedHeader({ alg: "HS256" })
     .setExpirationTime("30d")
     .sign(secret);
-  console.log("[LocalAuth] Token created:", token.substring(0, 50) + "...");
   return token;
 }
 
@@ -50,12 +48,10 @@ export async function verifySessionToken(
 ): Promise<any> {
   try {
     const secret = new TextEncoder().encode(jwtSecret);
-    console.log("[LocalAuth] verifySessionToken: token prefix:", token.substring(0, 50) + "...");
     const verified = await jwtVerify(token, secret);
-    console.log("[LocalAuth] verifySessionToken: verified payload:", verified.payload);
     return verified.payload;
   } catch (error) {
-    console.error("[LocalAuth] verifySessionToken: error:", error);
+    console.warn("[LocalAuth] Session verification failed:", error instanceof Error ? error.name : "UnknownError");
     return null;
   }
 }

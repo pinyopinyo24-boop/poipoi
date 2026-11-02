@@ -429,9 +429,13 @@ export const unifiedToolsRouter = router({
         if (!session || session.userId !== userId) throw new Error('Chat session ownership mismatch');
       }
       if ((await listCodePreviews(userId)).length >= 20) throw new Error('Too many pending evolution previews');
+      ctx.trace?.("code.generating");
       const changes = await PoipoiCodeAgent.getInstance().generate(input.request, userId);
+      ctx.trace?.("code.generated");
       if (!changes.length) throw new Error('No grounded changes were generated');
-      return describeCodePreview(await createCodePreview(userId, changes, input.sessionId));
+      const preview = await createCodePreview(userId, changes, input.sessionId);
+      ctx.trace?.("code.preview-saved");
+      return describeCodePreview(preview);
     }),
   applyCodePreview: protectedProcedure.input(z.object({
     previewId: z.string().uuid(),
