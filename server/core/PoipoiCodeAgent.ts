@@ -411,7 +411,7 @@ export class PoipoiCodeAgent {
         {
           role: "system",
           content:
-            "You are a reliable software implementation agent. Return valid JSON only.",
+            "You are a reliable software implementation agent. Return valid JSON only. For NEW files, always provide complete source using content, never edits. Use edits only for EXISTING files whose source has been reviewed. Never invent oldText for a new file.",
         },
         {
           role: "user",
