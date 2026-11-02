@@ -67,7 +67,7 @@ export const streamingRouter = router({
         const executeTurn = async () => {
         const imageRequest = await resolveImageConversationRequest(input.message, recentImages, input.images ?? [], input.sourceImageId, ctx.user ? userId : undefined, understanding);
         const imagePrompt = imageRequest?.prompt;
-        if (imageRequest && input.images?.length && !imageRequest.inputImageId) throw new Error('添付写真の解析と新規画像生成は別々に依頼してください。');
+        if (imageRequest && input.images?.length && !imageRequest.inputImageId && !imageRequest.clarification && !imageRequest.accepted) throw new Error('添付写真の解析と新規画像生成は別々に依頼してください。');
         if (imagePrompt) {
           if (!ctx.user) throw new Error('画像生成にはログインが必要です。');
           const previous = await repository.getMessages(conversationId, 100000);
@@ -76,7 +76,7 @@ export const streamingRouter = router({
           if (input.messageId && previous.some(turn => turn.id === input.messageId)) throw new Error('この画像生成には中断した記録があります。新しい指示で続行してください。');
           if (imageRequest?.clarification) {
             const askedAt = Date.now();
-            await repository.saveMessage({ id: input.messageId ?? randomUUID(), userId, role: 'user', content: input.message, timestamp: askedAt }, conversationId);
+            await repository.saveMessage({ id: input.messageId ?? randomUUID(), userId, role: 'user', content: input.message, timestamp: askedAt, metadata: { sourceImageId: input.sourceImageId, ...(input.images?.length ? { images: input.images.map((id, index) => ({ id, name: '添付画像' + (index + 1) })) } : {}) } }, conversationId);
             const answer = { id: randomUUID(), userId, role: 'assistant' as const, content: imageRequest.clarification,
               timestamp: askedAt + 1, metadata: { replyTo: input.messageId, imageClarification: true, imageContextId: imageRequest.inputImageId } };
             await repository.saveMessage(answer, conversationId);
@@ -95,7 +95,8 @@ export const streamingRouter = router({
           imageJobs.add(userId);
           try {
             await repository.saveMessage({ id: input.messageId ?? randomUUID(), userId, role: 'user', content: input.message, timestamp: Date.now(),
-              metadata: input.images?.length ? { images: input.images.map((id, index) => ({ id, name: '添付画像' + (index + 1) })) } : undefined }, conversationId);
+              metadata: { imageEditAttempt: imageRequest,
+                ...(input.images?.length ? { images: input.images.map((id, index) => ({ id, name: '添付画像' + (index + 1) })) } : {}) } }, conversationId);
             const { generateImage } = await import('./_core/imageGeneration');
             const { saveChatImage, readChatImage } = await import('./core/ChatImageStore');
             const sourceImageId = imageRequest?.inputImageId ?? imageRequest?.previousImageId;
@@ -449,4 +450,5 @@ export const streamingRouter = router({
       };
     }),
 });
+
 

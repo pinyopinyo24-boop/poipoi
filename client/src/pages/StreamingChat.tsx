@@ -295,7 +295,9 @@ export default function StreamingChat() {
       };
       setMessages(previous => [...previous, assistantMessage]);
       persistChatMessage(chatId, assistantMessage);
-      setAttachments([]); setEditTarget(null);
+      // A clarification is not a completed edit: keep its photo/selected target
+      // so the user's answer continues the same operation.
+      if (!assistantMessage.metadata?.imageClarification) { setAttachments([]); setEditTarget(null); }
       if (user) void serverHistoryUtils.unifiedTools.listPersonalTasks.invalidate().catch(console.error);
       if (user?.role === 'admin') {
         void serverHistoryUtils.unifiedTools.listCodePreviews.invalidate().catch(error => console.error('変更案の更新エラー:', error));
@@ -819,4 +821,5 @@ export default function StreamingChat() {
     </div>
   );
 }
+
 

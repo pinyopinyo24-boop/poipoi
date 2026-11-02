@@ -45,14 +45,17 @@ export function resolveChatImageRequest(message: string, turns: ChatMessage[], h
     if (!selectedImageId && !hasAttachments && target?.metadata?.images?.length > 1) throw new Error('元画像が複数あります。編集したい画像の「この画像を編集」を押して選んでください。');
     const inputImageId = selectedImageId ?? (hasAttachments ? attachmentIds[0] : target?.metadata?.images?.[0]?.id);
     if (typeof inputImageId !== 'string') throw new Error('編集する画像が見つかりません。＋から画像を添付するか、画像のある会話で指示してください。');
-    const rootPrompt = hasAttachments ? '添付画像の被写体を保ち、指定された部分を編集する。'
-      : target?.metadata?.imageRequest?.rootPrompt ?? '入力画像の被写体を保ち、指定された部分を編集する。';
-    const currentPrompt = hasAttachments ? rootPrompt : target?.metadata?.imageRequest?.prompt ?? rootPrompt;
-    return { rootPrompt, previousEditPlan: hasAttachments ? undefined : target?.metadata?.imageRequest?.editPlan, prompt: editPrompt(rootPrompt, currentPrompt, text),
-      query: target?.metadata?.imageRequest?.query, inputImageId, editInstruction: text,
-      priorPrompt: hasAttachments ? undefined : target?.metadata?.imageRequest?.preparedPrompt,
-      preserveAppearance: appearanceIntent.preserveAppearance || (!hasAttachments && Boolean(target?.metadata?.imageRequest?.preserveAppearance)),
-      headToBodyRatio: appearanceIntent.headToBodyRatio ?? (hasAttachments ? undefined : target?.metadata?.imageRequest?.headToBodyRatio),
+    const contextTarget = hasAttachments
+      ? [...turns].reverse().find(turn => imageChoices(turn).some(image => image.id === inputImageId)) : target;
+    const state = contextTarget?.metadata?.imageEditAttempt ?? contextTarget?.metadata?.imageRequest;
+    const rootPrompt = state?.rootPrompt ?? (hasAttachments ? '添付画像の被写体を保ち、指定された部分を編集する。'
+      : '入力画像の被写体を保ち、指定された部分を編集する。');
+    const currentPrompt = state?.prompt ?? rootPrompt;
+    return { rootPrompt, previousEditPlan: state?.editPlan ?? state?.previousEditPlan, prompt: editPrompt(rootPrompt, currentPrompt, text),
+      query: state?.query, inputImageId, editInstruction: text,
+      priorPrompt: contextTarget?.metadata?.imageEditAttempt ? state?.prompt : state?.preparedPrompt,
+      preserveAppearance: appearanceIntent.preserveAppearance || Boolean(state?.preserveAppearance),
+      headToBodyRatio: appearanceIntent.headToBodyRatio ?? state?.headToBodyRatio,
       editStrength: appearanceIntent.bodybuilder ? 0.62 : appearanceIntent.muscle || /体型|太く|細く|大きく|小さく|ポーズ/u.test(text) ? 0.55 : 0.45,
       webMode: mode === 'required' ? 'required' : 'off' };
   }
@@ -85,4 +88,5 @@ export function resolveChatImageRequest(message: string, turns: ChatMessage[], h
     webMode: identityCorrection ? (mode === 'off' ? 'off' : 'required') : mode === 'required' ? 'required' : 'off', identityCorrection,
     previousImageId: identityCorrection ? (mode === 'off' ? generated.metadata?.referenceImages?.[0]?.id : undefined) : generated.metadata.images[0].id };
 }
+
 
