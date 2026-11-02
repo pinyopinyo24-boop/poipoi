@@ -619,7 +619,10 @@ export class PoipoiCodeAgent {
     } finally { this.generating = false; }
   }
 
-  async applyAndTest(changes: CodeChange[], options: { typeCheck?: boolean } = {}): Promise<CodeTaskResult> {
+  async applyAndTest(changes: CodeChange[], options: {
+    typeCheck?: boolean;
+    onProgress?: (phase: string) => void | Promise<void>;
+  } = {}): Promise<CodeTaskResult> {
     if (this.applying) return { success: false, changes: [], tested: false, error: '別のコード変更を適用中です' };
     this.applying = true;
     const backups = new Map<string, string | null>();
@@ -635,6 +638,7 @@ export class PoipoiCodeAgent {
     };
 
     try {
+      await options.onProgress?.("checking-source");
       if (!changes.length) throw new Error("No generated changes to apply");
       const paths = changes.map(change => this.safePath(change.path));
       if (new Set(paths).size !== paths.length) throw new Error("Duplicate generated file paths");
@@ -652,6 +656,7 @@ export class PoipoiCodeAgent {
       }
 
       // Validate syntax before modifying the working tree.
+      await options.onProgress?.("checking-syntax");
       const ts = await import("typescript");
       for (const change of changes) {
         if (!/\.[cm]?[jt]sx?$/.test(change.path)) continue;
@@ -703,6 +708,7 @@ export class PoipoiCodeAgent {
       }
 
       // Existing uncommitted edits must never be silently replaced.
+      await options.onProgress?.("checking-local-changes");
       const status = execFileSync("git", ["status", "--porcelain", "--untracked-files=all"], {
         cwd: this.root, encoding: "utf8", timeout: 15000, windowsHide: true,
       });
@@ -718,6 +724,7 @@ export class PoipoiCodeAgent {
         }
       }
 
+      await options.onProgress?.("writing-files");
       for (const change of changes) {
         const absolute = this.safePath(change.path);
         backups.set(absolute, existsSync(absolute) ? readFileSync(absolute, "utf8") : null);
@@ -727,6 +734,7 @@ export class PoipoiCodeAgent {
 
       // Type checking is optional and separately approved. Functional tests are never
       // implied by applying a patch; tested stays false in either mode.
+      if (options.typeCheck) await options.onProgress?.("type-checking");
       if (options.typeCheck) execFileSync(process.platform === "win32" ? "cmd.exe" : "pnpm",
         process.platform === "win32" ? ["/d", "/s", "/c", "pnpm exec tsc --noEmit"] : ["exec", "tsc", "--noEmit"], {
         cwd: this.root, encoding: "utf8", timeout: 120000,
@@ -735,6 +743,7 @@ export class PoipoiCodeAgent {
 
       // Only commit the exact generated paths after successful verification.
       // No git add -A: unrelated user changes are preserved.
+      await options.onProgress?.("committing");
       execFileSync("git", ["add", "--", ...changes.map(item => item.path)], {
         cwd: this.root, timeout: 15000, windowsHide: true,
       });

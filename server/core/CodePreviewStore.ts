@@ -8,6 +8,13 @@ const root = path.resolve(process.cwd(), 'data', 'code-previews');
 const schema = z.object({
   id: z.string().uuid(), userId: z.string(), expires: z.number(), sessionId: z.string().optional(),
   status: z.enum(['pending', 'applying', 'applied', 'failed', 'rejected']),
+  updatedAt: z.number().optional(),
+  application: z.object({
+    startedAt: z.number(), finishedAt: z.number().optional(),
+    phase: z.string().max(100),
+    typeChecked: z.boolean().optional(), committed: z.boolean().optional(),
+    error: z.string().max(4000).optional(),
+  }).optional(),
   changes: z.array(z.object({
     path: z.string(), content: z.string(), baseHash: z.string().nullable(),
     previousContent: z.string().optional(),
@@ -21,6 +28,7 @@ function location(userId: string, id: string) {
   return path.join(directory(userId), z.string().uuid().parse(id) + '.json');
 }
 export async function saveCodePreview(preview: CodePreview) {
+  preview.updatedAt = Date.now();
   const target = location(preview.userId, preview.id);
   await fs.mkdir(path.dirname(target), { recursive: true });
   const temporary = target + '.' + randomUUID() + '.tmp';
@@ -40,7 +48,7 @@ export async function readCodePreview(userId: string, id: string) {
   if (preview.userId !== userId) throw new Error('Preview ownership mismatch');
   return preview;
 }
-export async function listCodePreviews(userId: string) {
+export async function listCodePreviews(userId: string, options: { includeHistory?: boolean } = {}) {
   const names = await fs.readdir(directory(userId)).catch(error => {
     if (error.code === 'ENOENT') return [] as string[];
     throw error;
@@ -48,14 +56,23 @@ export async function listCodePreviews(userId: string) {
   const previews: CodePreview[] = [];
   for (const name of names.filter(name => /^[0-9a-f-]{36}\.json$/.test(name))) {
     const preview = await readCodePreview(userId, name.slice(0, -5));
-    if (preview.status === 'pending' && preview.expires > Date.now()) previews.push(preview);
+    if ((preview.status === 'pending' && preview.expires > Date.now()) ||
+        (options.includeHistory && (preview.status === 'applying' ||
+          (preview.status !== 'pending' && (preview.updatedAt ?? preview.expires) > Date.now() - 24 * 3600000)))) {
+      previews.push(preview);
+    }
   }
-  return previews;
+  if (!options.includeHistory) return previews;
+  previews.sort((a, b) => (b.updatedAt ?? b.expires) - (a.updatedAt ?? a.expires));
+  const active = previews.filter(preview => preview.status === 'pending' || preview.status === 'applying');
+  const history = previews.filter(preview => preview.status !== 'pending' && preview.status !== 'applying').slice(0, 20);
+  return [...active, ...history];
 }
 export function describeCodePreview(preview: CodePreview) {
   return {
     previewId: preview.id, expiresInSeconds: Math.max(0, Math.floor((preview.expires - Date.now()) / 1000)),
     status: preview.status, applied: preview.status === 'applied', tested: false,
+    updatedAt: preview.updatedAt, application: preview.application,
     changes: preview.changes.map(change => ({ ...change,
       operation: change.baseHash === null ? 'create' as const : 'modify' as const,
       proposedHash: createHash('sha256').update(change.content).digest('hex'),

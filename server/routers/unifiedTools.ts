@@ -402,10 +402,10 @@ export const unifiedToolsRouter = router({
     });
     return { saved: true, recordCount: state.records.length };
   }),
-  listCodePreviews: protectedProcedure.input(z.object({ accountId: z.string() }).optional()).query(async ({ ctx, input }) => {
+  listCodePreviews: protectedProcedure.input(z.object({ accountId: z.string(), includeHistory: z.boolean().optional() }).optional()).query(async ({ ctx, input }) => {
     if (input && input.accountId !== String(ctx.user.id)) throw new Error('Account mismatch');
     if (ctx.user.role !== 'admin') return [];
-    return (await listCodePreviews(String(ctx.user.id))).map(describeCodePreview);
+    return (await listCodePreviews(String(ctx.user.id), { includeHistory: input?.includeHistory === true })).map(describeCodePreview);
   }),
   getCodePreview: protectedProcedure.input(z.object({ previewId: z.string().uuid() }))
     .query(async ({ ctx, input }) => {
@@ -443,11 +443,26 @@ export const unifiedToolsRouter = router({
   })).mutation(async ({ input, ctx }) => {
     if (ctx.user.role !== 'admin') throw new Error('Administrator permission required');
     const preview = await reserveCodePreview(String(ctx.user.id), input.previewId);
+    const startedAt = Date.now();
+    preview.application = { startedAt, phase: 'preparing' };
+    await saveCodePreview(preview);
     const outcome = await PoipoiCodeAgent.getInstance().applyAndTest(preview.changes, {
       typeCheck: input.confirm === 'APPLY_AND_VERIFY',
+      onProgress: async phase => {
+        preview.application = { startedAt, phase };
+        ctx.trace?.('code.apply.' + phase);
+        try { await saveCodePreview(preview); }
+        catch { ctx.trace?.('code.apply.progress-record-failed'); }
+      },
     });
     preview.status = outcome.success ? 'applied' : 'failed';
+    preview.application = {
+      startedAt, finishedAt: Date.now(), phase: outcome.success ? 'completed' : 'failed',
+      typeChecked: outcome.typeChecked === true, committed: outcome.committed === true,
+      error: outcome.error?.slice(0, 4000),
+    };
     await saveCodePreview(preview);
+    ctx.trace?.(outcome.success ? 'code.apply.completed' : 'code.apply.failed');
     if (preview.sessionId) {
       const repository = (await import('../repositories/ChatRepository')).getSharedChatRepository();
       await repository.saveMessage({ id: 'code-approval-' + preview.id, userId: String(ctx.user.id), role: 'assistant',
