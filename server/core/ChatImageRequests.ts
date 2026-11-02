@@ -1,15 +1,37 @@
 import type { ChatMessage } from '../repositories/ChatRepository';
 import { isCodeImplementationRequest } from './AZCapabilityCatalog';
-export type ImageChatRequest = { prompt: string; rootPrompt: string; query?: string; webMode: 'auto' | 'required' | 'off'; identityCorrection?: boolean; previousImageId?: string; accepted?: boolean };
+export type ImageChatRequest = { prompt: string; rootPrompt: string; query?: string; webMode: 'auto' | 'required' | 'off'; identityCorrection?: boolean; previousImageId?: string; inputImageId?: string; editInstruction?: string; editStrength?: number; accepted?: boolean };
 /** Resolve only this session's image context; another task must not become an image edit. */
-export function resolveChatImageRequest(message: string, turns: ChatMessage[], hasAttachments: boolean): ImageChatRequest | undefined {
-  const text = message.normalize('NFKC').trim();
+export function resolveChatImageRequest(message: string, turns: ChatMessage[], hasAttachments: boolean, attachmentIds: string[] = []): ImageChatRequest | undefined {
+  const text = message.normalize('NFKC').split(/\n添付写真:/u)[0].trim();
   const explicit = text.match(/^\/imagine\s+([\s\S]+)$/i)?.[1]?.trim();
   const generationText = text.replace(/(?:ネット|ウェブ|Web|インターネット)(?:を)?(?:使わない(?:で)?|使うな)|(?:ネット)?検索しない(?:で)?|オフライン(?:で)?/gi, '');
   const create = !hasAttachments && !isCodeImplementationRequest(text) && !/しない|するな|禁止|ないで|はいけない|(?:と(?:言|い)(?:われ|った|って))|できますか|できるか/.test(generationText) && !/画像(?:の|を)?(?:解析|分析|説明)|読み取|Excel|PDF|PowerPoint|原価表/i.test(text)
     && /(?:画像|がぞう|イラスト|いらすと|ロゴ|絵|写真|しゃしん)\s*(?:を\s*)?(?:生成して|せいせいして|作成して|さくせいして|作って|つくって|描いて|かいて)|(?:画像生成|がぞうせいせい)[：:\s]/u.test(text);
   const researchedCreation = !hasAttachments && !isCodeImplementationRequest(text) && !/しない|するな|禁止|ないで|はいけない|と言われ|といわれ/.test(generationText) && /画像|がぞう|イラスト|絵|写真/.test(text) && /検索|調べ|しらべ|参考|参照/.test(text) && /生成して|せいせいして|作成して|さくせいして|作って|つくって|描いて|かいて|作り直して|描き直して/.test(text);
   const mode = /ネット.*(?:使わない|使うな)|検索しない|オフライン/.test(text) ? 'off' : /ネット|ウェブ|web|検索|調べ|しらべ|参照画像/i.test(text) ? 'required' : 'auto';
+  const explicitTarget = /^(?:この|その|今の|さっきの|直前の|添付(?:した)?)(?:画像|写真|絵|イラスト)/u.test(text);
+  const editAction = /変えて|変更して|加工して|編集して|修正して|描き直して|作り直して|(?:に|く)して/u.test(text);
+  const editFragment = /(?:に|く)(?:してください|して|してほしい)?[。！!\s]*$/u.test(text);
+  const editingQuestion = /[?？]|教えて|おしえて|説明して|解析|分析|読み取|できますか|できるか|可能ですか|なぜ|どうして/u.test(text);
+  const forbiddenEdit = /しない|するな|ないで|はいけない|禁止|変えない|加工しない/u.test(generationText);
+  const otherOperation = /Excel|PDF|PowerPoint|資料|文書|印刷|メール|送信|共有|削除|ダウンロード/i.test(text);
+  const targetIndex = turns.findLastIndex(turn => (turn.role === 'user' || turn.metadata?.generated) && turn.metadata?.images?.[0]?.id);
+  const target = targetIndex >= 0 ? turns[targetIndex] : undefined;
+  const changedTopic = target ? turns.slice(targetIndex + 1).some(turn => turn.role === 'user' && /ニュース|天気|原価|製造|在庫|予定|タスク|コード|プログラム/.test(turn.content)) : false;
+  if (!explicit && !isCodeImplementationRequest(text) && !editingQuestion && !forbiddenEdit && !otherOperation &&
+      (editAction || editFragment) && (hasAttachments || explicitTarget || (target && !changedTopic && targetIndex >= turns.length - 6))) {
+    if (hasAttachments && attachmentIds.length !== 1) throw new Error('編集する画像を1枚選んでください。写真の解析は複数枚に対応しています。');
+    const inputImageId = hasAttachments ? attachmentIds[0] : target?.metadata?.images?.[0]?.id;
+    if (typeof inputImageId !== 'string') throw new Error('編集する画像が見つかりません。＋から画像を添付するか、画像のある会話で指示してください。');
+    const rootPrompt = hasAttachments ? '添付画像の被写体を保ち、指定された部分を編集する。'
+      : target?.metadata?.imageRequest?.rootPrompt ?? target?.content ?? '入力画像の被写体を編集する。';
+    const currentPrompt = hasAttachments ? rootPrompt : target?.metadata?.imageRequest?.prompt ?? rootPrompt;
+    return { rootPrompt, prompt: currentPrompt + '\n今回の画像編集（以前の指示より優先）: ' + text,
+      query: target?.metadata?.imageRequest?.query, inputImageId, editInstruction: text,
+      editStrength: /ムキムキ|筋肉|マッチョ|体型|太く|細く|大きく|小さく|ポーズ/u.test(text) ? 0.55 : 0.45,
+      webMode: mode === 'required' ? 'required' : 'off' };
+  }
   if (explicit || create || researchedCreation) return { prompt: explicit || text, rootPrompt: explicit || text, webMode: mode };
   if (hasAttachments || isCodeImplementationRequest(text)) return undefined;
   if (/ニュース|天気|原価|製造|在庫|予定|タスク|プログラム|コード|機能/.test(text) && !/画像|イラスト|絵|写真/.test(text)) return undefined;

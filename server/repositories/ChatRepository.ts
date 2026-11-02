@@ -78,6 +78,16 @@ export class ChatRepository {
     this.persist();
   }
 
+  /** Preserve private photo references without changing message deduplication. */
+  async attachImagesToUserMessage(sessionId: string, userId: string, messageId: string, images: Array<{ id: string; name: string }>): Promise<void> {
+    const session = this.sessions.get(sessionId);
+    if (!session || session.userId !== userId) throw new Error('Chat session owner mismatch');
+    const message = this.messages.get(sessionId)?.find(turn => turn.id === messageId && turn.userId === userId && turn.role === 'user');
+    if (!message) throw new Error('Photo message not found');
+    message.metadata = { ...message.metadata, images: images.map(image => ({ ...image })) };
+    this.persist();
+  }
+
   /**
    * メッセージを取得
    */
