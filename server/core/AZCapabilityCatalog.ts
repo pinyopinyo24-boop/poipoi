@@ -52,10 +52,14 @@ export function isSourceCodeRequest(request: string) {
 export function isCodeImplementationRequest(request: string) {
   request = request.split(/\n\n(?:添付写真から読み取った参考データ|対象資料)/u, 1)[0];
   const sourceTask = isSourceCodeRequest(request);
-  const previewRequest = /(?:変更案|実装案|修正案|コード案)/u.test(request) &&
-    /(?:生成|作成|提示|表示)(?:してください|してほしい|して|して下さい)|(?:表示|提示)まで/u.test(request);
+  const codeTask = sourceTask || /コード|プログラム|自己進化|機能/u.test(request);
+  const previewRequest = request.split(/[。！？!?\n]/u).some(clause =>
+    /(?:変更案|実装案|修正案|コード案)/u.test(clause) &&
+    !/(?:生成|作成|提示|表示)(?:しない(?:で)?|するな|は禁止|しては(?:いけない|いけません|だめ|ダメ|駄目))/u.test(clause) &&
+    /(?:生成|作成|提示|表示)(?:してください|してほしい|して下さい|して)(?!は(?:いけない|いけません|だめ|ダメ|駄目))|(?:表示|提示)まで/u.test(clause));
   // Creating a preview is compatible with forbidding edits to existing files.
-  if (sourceTask && previewRequest) return true;
+  // A source path is optional when the request explicitly names code or a feature.
+  if (codeTask && previewRequest) return true;
   if (/(?:実装|じっそう|追加|ついか|修正|改善)(?:しないで|するな|しない|は禁止)/u.test(request)) return false;
   if (/^(?:実装|じっそう|機能を追加|きのうをついか)(?:して|してください|してほしい)[。！!\s]*$/u.test(request.trim())) return true;
   return (sourceTask && /(?:新規作成|作成|実装|追加|修正)(?:してください|してほしい|して)(?=[。！!\s]|$)/u.test(request))
