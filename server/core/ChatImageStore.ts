@@ -1,5 +1,5 @@
 import { createHash, randomUUID } from 'node:crypto';
-import { mkdir, readFile, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, writeFile, rename, unlink } from 'node:fs/promises';
 import path from 'node:path';
 
 const limit = 5 * 1024 * 1024;
@@ -13,19 +13,50 @@ function extension(bytes: Buffer): 'png' | 'jpg' | 'webp' {
   throw new Error('JPG・PNG・WebPの写真を選んでください。');
 }
 const mime = { png: 'image/png', jpg: 'image/jpeg', webp: 'image/webp' } as const;
+/** Decode before trusting file signatures; cap dimensions as well as compressed bytes. */
+export async function normalizeChatImage(base64: string, forEngine = false): Promise<{ base64: string; mime: 'image/png' }> {
+  if (base64.length > Math.ceil(limit / 3) * 4 || !/^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/.test(base64)) throw new Error('画像データが不正、または5MBの上限を超えています。');
+  const bytes = Buffer.from(base64, 'base64');
+  if (bytes.length < 12 || bytes.length > limit) throw new Error('画像は1枚5MB以下にしてください。');
+  extension(bytes);
+  try {
+    const sharp = (await import('sharp')).default;
+    let image = sharp(bytes, { limitInputPixels: 16000000, animated: false }).rotate();
+    if (forEngine) image = image.resize(1024, 1024, { fit: 'inside', withoutEnlargement: true });
+    const normalized = await image.png().toBuffer();
+    if (normalized.length > limit) throw new Error('画像を展開した後のサイズが5MBを超えています。');
+    return { base64: normalized.toString('base64'), mime: 'image/png' };
+  } catch (error) {
+    if (error instanceof Error && /5MB/.test(error.message)) throw error;
+    throw new Error('画像を読み取れません。破損していないJPG・PNG・WebPで、1600万画素以下の画像を選んでください。');
+  }
+}
 export async function saveChatImage(userId: string, name: string, base64: string) {
+  if (base64.length > Math.ceil(limit / 3) * 4) throw new Error('写真は1枚5MB以下にしてください。');
   if (!/^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/.test(base64)) throw new Error('写真データが不正です。');
   const bytes = Buffer.from(base64, 'base64');
   if (bytes.length < 12 || bytes.length > limit) throw new Error('写真は1枚5MB以下にしてください。');
+  await normalizeChatImage(base64, true);
   const ext = extension(bytes), id = randomUUID() + '.' + ext;
   const dir = directory(userId);
-  await mkdir(dir, { recursive: true, mode: 0o700 });
-  await writeFile(path.join(dir, id), bytes, { flag: 'wx', mode: 0o600 });
+  const target = path.join(dir, id), temporary = target + '.' + randomUUID() + '.tmp';
+  try {
+    await mkdir(dir, { recursive: true, mode: 0o700 });
+    await writeFile(temporary, bytes, { flag: 'wx', mode: 0o600 });
+    await rename(temporary, target);
+  } catch {
+    throw new Error('画像を保存できませんでした。PCの空き容量と保存先の書き込み権限を確認してください。');
+  } finally { await unlink(temporary).catch(() => undefined); }
   return { id, name: path.basename(name), mime: mime[ext] };
 }
 export async function readChatImage(userId: string, id: string) {
   if (!/^[0-9a-f-]{36}\.(?:jpg|png|webp)$/.test(id)) throw new Error('写真IDが不正です。');
-  const bytes = await readFile(path.join(directory(userId), id));
+  let bytes: Buffer;
+  try { bytes = await readFile(path.join(directory(userId), id)); }
+  catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') throw new Error('元画像が見つかりません。会話内に画像が表示されても、保存データが削除されている場合は再添付が必要です。');
+    throw new Error('元画像を読み込めません。画像保存先の読み取り権限を確認してください。');
+  }
   if (bytes.length > limit) throw new Error('写真のサイズ制限を超えています。');
   const type = mime[extension(bytes)];
   return { base64: bytes.toString('base64'), mime: type };

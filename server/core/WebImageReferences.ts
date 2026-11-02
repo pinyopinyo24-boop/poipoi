@@ -32,8 +32,8 @@ function htmlReference(html: string, pageUrl: string, query: string) {
   if (og) { try { const url = new URL(attr(og, 'content'), pageUrl).href; if (url.startsWith('https:') && !/\.svg(?:[?#]|$)/i.test(url)) images.push({ url, score: 1, title }); } catch { /* invalid metadata */ } }
   return { title, excerpt, images: images.filter(item => item.score > 0).slice(0, 3) };
 }
-async function imageBytes(url: string) {
-  const result = await readPublicResource(url, 5 * 1024 * 1024);
+async function imageBytes(url: string, expiresAt: number) {
+  const result = await readPublicResource(url, 5 * 1024 * 1024, 0, Math.min(expiresAt, Date.now() + 15000));
   const bytes = result.bytes;
   const supported = bytes.subarray(0, 8).toString('hex') === '89504e470d0a1a0a' || (bytes[0] === 255 && bytes[1] === 216 && bytes[2] === 255) || (bytes.subarray(0, 4).toString() === 'RIFF' && bytes.subarray(8, 12).toString() === 'WEBP') || /^GIF8[79]a$/.test(bytes.subarray(0, 6).toString());
   if (!supported || bytes.length < 24) throw new Error('参照画像の形式を確認できません。');
@@ -46,6 +46,8 @@ async function imageBytes(url: string) {
 export async function findWebImageReferences(query: string, includeImage = true): Promise<WebReference> {
   if (/```|[A-Z]:\\|(?:JWT_SECRET|GOOGLE_CLIENT_SECRET|API[_ -]?KEY)\s*[:=]|Bearer\s+[\w.-]{15,}|sk-[\w-]{16,}/i.test(query)) throw new Error('検索にローカルコードや認証情報を含められません。');
   query = query.trim().slice(0, 160); if (!query) throw new Error('検索する対象を指定してください。');
+  const expiresAt = Date.now() + 45000;
+  const read = (url: string, maxBytes = 1500000) => readPublicResource(url, maxBytes, 0, Math.min(expiresAt, Date.now() + 15000));
   const result: WebReference = { query, sources: [], notes: [] };
   const known = official.find(item => item.aliases.some(alias => kata(query) === kata(alias)));
   const pages: Array<{ url: string; official: boolean }> = [];
@@ -56,7 +58,7 @@ export async function findWebImageReferences(query: string, includeImage = true)
   if (!known && !suppliedUrl) {
     try {
       const url = new URL('https://www.bing.com/search'); url.searchParams.set('format', 'rss'); url.searchParams.set('q', query);
-      const rss = (await readPublicResource(url.href)).bytes.toString('utf8');
+      const rss = (await read(url.href)).bytes.toString('utf8');
       const hits = [...rss.matchAll(/<item\b[^>]*>([\s\S]*?)<\/item>/gi)].slice(0, 4);
       for (const hit of hits) {
         const field = (name: string) => decode(hit[1].match(new RegExp('<' + name + '[^>]*>([\\s\\S]*?)<\\/' + name + '>', 'i'))?.[1]?.replace(/<!\[CDATA\[([\s\S]*?)\]\]>/g, '$1') ?? '');
@@ -71,7 +73,7 @@ export async function findWebImageReferences(query: string, includeImage = true)
     if (!suppliedUrl) {
       const url = new URL('https://ja.wikipedia.org/w/api.php');
       for (const [key, value] of Object.entries({ action: 'query', format: 'json', formatversion: '2', generator: 'search', gsrsearch: query, gsrlimit: '3', prop: 'extracts|pageimages|info|extlinks', exintro: '1', explaintext: '1', exchars: '700', piprop: 'thumbnail', pithumbsize: '768', inprop: 'url', ellimit: '3', elprotocol: 'https' })) url.searchParams.set(key, value);
-      const data = JSON.parse((await readPublicResource(url.href)).bytes.toString('utf8')) as { query?: { pages?: Array<{ title?: string; fullurl?: string; extract?: string; thumbnail?: { source?: string }; extlinks?: Array<{ url?: string; '*'?: string }> }> } };
+      const data = JSON.parse((await read(url.href)).bytes.toString('utf8')) as { query?: { pages?: Array<{ title?: string; fullurl?: string; extract?: string; thumbnail?: { source?: string }; extlinks?: Array<{ url?: string; '*'?: string }> }> } };
       const articles = (data.query?.pages ?? []).filter(page => page.title && page.fullurl).sort((a, b) => Number(kata(b.title!).includes(kata(query))) - Number(kata(a.title!).includes(kata(query))));
       for (const page of articles.slice(0, 3)) {
         result.sources.push({ title: page.title!, url: page.fullurl!, excerpt: String(page.extract ?? '').slice(0, 700), retrievedAt: Date.now(), kind: 'encyclopedia' });
@@ -85,9 +87,9 @@ export async function findWebImageReferences(query: string, includeImage = true)
   } catch (error) { result.notes.push('百科事典検索: ' + (error instanceof Error ? error.message : String(error))); }
   for (const page of pages.slice(0, 2)) {
     try {
-      const resource = await readPublicResource(page.url, includeImage ? 5 * 1024 * 1024 : 1500000);
+      const resource = await read(page.url, includeImage ? 5 * 1024 * 1024 : 1500000);
       if (resource.contentType.startsWith('image/')) {
-        if (includeImage) { const image = await imageBytes(resource.url); result.image = { ...image, sourceUrl: page.url, imageUrl: image.url, title: query }; }
+        if (includeImage) { const image = await imageBytes(resource.url, expiresAt); result.image = { ...image, sourceUrl: page.url, imageUrl: image.url, title: query }; }
         result.sources.unshift({ title: query, url: page.url, excerpt: '指定された画像', kind: 'website', retrievedAt: Date.now() }); continue;
       }
       const parsed = htmlReference(resource.bytes.toString('utf8'), resource.url, query);
@@ -96,7 +98,7 @@ export async function findWebImageReferences(query: string, includeImage = true)
     } catch (error) { result.notes.push('参照ページ: ' + (error instanceof Error ? error.message : String(error))); }
   }
   if (includeImage && !result.image) for (const candidate of images.slice(0, 3)) {
-    try { const image = await imageBytes(candidate.url); result.image = { ...image, imageUrl: image.url, sourceUrl: candidate.sourceUrl, title: candidate.title }; break; }
+    try { const image = await imageBytes(candidate.url, expiresAt); result.image = { ...image, imageUrl: image.url, sourceUrl: candidate.sourceUrl, title: candidate.title }; break; }
     catch (error) { result.notes.push('参照画像: ' + (error instanceof Error ? error.message : String(error))); }
   }
   return result;

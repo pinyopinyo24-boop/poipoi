@@ -27,6 +27,7 @@ export const streamingRouter = router({
     .input(
       z.object({
         message: z.string(),
+        sourceImageId: z.string().regex(/^[0-9a-f-]{36}\.(?:jpg|png|webp)$/).optional(),
         messageId: z.string().min(1).max(200).optional(),
         conversationId: z.string().optional(),
         images: z.array(z.string().regex(/^[0-9a-f-]{36}\.(?:jpg|png|webp)$/)).max(6).optional(),
@@ -56,8 +57,12 @@ export const streamingRouter = router({
             }, conversationId);
           }
         }
-        const recentImages = await repository.getMessages(conversationId, 60);
-        const imageRequest = resolveChatImageRequest(input.message, recentImages, Boolean(input.images?.length), input.images ?? []);
+        if (input.messageId) {
+          const cached = (await repository.getMessages(conversationId, 100000)).find(turn => turn.role === 'assistant' && turn.metadata?.generated && turn.metadata?.replyTo === input.messageId);
+          if (cached) return { conversationId, tokens: [cached.content], fullText: cached.content, tokenCount: 1, isImage: true, messageId: cached.id, metadata: cached.metadata };
+        }
+        const recentImages = await repository.getMessages(conversationId, input.sourceImageId ? 100000 : 60);
+        const imageRequest = resolveChatImageRequest(input.message, recentImages, Boolean(input.images?.length), input.images ?? [], input.sourceImageId);
         const imagePrompt = imageRequest?.prompt;
         if (imageRequest && input.images?.length && !imageRequest.inputImageId) throw new Error('添付写真の解析と新規画像生成は別々に依頼してください。');
         if (imagePrompt) {
@@ -87,20 +92,24 @@ export const streamingRouter = router({
             if (imageRequest?.identityCorrection || imageRequest?.previousImageId) {
               const { rememberImageFeedback } = await import('./core/AZWebKnowledge');
               const oldImage = [...recentImages].reverse().find(turn => turn.metadata?.generated)?.metadata?.images?.[0]?.id;
-              if (oldImage) await rememberImageFeedback(userId, imageRequest.rootPrompt, input.message, oldImage, false);
+              if (oldImage) await rememberImageFeedback(userId, imageRequest.rootPrompt, input.message, oldImage, false).catch(error => console.warn('[PoiPoi] Image feedback was not saved:', error));
             }
             const output = await generateImage({ prompt: imagePrompt, userId, webMode: imageRequest?.webMode,
               searchQuery: imageRequest?.query, requireReference: imageRequest?.identityCorrection, referenceImage: previousImage, editInstruction: imageRequest?.editInstruction, editStrength: imageRequest?.editStrength });
-            const referenceImages = [];
-            if (output.reference) {
-              const ref = await saveChatImage(userId, '参照画像.png', output.reference.base64);
-              referenceImages.push({ id: ref.id, name: ref.name, sourceUrl: output.reference.sourceUrl });
-            }
             const encoded = output.url?.match(/^data:image\/(?:png|jpeg|webp);base64,([A-Za-z0-9+/]+=*)$/)?.[1];
             if (!encoded) throw new Error('有効な生成画像が返りませんでした。');
             const image = await saveChatImage(userId, 'AZ-generated.png', encoded);
+            const referenceImages = [];
+            if (output.reference) {
+              try {
+                const ref = await saveChatImage(userId, '参照画像.png', output.reference.base64);
+                referenceImages.push({ id: ref.id, name: ref.name, sourceUrl: output.reference.sourceUrl });
+              } catch {
+                output.notes = [...(output.notes ?? []), '生成画像は保存しましたが、参照画像の保存に失敗しました。'];
+              }
+            }
             const answer = { id: randomUUID(), userId, role: 'assistant' as const, content: '画像を生成しました。' + (output.referenceUsed ? previousImage ? '指定した入力画像を使って編集しています。' : '取得した参照画像を使って生成しています。' : output.sources?.length ? '取得したネット情報を説明に反映しました。参照画像は取得できませんでした。' : imageRequest?.webMode === 'off' ? 'ネット検索を使わずに生成しました。' : 'ネットの参照情報は取得できていません。') + '対象との見た目の一致はまだ確認していません。',
-              timestamp: Date.now(), metadata: { replyTo: input.messageId, images: [{ id: image.id, name: image.name }], generated: true, referenceImages, webSources: output.sources, webResearch: { learned: output.learned, notes: output.notes }, imageRequest: { rootPrompt: imageRequest?.rootPrompt, prompt: imagePrompt, query: output.query ?? imageRequest?.query, referenceUsed: output.referenceUsed } } };
+              timestamp: Date.now(), metadata: { replyTo: input.messageId, sourceImageId, images: [{ id: image.id, name: image.name }], generated: true, referenceImages, webSources: output.sources, webResearch: { learned: output.learned, notes: output.notes }, imageRequest: { rootPrompt: imageRequest?.rootPrompt, prompt: imagePrompt, query: output.query ?? imageRequest?.query, referenceUsed: output.referenceUsed } } };
             await repository.saveMessage(answer, conversationId);
             return { conversationId, tokens: [answer.content], fullText: answer.content, tokenCount: 1, isImage: true, messageId: answer.id, metadata: answer.metadata };
           } finally { imageJobs.delete(userId); }

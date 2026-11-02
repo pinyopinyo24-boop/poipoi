@@ -32,15 +32,23 @@ function newMessageId() {
     : "msg_" + Date.now() + "_" + Math.random().toString(36).slice(2);
 }
 
-function ChatPhoto({ id, name, accountId }: { id: string; name: string; accountId: string }) {
+function ChatPhoto({ id, name, accountId, onEdit, disabled }: { id: string; name: string; accountId: string; onEdit?: () => void; disabled?: boolean }) {
+  const [displayError, setDisplayError] = useState(false);
+  useEffect(() => { setDisplayError(false); }, [id, accountId]);
   const image = trpc.unifiedTools.getChatImage.useQuery({ id, accountId }, {
     enabled: accountId !== "guest", staleTime: Infinity, retry: false,
   });
-  if (image.error) return <span className="text-xs text-red-700">写真を表示できませんでした。</span>;
+  if (accountId === "guest") return <span className="text-xs">写真の表示にはログインが必要です。</span>;
+  if (image.error || displayError) return <span role="alert" className="inline-flex flex-col text-xs text-red-700">
+    写真を表示できません。保存データがない場合は再添付してください。
+    <button type="button" className="underline" disabled={image.isFetching}
+      onClick={() => { setDisplayError(false); void image.refetch(); }}>写真を再読み込み</button>
+  </span>;
   if (!image.data) return <span className="text-xs">写真を読み込み中...</span>;
   return <span className="inline-flex flex-col gap-1">
-    <img src={image.data.dataUri} alt={name} className="max-h-48 max-w-full rounded-lg object-contain" />
+    <img src={image.data.dataUri} alt={name} onError={() => setDisplayError(true)} className="max-h-48 max-w-full rounded-lg object-contain" />
     <a href={image.data.dataUri} download={name} className="text-xs text-blue-700 underline">写真・画像を保存</a>
+    {onEdit && <button type="button" disabled={disabled} onClick={onEdit} className="text-left text-xs text-blue-700 underline">この画像を編集</button>}
   </span>;
 }
 
@@ -60,6 +68,7 @@ export default function StreamingChat() {
   const [fileError, setFileError] = useState("");
   const [chatError, setChatError] = useState("");
   const [isUploading, setIsUploading] = useState(false);
+  const [editTarget, setEditTarget] = useState<{ id: string; name: string } | null>(null);
   const [attachments, setAttachments] = useState<Array<{ file: string; name: string; type: 'xlsx' | 'pdf' | 'image' }>>([]);
   const attachmentInput = useRef<HTMLInputElement>(null);
   const sendLock = useRef(false);
@@ -95,7 +104,7 @@ export default function StreamingChat() {
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const [, navigate] = useLocation();
 
-  const openConversation = (id: string) => { const c = conversations.find(x => x.id === id); if (!c || isLoading || uploadLock.current) return; localStorage.setItem(lastConversationKey, id); setConversationId(id); setMessages(c.messages.map(m => ({ ...m, timestamp: new Date(m.timestamp) }))); setAttachments([]); setChatError(""); setFileError(""); };
+  const openConversation = (id: string) => { const c = conversations.find(x => x.id === id); if (!c || isLoading || uploadLock.current) return; localStorage.setItem(lastConversationKey, id); setConversationId(id); setMessages(c.messages.map(m => ({ ...m, timestamp: new Date(m.timestamp) }))); setAttachments([]); setEditTarget(null); setChatError(""); setFileError(""); };
   const deleteConversation = async (id: string) => {
     if (isLoading || historyAccount !== accountId || !window.confirm('この会話を削除しますか？')) return;
     const deletingAccount = accountId;
@@ -105,12 +114,12 @@ export default function StreamingChat() {
       deletedIds.current.add(id);
       const next = conversations.filter(conversation => conversation.id !== id);
       setConversations(next); saveConversations(next, historyAccount);
-      if (conversationId === id) { localStorage.removeItem(lastConversationKey); setConversationId(null); setMessages([]); setInput(''); }
+      if (conversationId === id) { localStorage.removeItem(lastConversationKey); setConversationId(null); setMessages([]); setInput(''); setAttachments([]); setEditTarget(null); }
       await serverHistoryUtils.chat.getSessions.invalidate();
     } catch (error) { if (requestAccount.current === deletingAccount) setFileError(error instanceof Error ? error.message : String(error)); }
   };
   const renameConversation = (id: string) => { const c = conversations.find(x => x.id === id); if (!c) return; const title = window.prompt("新しい会話タイトル", c.title)?.trim(); if (!title) return; const next = conversations.map(x => x.id === id ? { ...x, title } : x); setConversations(next); saveConversations(next, historyAccount); };
-  const startNewConversation = () => { if (isLoading || uploadLock.current) return; const c = createConversation(); setConversations(prev => { const next = [c, ...prev]; return next; }); localStorage.setItem(lastConversationKey, c.id); setConversationId(c.id); setMessages([]); setInput(""); setAttachments([]); setChatError(""); setFileError(""); };
+  const startNewConversation = () => { if (isLoading || uploadLock.current) return; const c = createConversation(); setConversations(prev => { const next = [c, ...prev]; return next; }); localStorage.setItem(lastConversationKey, c.id); setConversationId(c.id); setMessages([]); setInput(""); setAttachments([]); setEditTarget(null); setChatError(""); setFileError(""); };
   const persistChatMessage = (id: string, message: Message) => { setConversations(prev => { const next = prev.map(c => c.id !== id ? c : { ...c, title: c.title === "新しいチャット" && message.role === "user" ? message.content.slice(0, 30) : c.title, updatedAt: new Date().toISOString(), messages: [...c.messages, { id: message.id, role: message.role, content: message.content, timestamp: message.timestamp.toISOString(), type: message.type, metadata: message.metadata }] }); return next; }); };
   useEffect(() => {
     if (authLoading || accountId === historyAccount) return;
@@ -120,10 +129,13 @@ export default function StreamingChat() {
     setConversations(next); setConversationId(current?.id ?? null);
     setMessages(current?.messages.map(message => ({ ...message, timestamp: new Date(message.timestamp) })) ?? []);
     deletedIds.current.clear();
-    setInput(''); setAttachments([]); setChatError(''); setMemoryResults([]); setFileError(''); setHistoryAccount(accountId);
+    setInput(''); setAttachments([]); setEditTarget(null); setChatError(''); setMemoryResults([]); setFileError(''); setHistoryAccount(accountId);
   }, [accountId, historyAccount, authLoading]);
   useEffect(() => {
-    if (!authLoading && historyAccount === accountId) saveConversations(conversations, historyAccount);
+    if (!authLoading && historyAccount === accountId) {
+      try { saveConversations(conversations, historyAccount); }
+      catch { setChatError('ブラウザに会話を保存できません。画面上の会話は保持していますが、再読み込み前にサーバーの履歴保存を確認してください。'); }
+    }
   }, [conversations, historyAccount, accountId, authLoading]);
   const streamingChat = trpc.streaming.chat.useMutation();
   const serverSessions = trpc.chat.getSessions.useQuery(undefined, {
@@ -150,13 +162,12 @@ export default function StreamingChat() {
           const existing = merged.get(session.id);
           const items = new Map((existing?.messages ?? []).map(m => [m.id, m]));
           for (const m of messages) {
-            if (!items.has(m.id)) items.set(m.id, {
-              id: m.id,
-              role: m.role,
-              content: m.content,
+            const local = items.get(m.id);
+            items.set(m.id, {
+              id: m.id, role: m.role, content: m.role === "user" ? (local?.content ?? m.content.split("\n\n添付写真から読み取った参考データ")[0]) : m.content,
               timestamp: new Date(m.timestamp).toISOString(),
-              type: "text",
-              metadata: m.metadata,
+              type: local?.type ?? "text",
+              metadata: { ...local?.metadata, ...m.metadata },
             });
           }
           merged.set(session.id, {
@@ -166,7 +177,7 @@ export default function StreamingChat() {
               new Date(existing?.updatedAt ?? 0).getTime(),
               Number(session.updatedAt)
             )).toISOString(),
-            messages: [...items.values()],
+            messages: [...items.values()].sort((a, b) => Date.parse(a.timestamp) - Date.parse(b.timestamp)),
           });
         }
         return [...merged.values()].sort((a, b) =>
@@ -176,6 +187,15 @@ export default function StreamingChat() {
     }).catch(console.error);
     return () => { cancelled = true; };
   }, [serverSessions.data, serverHistoryUtils, accountId, historyAccount, authLoading]);
+  // Restore server-completed responses into the visible chat after a network interruption.
+  useEffect(() => {
+    if (isLoading || authLoading || historyAccount !== accountId || !conversationId) return;
+    const current = conversations.find(item => item.id === conversationId);
+    if (current) {
+      const restored = current.messages.map(message => ({ ...message, timestamp: new Date(message.timestamp) }));
+      setMessages(previous => JSON.stringify(previous) === JSON.stringify(restored) ? previous : restored);
+    }
+  }, [conversations, conversationId, isLoading, authLoading, historyAccount, accountId]);
   const syncHistoryRef = useRef(syncHistory);
   syncHistoryRef.current = syncHistory;
   useEffect(() => {
@@ -226,6 +246,9 @@ export default function StreamingChat() {
     if (authLoading || historyAccount !== accountId) {
       setChatError("アカウントの読み込み中です。少し待ってから送信してください。"); return;
     }
+    if (editTarget && attachments.some(item => item.type === 'image')) {
+      setChatError('履歴の編集対象か、新しく添付した写真のどちらか1枚を選んでください。'); return;
+    }
     sendLock.current = true;
     setChatError("");
     const sendingAccount = accountId;
@@ -242,7 +265,7 @@ export default function StreamingChat() {
     }
     const userMessage: Message = {
       id: newMessageId(), role: "user", content: outgoing, timestamp: new Date(), type: "text",
-      metadata: photos.length ? { images: photos.map(item => ({ id: item.file, name: item.name })) } : undefined,
+      metadata: { ...(photos.length ? { images: photos.map(item => ({ id: item.file, name: item.name })) } : {}), ...(editTarget ? { sourceImageId: editTarget.id } : {}) },
     };
     setMessages(previous => [...previous, userMessage]);
     persistChatMessage(chatId, userMessage);
@@ -251,6 +274,7 @@ export default function StreamingChat() {
     try {
       const response = await streamingChat.mutateAsync({
         message: outgoing, messageId: userMessage.id, conversationId: chatId,
+        sourceImageId: editTarget?.id,
         images: photos.length ? photos.map(item => item.file) : undefined,
         history: messages.filter(message => !message.metadata?.error).slice(-20)
           .map(message => ({ role: message.role, content: message.content })),
@@ -266,7 +290,7 @@ export default function StreamingChat() {
       };
       setMessages(previous => [...previous, assistantMessage]);
       persistChatMessage(chatId, assistantMessage);
-      setAttachments([]);
+      setAttachments([]); setEditTarget(null);
       if (user) void serverHistoryUtils.unifiedTools.listPersonalTasks.invalidate().catch(console.error);
       if (user?.role === 'admin') {
         void serverHistoryUtils.unifiedTools.listCodePreviews.invalidate().catch(error => console.error('変更案の更新エラー:', error));
@@ -503,7 +527,9 @@ export default function StreamingChat() {
                         {/^https:\/\//.test(reference.sourceUrl) && <a href={reference.sourceUrl} target="_blank" rel="noopener noreferrer" className="text-blue-700 underline">参照元を開く</a>}
                       </details>)}
                       {message.metadata?.images?.map((photo: { id: string; name: string }) =>
-                        <ChatPhoto key={photo.id} id={photo.id} name={photo.name} accountId={accountId} />)}
+                        <ChatPhoto key={photo.id} id={photo.id} name={photo.name} accountId={accountId}
+                          disabled={isLoading || isUploading || authLoading}
+                          onEdit={() => { setEditTarget({ id: photo.id, name: photo.name }); setChatError(''); }} />)}
                       {message.metadata?.task && <details className="mt-2 text-xs">
                         <summary>実行記録（{message.metadata.task.status}）</summary>
                         {message.metadata.task.steps?.map((step: { tool: string; status: string; error?: string }, index: number) =>
@@ -538,6 +564,11 @@ export default function StreamingChat() {
           <AZEvolutionPanel key={accountId} reviewOnly />
           <AZPersonalTasksPanel key={"personal-" + accountId} accountId={accountId} />
 
+          {editTarget && <div className="flex items-center gap-3 rounded-lg border bg-white p-2 text-sm" aria-label="画像の編集対象">
+            <ChatPhoto id={editTarget.id} name={editTarget.name} accountId={accountId} />
+            <span>この画像を編集します。変更したい内容を入力してください。</span>
+            <button type="button" disabled={isLoading} onClick={() => setEditTarget(null)} className="underline">選択を解除</button>
+          </div>}
           {attachments.length > 0 && <div className="flex flex-wrap gap-2" aria-label="添付資料">
             {attachments.map(item => <span key={item.file} className="inline-flex items-center gap-2 rounded-lg border bg-white px-3 py-1 text-sm">
               {item.type === "image" && <ChatPhoto id={item.file} name={item.name} accountId={accountId} />}
