@@ -35,7 +35,7 @@ export async function readImageEngineJSON<T>(url: string, init: RequestInit = {}
     catch { throw new Error('画像生成エンジンからJSON形式の応答が返りませんでした。接続先を確認してください。'); }
   } catch (error) {
     if (controller.signal.aborted) throw new Error(init.method === 'POST'
-      ? '画像生成の応答が300秒以内に返りませんでした。エンジン側で処理が続いている可能性があります。自動再生成は行っていません。'
+      ? '画像生成の応答が' + Math.ceil(timeoutMs / 1000) + '秒以内に返りませんでした。エンジン側で処理が続いている可能性があります。自動再生成は行っていません。'
       : '画像生成エンジンの応答が時間切れです。起動中か確認してください。');
     if (error instanceof TypeError) throw new Error('画像生成エンジンに接続できません。画像生成エンジンの起動と接続先を確認してください。');
     throw error;

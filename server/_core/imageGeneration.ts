@@ -1,3 +1,4 @@
+import type { ImageChangeEvidence } from '../core/ImageEditEvidence';
 import { groundImageEdit, preserveUneditedPixels, assessImageEdit, type ImageEditPlan, type ImageEditAssessment } from '../core/GroundedImageEdit';
 import { imageAppearanceIntent } from '../core/ImageEditIntent';
 /** Local image generation with optional public research and actual image conditioning. */
@@ -13,7 +14,7 @@ export type GenerateImageOptions = {
   editInstruction?: string; editStrength?: number; priorPrompt?: string; headToBodyRatio?: number; preserveAppearance?: boolean;
   webMode?: 'auto' | 'required' | 'off'; searchQuery?: string; requireReference?: boolean;
 };
-export type GenerateImageResponse = { url?: string; sources?: WebSource[]; reference?: WebReference['image']; notes?: string[]; query?: string; referenceUsed?: boolean; learned?: boolean; preparedPrompt?: string; usedEditStrength?: number; editPlan?: ImageEditPlan; assessment?: ImageEditAssessment; protectedPixelsPreserved?: boolean; changedFraction?: number; editSource?: string; editMask?: string };
+export type GenerateImageResponse = { url?: string; sources?: WebSource[]; reference?: WebReference['image']; notes?: string[]; query?: string; referenceUsed?: boolean; learned?: boolean; preparedPrompt?: string; usedEditStrength?: number; editPlan?: ImageEditPlan; assessment?: ImageEditAssessment; protectedPixelsPreserved?: boolean; changedFraction?: number; editSource?: string; editMask?: string; changeEvidence?: ImageChangeEvidence; attempts?: number };
 export async function generateImage(options: GenerateImageOptions): Promise<GenerateImageResponse> {
   const release = claimImageGeneration();
   try { return await generateImageOnce(options); } finally { release(); }
@@ -80,7 +81,7 @@ async function generateImageOnce(options: GenerateImageOptions): Promise<Generat
   }
   prompt = cleanComposition(prompt);
   const preservation = 'Preserve the whole original subject identity, complete outfit and accessories, illustration style and body proportions except for explicitly requested changes. Keep the full subject in frame. ';
-  if (options.preserveAppearance) prompt = preservation + prompt.split(preservation).join('');
+  if (options.preserveAppearance && !edit) prompt = preservation + prompt.split(preservation).join('');
   if (research?.englishHint) prompt = research.englishHint + ', ' + prompt;
   if (options.headToBodyRatio !== undefined) {
     if (!Number.isInteger(options.headToBodyRatio) || options.headToBodyRatio < 1 || options.headToBodyRatio > 10) throw new Error('頭身は1〜10の範囲で指定してください。');
@@ -95,26 +96,51 @@ async function generateImageOnce(options: GenerateImageOptions): Promise<Generat
   const body = { prompt, ...(negativePrompt ? { negative_prompt: negativePrompt } : {}), steps: edit ? 28 : 20, width, height, batch_size: 1, n_iter: 1,
     ...(edit ? { mask: edit.mask.toString('base64'), mask_blur: 0, inpainting_fill: 1, inpaint_full_res: false, inpainting_mask_invert: 0, restore_faces: false } : {}),
     ...(reference ? { init_images: [edit ? edit.source.toString('base64') : reference.base64], denoising_strength: strength, resize_mode: 2 } : {}) };
-  // Recheck after research/translation: another application may have started a job.
-  await checkImageEngine(engine);
-  const data = await readImageEngineJSON<{ images?: unknown[] }>(
-    engine + (reference ? '/sdapi/v1/img2img' : '/sdapi/v1/txt2img'),
-    { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }, 300000);
-  const encoded = data?.images?.[0];
-  if (typeof encoded !== 'string' || encoded.length > 7_000_000) throw new Error('有効な生成画像が返りませんでした。');
-  let base64 = (await normalizeChatImage(encoded.replace(/^data:image\/(?:png|jpeg|webp);base64,/, ''))).base64;
-  const notes = [...(research?.notes ?? [])];
-  let assessment: ImageEditAssessment | undefined, changedFraction: number | undefined;
-  if (edit) {
-    const restored = await preserveUneditedPixels(base64, edit);
-    base64 = restored.base64; changedFraction = restored.changedFraction;
-    if (edit.plan.sourceMatchesRequest === 'uncertain') notes.push('指定された被写体と元画像の一致は、画像解析AIでも確認できていません。');
-    if (changedFraction < 0.05) notes.push('編集範囲の見た目の変化が小さく、変更条件を満たしたとは確認できません。');
-    try { assessment = await assessImageEdit(edit.source.toString('base64'), base64, edit.plan, { current: options.editInstruction ?? options.prompt, originalGoal: options.rootPrompt, previousDescription: options.priorPrompt, headToBodyRatio: options.headToBodyRatio }); }
-    catch { notes.push('編集画像はありますが、画像解析AIによる結果確認は完了していません。'); }
+  // A completed but inadequate edit can be attempted once more from the SAME
+  // source. A lost/ambiguous POST response is never automatically replayed.
+  const deadline=Date.now()+300000;
+  let best: {base64:string;assessment?:ImageEditAssessment;evidence?:ImageChangeEvidence;changedFraction?:number;score:number;strength:number} | undefined;
+  const notes=[...(research?.notes??[])];
+  let attempts=0;
+  for(let attempt=0;attempt<(edit?2:1);attempt++) {
+    let candidate:NonNullable<typeof best>;
+    try {
+      await checkImageEngine(engine);
+      const remaining=deadline-Date.now();
+      if(remaining<1000)throw new Error('画像生成の全体待機時間を超えました。');
+      const data=await readImageEngineJSON<{images?:unknown[]}>(engine+(reference?'/sdapi/v1/img2img':'/sdapi/v1/txt2img'),
+        {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)},remaining);
+      attempts++;
+      const encoded=data?.images?.[0];
+      if(typeof encoded!=='string'||encoded.length>7_000_000)throw new Error('有効な生成画像が返りませんでした。');
+      let base64=(await normalizeChatImage(encoded.replace(/^data:image\/(?:png|jpeg|webp);base64,/,''))).base64;
+      let assessment:ImageEditAssessment|undefined,evidence:ImageChangeEvidence|undefined,changedFraction:number|undefined;
+      if(edit){
+        const restored=await preserveUneditedPixels(base64,edit);base64=restored.base64;evidence=restored.evidence;changedFraction=restored.changedFraction;
+        try {if(deadline-Date.now()<1000)throw new Error('比較の待機時間が残っていません。');assessment=await assessImageEdit(edit.source.toString('base64'),base64,edit.plan,{current:options.editInstruction??options.prompt,originalGoal:options.rootPrompt,previousDescription:options.priorPrompt,headToBodyRatio:options.headToBodyRatio},Math.min(120000,deadline-Date.now()));}
+        catch {notes.push('条件ごとの画像比較を完了できませんでした。画像AIの一括した成功判定では代用していません。');}
+      }
+      const score=(evidence?.sufficientChange?100:0)+(assessment?.changes==='yes'?3:0)+(assessment?.preserved==='yes'?5:assessment?.preserved==='no'?-200:0)+(assessment?.instructionCoverage==='yes'?2:0);
+      candidate={base64,assessment,evidence,changedFraction,score,strength:body.denoising_strength??strength};
+    } catch(error){
+      if(!best)throw error;
+      notes.push('追加の編集は完了しませんでした。保存できる前の候補を残しました。'+(error instanceof Error?error.message:''));
+      break;
+    }
+    if(!best||candidate.score>best.score)best=candidate;
+    const inadequate=edit && (!candidate.evidence?.sufficientChange || candidate.assessment?.changes==='no' || candidate.assessment?.preserved==='no' || candidate.assessment?.instructionCoverage==='no');
+    if(!inadequate||attempt>0||deadline-Date.now()<30000||/ほんの|微調整|わずか|僅か|少し|すこし|控えめ/u.test(options.editInstruction??options.prompt))break;
+    // Change only the local edit strength; keep source, mask and user conditions.
+    const current=body.denoising_strength??strength;
+    const adjusted=candidate.assessment?.preserved==='no'?Math.max(.2,current-.1):Math.min(.8,current+.12);
+    if(Math.abs(adjusted-current)<.01)break;
+    body.denoising_strength=adjusted;
   }
-  return { url: 'data:image/png;base64,' + base64, sources: research?.sources, reference: options.referenceImage ? undefined : research?.image,
-    notes, editPlan: edit?.plan, assessment, protectedPixelsPreserved: edit ? true : undefined, changedFraction,
-    editSource: edit?.source.toString('base64'), editMask: edit?.mask.toString('base64'), query: research?.query, referenceUsed: Boolean(reference), learned, preparedPrompt: prompt, usedEditStrength: reference ? strength : undefined };
+  if(!best)throw new Error('保存できる画像が返りませんでした。');
+  if(edit?.plan.sourceMatchesRequest==='uncertain')notes.push('指定された被写体と元画像の一致は確認できていません。');
+  if(best.evidence&&!best.evidence.sufficientChange)notes.push('編集対象の画素に十分な変化を確認できません。背景だけの変化を被写体の修正成功とは扱っていません。');
+  if(attempts>1)notes.push('同じ元画像と条件で最大2回の候補作成を行い、比較結果に基づく候補を残しました。自動で繰り返し続ける処理はしていません。');
+  return {url:'data:image/png;base64,'+best.base64,sources:research?.sources,reference:options.referenceImage?undefined:research?.image,
+    notes,editPlan:edit?.plan,assessment:best.assessment,protectedPixelsPreserved:edit?true:undefined,changedFraction:best.changedFraction,changeEvidence:best.evidence,attempts,
+    editSource:edit?.source.toString('base64'),editMask:edit?.mask.toString('base64'),query:research?.query,referenceUsed:Boolean(reference),learned,preparedPrompt:prompt,usedEditStrength:reference?best.strength:undefined};
 }
-

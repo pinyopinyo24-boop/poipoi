@@ -131,15 +131,15 @@ export const streamingRouter = router({
               catch { output.notes = [...(output.notes ?? []), name + 'の比較用プレビューは保存できませんでした。編集結果は保存済みです。']; }
             }
             const meetsConditions = output.assessment?.changes === 'yes' && output.assessment?.preserved === 'yes' && output.assessment?.instructionCoverage === 'yes'
-              && output.editPlan?.sourceMatchesRequest === 'yes' && (output.changedFraction ?? 0) >= 0.05;
+              && output.editPlan?.sourceMatchesRequest === 'yes' && output.changeEvidence?.sufficientChange === true;
             const imageStatus = output.editPlan
-              ? meetsConditions ? '画像解析AIは変更条件と保持条件の反映を推定しました。目視での最終確認は必要です。'
+              ? meetsConditions ? '修正候補を作成しました。画素の変化と条件ごとの画像解析は参考判定です。仕上がりは未確定です。'
                 : output.assessment?.changes === 'no' || output.assessment?.preserved === 'no' || output.assessment?.instructionCoverage === 'no'
                   ? '条件を満たしていない点を画像解析AIが検出しました。修正候補として表示します。'
                   : '条件どおりに編集できたかは未確認です。修正候補として表示します。'
               : '対象との見た目の一致はまだ確認していません。';
             const answer = { id: randomUUID(), userId, role: 'assistant' as const, content: (imageRequest?.retry ? '前の条件で画像を再生成しました。' : '画像を生成しました。') + (output.referenceUsed ? previousImage ? '指定した入力画像を使って編集しています。' : '取得した参照画像を使って生成しています。' : output.sources?.length ? '取得したネット情報を説明に反映しました。参照画像は取得できませんでした。' : imageRequest?.webMode === 'off' ? 'ネット検索を使わずに生成しました。' : 'ネットの参照情報は取得できていません。') + imageStatus,
-              timestamp: Date.now(), metadata: { replyTo: input.messageId, sourceImageId, images: [{ id: image.id, name: image.name }], generated: true, referenceImages, editSourceImages, editMaskImages, imageEditPlan: output.editPlan, imageAssessment: output.assessment, protectedPixelsPreserved: output.protectedPixelsPreserved, imageConditionsEstimated: meetsConditions, webSources: output.sources, webResearch: { learned: output.learned, notes: output.notes }, imageRequest: { rootPrompt: imageRequest?.rootPrompt, prompt: imagePrompt, originalInstruction: input.message, editPlan: output.editPlan, preparedPrompt: output.preparedPrompt, headToBodyRatio: imageRequest?.headToBodyRatio, preserveAppearance: imageRequest?.preserveAppearance, retry: imageRequest?.retry, editStrength: output.usedEditStrength, query: output.query ?? imageRequest?.query, referenceUsed: output.referenceUsed } } };
+              timestamp: Date.now(), metadata: { replyTo: input.messageId, sourceImageId, images: [{ id: image.id, name: image.name }], generated: true, referenceImages, editSourceImages, editMaskImages, imageChangeEvidence: output.changeEvidence, imageGenerationAttempts: output.attempts, imageEditPlan: output.editPlan, imageAssessment: output.assessment, protectedPixelsPreserved: output.protectedPixelsPreserved, imageConditionsEstimated: meetsConditions, webSources: output.sources, webResearch: { learned: output.learned, notes: output.notes }, imageRequest: { rootPrompt: imageRequest?.rootPrompt, prompt: imagePrompt, originalInstruction: input.message, editPlan: output.editPlan, preparedPrompt: output.preparedPrompt, headToBodyRatio: imageRequest?.headToBodyRatio, preserveAppearance: imageRequest?.preserveAppearance, retry: imageRequest?.retry, editStrength: output.usedEditStrength, query: output.query ?? imageRequest?.query, referenceUsed: output.referenceUsed } } };
             await repository.saveMessage(answer, conversationId);
             return { conversationId, tokens: [answer.content], fullText: answer.content, tokenCount: 1, isImage: true, messageId: answer.id, metadata: answer.metadata };
           } finally { imageJobs.delete(userId); }

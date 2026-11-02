@@ -595,10 +595,19 @@ export default function StreamingChat() {
                         <p>残す内容：{message.metadata.imageEditPlan.preserve?.join(' ／ ') || '指定なし'}</p>
                         {message.metadata.protectedPixelsPreserved && <p>黒く示した範囲の画素は、サイズを整えた編集元から保持しました。</p>}
                       </details>}
+                      {message.metadata?.imageChangeEvidence && <details className="mt-2 text-xs">
+                        <summary>実際の画像差分（形や意味の正しさの保証ではありません）</summary>
+                        {message.metadata.imageChangeEvidence.regions?.map((region: { label: string; changedFraction: number; foregroundChangedFraction?: number }, index: number) => <p key={index}>{region.label}：編集範囲の変化 {(region.changedFraction * 100).toFixed(1)}％{region.foregroundChangedFraction !== undefined ? ' ／ 元の被写体部分の変化 ' + (region.foregroundChangedFraction * 100).toFixed(1) + '％' : ''}</p>)}
+                        <p>候補の生成回数：{message.metadata.imageGenerationAttempts ?? 1}回。画像AIの肯定だけで完成とは判定しません。</p>
+                      </details>}
                       {message.metadata?.imageAssessment && <div className="mt-2 text-xs">
                         <p>画像解析AIによる見立て（最終確認ではありません）</p>
                         <p>変更条件：{({ yes: '反映と推定', no: '不足を検出', uncertain: '未確認' } as Record<string, string>)[message.metadata.imageAssessment.changes] ?? '未確認'} ／ 保持条件：{({ yes: '反映と推定', no: '不一致を検出', uncertain: '未確認' } as Record<string, string>)[message.metadata.imageAssessment.preserved] ?? '未確認'}</p>
                         <p>元の依頼の網羅：{({ yes: '反映と推定', no: '読み落としを検出', uncertain: '未確認' } as Record<string, string>)[message.metadata.imageAssessment.instructionCoverage] ?? '未確認'}</p>
+                        {message.metadata.imageAssessment.checks?.map((check: { id: string; status: string; before: string; after: string; evidence: string }) => <details key={check.id}>
+                          <summary>{check.id.startsWith('c') ? '変更条件' : '保持条件'} {Number(check.id.slice(1)) + 1}：{({ yes: '反映と推定', no: '不足を検出', uncertain: '未確認' } as Record<string, string>)[check.status] ?? '未確認'}</summary>
+                          <p>編集前：{check.before}</p><p>編集後：{check.after}</p><p>根拠：{check.evidence}</p>
+                        </details>)}
                         <p>{message.metadata.imageAssessment.reason}</p>
                       </div>}
                       {message.metadata?.images?.map((photo: { id: string; name: string }) =>

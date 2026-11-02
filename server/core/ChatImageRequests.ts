@@ -22,7 +22,7 @@ export function resolveChatImageRequest(message: string, turns: ChatMessage[], h
   const researchedCreation = !hasAttachments && !isCodeImplementationRequest(text) && !/しない|するな|禁止|ないで|はいけない|と言われ|といわれ/.test(generationText) && /画像|がぞう|イラスト|絵|写真/.test(text) && /検索|調べ|しらべ|参考|参照/.test(text) && /生成して|せいせいして|作成して|さくせいして|作って|つくって|描いて|かいて|作り直して|描き直して/.test(text);
   const mode = /ネット.*(?:使わない|使うな)|検索しない|オフライン/.test(text) ? 'off' : /ネット|ウェブ|web|検索|調べ|しらべ|参照画像/i.test(text) ? 'required' : 'auto';
   const explicitTarget = /^(?:この|その|今の|さっきの|直前の|添付(?:した)?)(?:画像|がぞう|写真|しゃしん|絵|イラスト)/u.test(text);
-  const operationText = generationText.replace(/(?:顔|背景|服|色|表情|ポーズ|髪|体型|被写体|人物)(?:は|を)?(?:変えないで|変更しないで|そのまま(?:にして)?|保持して|保って)[、,。\s]*/gu, '');
+  const operationText = generationText.replace(/(?:顔|背景|服|衣装|マント|色|表情|ポーズ|髪|体型|被写体|人物)(?:[と・、](?:顔|背景|服|衣装|マント|色|表情|ポーズ|髪|体型|被写体|人物))*(?:は|を)?(?:変えない(?:で|まま)?|変更しない(?:で|まま)?|そのまま(?:にして)?|保持して|保って)[、,。\s]*/gu, '');
   const editAction = /変えて|かえて|変更(?:して|する)|加工(?:して|する)|編集(?:して|する)|修正して|描き直して|作り直して|直して|なおして|(?:に|く)(?:して|してください)|(?:背景|文字|人|物|服|影).*(?:消して|けして|除去|取り除いて)|切り抜いて|きりぬいて|トリミングして/u.test(operationText);
   const editFragment = /(?:に|く)(?:してください|して|してほしい)?[。！!\s]*$/u.test(operationText);
   const editingQuestion = /[?？]|教えて|おしえて|説明して|解析|分析|読み取|できますか|できるか|可能ですか|なぜ|どうして/u.test(text);
