@@ -433,6 +433,19 @@ export class PoipoiCodeAgent {
       proposals = proposal.changes;
       if (proposals.length) {
         if (proposal.readFiles?.length) throw new Error('変更案と追加ソース要求が混在しています。未確認の変更案は保存しません。');
+        const invalidNewFiles = proposals.filter(change => {
+          const file = change.path?.replace(/\\/g, "/");
+          return typeof file === "string" &&
+            /^(?:server|client\/src|shared|src|mobile\/src)\/[a-zA-Z0-9_./-]+\.[jt]sx?$/.test(file) &&
+            !existsSync(this.safePath(file)) &&
+            (change.edits !== undefined || typeof change.content !== "string");
+        });
+        if (invalidNewFiles.length) {
+          if (attempt === 1) throw new Error("AIが新規ファイルをcontent形式で生成できませんでした。変更は適用していません。");
+          followUp = "Regenerate COMPLETE changes. NEW files must use content, never edits: " +
+            invalidNewFiles.map(change => change.path).join(", ");
+          continue;
+        }
         break;
       }
       if (attempt === 1) throw new Error('AIが有効な変更案を生成できませんでした。' + (typeof proposal.reason === 'string' ? proposal.reason.slice(0, 500) : '未実装のままです。'));
