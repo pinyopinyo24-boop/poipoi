@@ -12,7 +12,7 @@ export type GenerateImageOptions = {
   editInstruction?: string; editStrength?: number; priorPrompt?: string; headToBodyRatio?: number;
   webMode?: 'auto' | 'required' | 'off'; searchQuery?: string; requireReference?: boolean;
 };
-export type GenerateImageResponse = { url?: string; sources?: WebSource[]; reference?: WebReference['image']; notes?: string[]; query?: string; referenceUsed?: boolean; learned?: boolean; preparedPrompt?: string };
+export type GenerateImageResponse = { url?: string; sources?: WebSource[]; reference?: WebReference['image']; notes?: string[]; query?: string; referenceUsed?: boolean; learned?: boolean; preparedPrompt?: string; usedEditStrength?: number };
 export async function generateImage(options: GenerateImageOptions): Promise<GenerateImageResponse> {
   const release = claimImageGeneration();
   try { return await generateImageOnce(options); } finally { release(); }
@@ -66,7 +66,7 @@ async function generateImageOnce(options: GenerateImageOptions): Promise<Generat
     if (!Number.isInteger(options.headToBodyRatio) || options.headToBodyRatio < 1 || options.headToBodyRatio > 10) throw new Error('頭身は1〜10の範囲で指定してください。');
     const proportions = 'Required proportions: entire character height equals ' + options.headToBodyRatio + ' head heights. '
       + (options.headToBodyRatio <= 4 ? 'Large head, short compact chibi body and short limbs, with requested muscularity on the compact body. ' : '');
-    prompt = proportions + prompt;
+    prompt = proportions + prompt.replace(/^Required proportions: entire character height equals (?:10|[1-9]) head heights\. (?:Large head, short compact chibi body and short limbs, with requested muscularity on the compact body\. )?/u, '');
   }
   const dimension = (value: string | undefined) => { const number = Number(value ?? 512); if (!Number.isInteger(number) || number < 256 || number > 1024 || number % 64 !== 0) throw new Error('画像サイズは256〜1024の64刻みで設定してください。'); return number; };
   const width = dimension(process.env.LOCAL_IMAGE_WIDTH), height = dimension(process.env.LOCAL_IMAGE_HEIGHT);
@@ -83,5 +83,5 @@ async function generateImageOnce(options: GenerateImageOptions): Promise<Generat
   if (typeof encoded !== 'string' || encoded.length > 7_000_000) throw new Error('有効な生成画像が返りませんでした。');
   const base64 = (await normalizeChatImage(encoded.replace(/^data:image\/(?:png|jpeg|webp);base64,/, ''))).base64;
   return { url: 'data:image/png;base64,' + base64, sources: research?.sources, reference: options.referenceImage ? undefined : research?.image,
-    notes: research?.notes, query: research?.query, referenceUsed: Boolean(reference), learned, preparedPrompt: prompt };
+    notes: research?.notes, query: research?.query, referenceUsed: Boolean(reference), learned, preparedPrompt: prompt, usedEditStrength: reference ? strength : undefined };
 }

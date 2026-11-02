@@ -1,7 +1,7 @@
 import { imageAppearanceIntent, normalizeImageEditText } from './ImageEditIntent';
 import type { ChatMessage } from '../repositories/ChatRepository';
 import { isCodeImplementationRequest } from './AZCapabilityCatalog';
-export type ImageChatRequest = { prompt: string; rootPrompt: string; query?: string; webMode: 'auto' | 'required' | 'off'; identityCorrection?: boolean; previousImageId?: string; inputImageId?: string; editInstruction?: string; editStrength?: number; priorPrompt?: string; headToBodyRatio?: number; accepted?: boolean };
+export type ImageChatRequest = { prompt: string; rootPrompt: string; query?: string; webMode: 'auto' | 'required' | 'off'; identityCorrection?: boolean; previousImageId?: string; inputImageId?: string; editInstruction?: string; editStrength?: number; priorPrompt?: string; headToBodyRatio?: number; accepted?: boolean; clarification?: string; retry?: boolean };
 function editPrompt(root: string, previous: string, instruction: string) {
   if (instruction.length > 2500) throw new Error('画像の編集指示は2500文字以内にしてください。');
   const original = root.slice(0, 1000);

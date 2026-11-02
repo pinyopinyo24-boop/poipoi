@@ -2,6 +2,8 @@
 export function normalizeImageEditText(text: string) {
   const numbers: Record<string, string> = { いち: '1', に: '2', さん: '3', よん: '4', し: '4', ご: '5', ろく: '6', なな: '7', しち: '7', はち: '8', きゅう: '9', じゅう: '10', 一: '1', 二: '2', 三: '3', 四: '4', 五: '5', 六: '6', 七: '7', 八: '8', 九: '9', 十: '10' };
   return text.normalize('NFKC')
+    .replace(/もういちど/gu, 'もう一度').replace(/もういっかい/gu, 'もう一回')
+    .replace(/せいせい/gu, '生成').replace(/しなおし/gu, 'し直し')
     .replace(/(じゅう|きゅう|いち|さん|よん|ろく|なな|しち|はち|に|し|ご|[一二三四五六七八九十])(?:とうしん|頭身|等身)/gu, (_, number: string) => numbers[number] + '頭身')
     .replace(/(\d{1,2})(?:とうしん|等身)/gu, '$1頭身')
     .replace(/たもったまま/gu, '保ったまま').replace(/むきむき/gu, 'ムキムキ').replace(/ぼでぃ[ー]?びる/gu, 'ボディビル');
