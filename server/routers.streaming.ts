@@ -1,3 +1,4 @@
+import { isCodeImplementationRequest } from './core/AZCapabilityCatalog';
 import { appendPoiPoiMemory, getPoiPoiMemoryHistory, searchPoiPoiMemory, getRecentPoiPoiMemory, getPoiPoiMemoryCacheStatus } from "./core/PoiPoiLongTermMemory";
 import { recordLearningFeedback } from "./core/LearningContextIntegration";
 import { enrichPromptWithLearning } from "./core/LearningContextIntegration";
@@ -34,8 +35,8 @@ export const streamingRouter = router({
     )
     .mutation(async ({ input, ctx }) => {
       const explicitImagePrompt = input.message.match(/^\/imagine\s+([\s\S]+)$/i)?.[1]?.trim();
-      const naturalImageRequest = !input.images?.length && !/(?:しない|するな|禁止|ないで|作ってはいけない|と言|とい|できますか|できるか)/u.test(input.message) && !/画像(?:の|を)?(?:解析|分析|説明)|読み取|(?:Excel|PDF|PowerPoint|パワーポイント|原価表)/i.test(input.message)
-        && /(?:画像|イラスト|ロゴ|絵|写真)(?:を)?(?:生成して|作成して|作って|描いて)|(?:画像生成)[：:\s]/u.test(input.message);
+      const naturalImageRequest = !input.images?.length && !isCodeImplementationRequest(input.message) && !/(?:しない|するな|禁止|ないで|はいけない|と言|とい|できますか|できるか)/u.test(input.message) && !/画像(?:の|を)?(?:解析|分析|説明)|読み取|(?:Excel|PDF|PowerPoint|パワーポイント|原価表)/i.test(input.message)
+        && /(?:画像|がぞう|イラスト|いらすと|ロゴ|絵|写真|しゃしん)\s*(?:を\s*)?(?:生成して|せいせいして|作成して|さくせいして|作って|つくって|描いて|かいて)|(?:画像生成|がぞうせいせい)[：:\s]/u.test(input.message.normalize("NFKC"));
       const imagePrompt = explicitImagePrompt || (naturalImageRequest ? input.message : null);
       if (imagePrompt && input.images?.length) throw new Error("添付写真の解析と新規画像生成は別々に依頼してください。");
 

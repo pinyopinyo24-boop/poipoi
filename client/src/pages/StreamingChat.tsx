@@ -1,3 +1,4 @@
+import { describePoiPoiChatFailure } from '@/lib/poipoiConnection';
 import AZMusicPlayer from '@/components/AZMusicPlayer';
 import AZPersonalTasksPanel from '@/components/AZPersonalTasksPanel';
 import { useState, useRef, useEffect } from "react";
@@ -272,7 +273,8 @@ export default function StreamingChat() {
       }
     } catch (error) {
       if (requestAccount.current !== sendingAccount) return;
-      const description = error instanceof Error ? error.message : "処理に失敗しました。操作は完了していません。";
+      const description = await describePoiPoiChatFailure(error);
+      if (requestAccount.current !== sendingAccount) return;
       setChatError(description);
       setInput(current => current || draft);
       const errorMessage: Message = {
