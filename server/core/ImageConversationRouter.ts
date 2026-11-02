@@ -47,6 +47,7 @@ export async function resolveImageConversationRequest(
       query: state?.query, inputImageId: source, priorPrompt: prepared,
       editInstruction: retry ? undefined : instruction, retry,
       headToBodyRatio: appearance.headToBodyRatio ?? state?.headToBodyRatio,
+      preserveAppearance: appearance.preserveAppearance || Boolean(state?.preserveAppearance),
       editStrength: retry ? (typeof state?.editStrength === 'number' ? state.editStrength : undefined) : appearance.bodybuilder ? 0.62 : appearance.muscle ? 0.55 : 0.45, webMode: 'off' };
   };
   const compact = shortReply(text);

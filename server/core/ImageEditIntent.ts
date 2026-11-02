@@ -20,6 +20,8 @@ export function imageAppearanceIntent(message: string) {
   const simpleMuscle = /^(?:(?:ボディ(?:ー)?ビル(?:ダー)?|bodybuild(?:er|ing)?)(?:みたい|のよう|風|並み)?に?\s*)?(?:ムキムキ|マッチョ|筋肉質)?に(?:して(?:ください|ほしい)?|してください)?[。！!\s]*$/iu.test(direct) && muscle;
   const ratios = [...text.matchAll(/(?:^|[^\d.])(10|[1-9])頭身/gu)];
   const headToBodyRatio = ratios.length ? Number(ratios[ratios.length - 1][1]) : undefined;
+  const preserveAppearance = /(?:姿|見た目|外見|キャラ(?:クター)?|原形|元の形|デザイン).{0,12}(?:まま|維持|保|変えず|そのまま)/u.test(text);
+  const transformation = appearance && /化(?:して(?:ください|ほしい)?)?[。！!\s]*$/u.test(text);
   const continuation = /(?:まま|維持(?:して)?|保持(?:して)?|保って|残して|変えずに|そのままで)(?:ください|お願い|おねがい)?[。！!\s]*$/u.test(text);
-  return { appearance, muscle, bodybuilder, simpleMuscle, continuation, headToBodyRatio };
+  return { appearance, muscle, bodybuilder, simpleMuscle, continuation, headToBodyRatio, preserveAppearance, transformation };
 }
