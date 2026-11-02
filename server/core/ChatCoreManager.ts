@@ -1,3 +1,5 @@
+import { researchForAZ, webResearchContext, webResearchQuery } from './AZWebKnowledge';
+import type { WebSource } from './WebImageReferences';
 import { describeLocalAIError } from '../_core/ai/LocalAIError';
 import { recordLearningFeedback } from "./LearningContextIntegration";
 import { LearningContextIntegration } from "./LearningContextIntegration";
@@ -28,6 +30,8 @@ export interface ChatMessage {
     reasoning?: string;
     confidence?: number;
     manufacturingContext?: boolean;
+    webSources?: WebSource[];
+    webResearch?: { learned?: boolean; notes?: string[]; error?: string };
   };
 }
 
@@ -194,6 +198,8 @@ export class ChatCoreManager {
         reasoning: processedResult.reasoning,
         confidence: processedResult.confidence,
         manufacturingContext: processedResult.isManufacturingRelated,
+        webSources: (context as any).webResearch?.sources,
+        webResearch: (context as any).webResearch,
       },
     };
 
@@ -387,6 +393,21 @@ export class ChatCoreManager {
       messages.unshift({ role: 'system', content:
         'AZはPoiPoiの会話・機能統合コアです。過去の会話や検索された記憶は参考情報として扱い、現在の指示と矛盾する場合は確認してください。書き込み・コード変更・外部操作を実行したと主張するのは、認証済みツールの成功結果がある場合のみです。承認が必要な操作は承認を求め、承認前に実行しないでください。PC未接続時はAndroid側のローカルAIに処理を委ね、未接続状態を成功と偽らないでください。'
       });
+      const latestGenerated = [...previous].reverse().find(turn => turn.role === 'assistant' && turn.metadata?.generated);
+      if (latestGenerated && /画像|イラスト|絵|写真|なぜ|どうして|違う|ちがう|じゃない|似て/.test(userMessage)) {
+        messages.unshift({ role: 'system', content: 'この会話には接続済みの画像生成ツールが画像を生成・保存した記録がある。画像生成能力がないという過去の説明は誤り。描かれた対象の正しさは別で、ユーザーが違うと指摘した場合は不一致を認め、参照画像や条件の修正につなぐ。対象を正確に再現できたと未確認の断定をしない。' });
+      }
+      const query = webResearchQuery(userMessage);
+      if (query) {
+        try {
+          const research = await researchForAZ(session.userId, query);
+          context.webResearch = research;
+          messages.unshift({ role: 'system', content: webResearchContext(research) + '\n出典と取得日時を示し、参考情報を根拠に回答する。実装の有無は現在のローカルツールで判断する。未対応機能は改善案として提案できるが、適用はユーザーの承認後のみ。' });
+        } catch (error) {
+          context.webResearch = { error: error instanceof Error ? error.message : String(error) };
+          messages.unshift({ role: 'system', content: '今回のネット検索は取得に失敗した。ネットで確認済み・最新情報と断定しない。一般知識で答える場合はその限界を明示する。' });
+        }
+      }
       const aiCore = getAICore() ?? await initializeAICore();
       const aiMessage = await aiCore.invoke(messages, { metadata: { userId: identitySession.userId, purpose: 'chat' } });
       if (!aiMessage?.trim()) throw new Error('AI Core returned an empty response');

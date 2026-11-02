@@ -1,4 +1,4 @@
-import { isCodeImplementationRequest } from './core/AZCapabilityCatalog';
+import { resolveChatImageRequest } from './core/ChatImageRequests';
 import { appendPoiPoiMemory, getPoiPoiMemoryHistory, searchPoiPoiMemory, getRecentPoiPoiMemory, getPoiPoiMemoryCacheStatus } from "./core/PoiPoiLongTermMemory";
 import { recordLearningFeedback } from "./core/LearningContextIntegration";
 import { enrichPromptWithLearning } from "./core/LearningContextIntegration";
@@ -34,12 +34,6 @@ export const streamingRouter = router({
       })
     )
     .mutation(async ({ input, ctx }) => {
-      const explicitImagePrompt = input.message.match(/^\/imagine\s+([\s\S]+)$/i)?.[1]?.trim();
-      const naturalImageRequest = !input.images?.length && !isCodeImplementationRequest(input.message) && !/(?:しない|するな|禁止|ないで|はいけない|と言|とい|できますか|できるか)/u.test(input.message) && !/画像(?:の|を)?(?:解析|分析|説明)|読み取|(?:Excel|PDF|PowerPoint|パワーポイント|原価表)/i.test(input.message)
-        && /(?:画像|がぞう|イラスト|いらすと|ロゴ|絵|写真|しゃしん)\s*(?:を\s*)?(?:生成して|せいせいして|作成して|さくせいして|作って|つくって|描いて|かいて)|(?:画像生成|がぞうせいせい)[：:\s]/u.test(input.message.normalize("NFKC"));
-      const imagePrompt = explicitImagePrompt || (naturalImageRequest ? input.message : null);
-      if (imagePrompt && input.images?.length) throw new Error("添付写真の解析と新規画像生成は別々に依頼してください。");
-
       // Keep the streaming response contract and existing PC UI while sharing
       // the same AZ core, identity, memory and authenticated tools as other clients.
       {
@@ -62,24 +56,49 @@ export const streamingRouter = router({
             }, conversationId);
           }
         }
+        const recentImages = await repository.getMessages(conversationId, 60);
+        const imageRequest = resolveChatImageRequest(input.message, recentImages, Boolean(input.images?.length));
+        const imagePrompt = imageRequest?.prompt;
+        if (imageRequest && input.images?.length) throw new Error('添付写真の解析と新規画像生成は別々に依頼してください。');
         if (imagePrompt) {
           if (!ctx.user) throw new Error('画像生成にはログインが必要です。');
           const previous = await repository.getMessages(conversationId, 100000);
           const cached = input.messageId ? previous.find(turn => turn.role === 'assistant' && turn.metadata?.replyTo === input.messageId) : undefined;
-          if (cached) return { conversationId, tokens: [cached.content], fullText: cached.content, tokenCount: 1, isImage: true, messageId: cached.id, metadata: cached.metadata };
+          if (cached) return { conversationId, tokens: [cached.content], fullText: cached.content, tokenCount: 1, isImage: Boolean(cached.metadata?.generated), messageId: cached.id, metadata: cached.metadata };
           if (input.messageId && previous.some(turn => turn.id === input.messageId)) throw new Error('この画像生成には中断した記録があります。新しい指示で続行してください。');
+          if (imageRequest?.accepted) {
+            const { rememberImageFeedback } = await import('./core/AZWebKnowledge');
+            const learned = await rememberImageFeedback(userId, imageRequest.rootPrompt, input.message, imageRequest.previousImageId!, true);
+            const askedAt = Date.now();
+            await repository.saveMessage({ id: input.messageId ?? randomUUID(), userId, role: 'user', content: input.message, timestamp: askedAt }, conversationId);
+            const answer = { id: randomUUID(), userId, role: 'assistant' as const, content: learned ? 'この画像でよいという評価を記憶しました。' : 'この画像でよいという評価を受け取りました。学習記録の保存は確認できませんでした。', timestamp: askedAt + 1, metadata: { replyTo: input.messageId, imageFeedback: true } };
+            await repository.saveMessage(answer, conversationId);
+            return { conversationId, tokens: [answer.content], fullText: answer.content, tokenCount: 1, isImage: false, messageId: answer.id, metadata: answer.metadata };
+          }
           if (imageJobs.has(userId)) throw new Error('画像を生成中です。完了をお待ちください。');
           imageJobs.add(userId);
           try {
             await repository.saveMessage({ id: input.messageId ?? randomUUID(), userId, role: 'user', content: input.message, timestamp: Date.now() }, conversationId);
             const { generateImage } = await import('./_core/imageGeneration');
-            const { saveChatImage } = await import('./core/ChatImageStore');
-            const output = await generateImage({ prompt: imagePrompt, userId });
+            const { saveChatImage, readChatImage } = await import('./core/ChatImageStore');
+            const previousImage = imageRequest?.previousImageId ? await readChatImage(userId, imageRequest.previousImageId) : undefined;
+            if (imageRequest?.identityCorrection || imageRequest?.previousImageId) {
+              const { rememberImageFeedback } = await import('./core/AZWebKnowledge');
+              const oldImage = [...recentImages].reverse().find(turn => turn.metadata?.generated)?.metadata?.images?.[0]?.id;
+              if (oldImage) await rememberImageFeedback(userId, imageRequest.rootPrompt, input.message, oldImage, false);
+            }
+            const output = await generateImage({ prompt: imagePrompt, userId, webMode: imageRequest?.webMode,
+              searchQuery: imageRequest?.query, requireReference: imageRequest?.identityCorrection, referenceImage: previousImage });
+            const referenceImages = [];
+            if (output.reference) {
+              const ref = await saveChatImage(userId, '参照画像.png', output.reference.base64);
+              referenceImages.push({ id: ref.id, name: ref.name, sourceUrl: output.reference.sourceUrl });
+            }
             const encoded = output.url?.match(/^data:image\/(?:png|jpeg|webp);base64,([A-Za-z0-9+/]+=*)$/)?.[1];
             if (!encoded) throw new Error('有効な生成画像が返りませんでした。');
             const image = await saveChatImage(userId, 'AZ-generated.png', encoded);
-            const answer = { id: randomUUID(), userId, role: 'assistant' as const, content: '画像を生成しました。',
-              timestamp: Date.now(), metadata: { replyTo: input.messageId, images: [{ id: image.id, name: image.name }], generated: true } };
+            const answer = { id: randomUUID(), userId, role: 'assistant' as const, content: '画像を生成しました。' + (output.referenceUsed ? previousImage ? '直前の生成画像を使って修正しています。' : '取得した参照画像を使って生成しています。' : output.sources?.length ? '取得したネット情報を説明に反映しました。参照画像は取得できませんでした。' : imageRequest?.webMode === 'off' ? 'ネット検索を使わずに生成しました。' : 'ネットの参照情報は取得できていません。') + '対象との見た目の一致はまだ確認していません。',
+              timestamp: Date.now(), metadata: { replyTo: input.messageId, images: [{ id: image.id, name: image.name }], generated: true, referenceImages, webSources: output.sources, webResearch: { learned: output.learned, notes: output.notes }, imageRequest: { rootPrompt: imageRequest?.rootPrompt, prompt: imagePrompt, query: output.query, referenceUsed: output.referenceUsed } } };
             await repository.saveMessage(answer, conversationId);
             return { conversationId, tokens: [answer.content], fullText: answer.content, tokenCount: 1, isImage: true, messageId: answer.id, metadata: answer.metadata };
           } finally { imageJobs.delete(userId); }

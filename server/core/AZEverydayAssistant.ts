@@ -1,3 +1,4 @@
+import { researchForAZ, webResearchQuery } from './AZWebKnowledge';
 import type { ChatMessage } from '../repositories/ChatRepository';
 import { addPersonalTask, changePersonalTask, listPersonalTasks } from './AZPersonalTasks';
 import { getLatestNews, getTrafficInformation, getWeatherForecast, informationTime } from './AZLiveInformation';
@@ -33,6 +34,13 @@ export async function handleEverydayRequest(request: string, userId: string | un
   const text = request.normalize('NFKC').trim();
   if (/(?:ニュース|天気|交通|タスク|音楽|リマインダー).*(?:とは|仕組み|意味)|(?:しないで|しない|するな)/u.test(text)) return undefined;
   const last = turns.at(-1)?.role === 'assistant' ? turns.at(-1)?.metadata?.everyday : undefined;
+  if (/^(?:ネット|ウェブ|Web|インターネット)(?:で|から)?.*(?:検索|調べ|しらべ)/i.test(text) && !/画像|がぞう|イラスト|写真/.test(text)) {
+    const query = webResearchQuery(text);
+    if (!query) return { answer: '検索する公開キーワードを「TypeScript」のように指定してください。会話履歴やローカルコードは検索先へ送信しません。' };
+    const research = await researchForAZ(userId, query);
+    return { answer: '「' + research.query + '」の検索結果です。\n' + research.sources.slice(0, 4).map((source, index) => (index + 1) + '. ' + source.title + '\n' + source.excerpt).join('\n\n') + (research.learned ? '\n出典と取得日時を参考情報として記憶しました。' : ''),
+      metadata: { webSources: research.sources, webResearch: { learned: research.learned, notes: research.notes } } };
+  }
   const subject = text.replace(/[「『\"]([^」』\"]*)[」』\"]/g, '');
   const news = /ニュース/.test(subject), weather = /天気|天候|天気予報/.test(subject), traffic = /交通情報|運行情報|運行状況|渋滞|通行止め|(?:電車|列車).*(?:遅れ|遅延)/.test(subject);
   const music = /(?:音楽|曲)(?:を)?(?:再生|流して|かけて|停止|止め)|音楽再生/.test(subject) || (last?.kind === 'music' && /^(?:止めて|停止して)[。！!]*$/.test(text));

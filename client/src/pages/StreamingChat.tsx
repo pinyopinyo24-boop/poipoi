@@ -493,6 +493,15 @@ export default function StreamingChat() {
                         /^https:\/\//.test(link.url) ? <a key={link.url} href={link.url} target="_blank" rel="noopener noreferrer" className="mt-1 block text-sm text-blue-700 underline">{link.label}</a> : null)}
                       {(message.metadata?.everyday?.kind === 'music' || message.metadata?.task?.steps?.some((step: { tool: string }) => step.tool === 'playMusic')) &&
                         <AZMusicPlayer accountId={accountId} action={message.metadata?.everyday?.action} />}
+                      {message.metadata?.webSources?.map((source: { title: string; url: string; retrievedAt: number }, index: number) =>
+                        /^https:\/\//.test(source.url) ? <a key={source.url + index} href={source.url} target="_blank" rel="noopener noreferrer" className="mt-1 block text-xs text-blue-700 underline">出典: {source.title}（取得 {new Date(source.retrievedAt).toLocaleString('ja-JP')}）</a> : null)}
+                      {message.metadata?.webResearch?.learned && <p className="mt-1 text-xs">出典・取得日時を参考知識として記憶しました。</p>}
+                      {message.metadata?.webResearch?.error && <p className="mt-1 text-xs text-red-700">ネット確認: {message.metadata.webResearch.error}</p>}
+                      {message.metadata?.webResearch?.notes?.map((note: string, index: number) => <p key={index} className="mt-1 text-xs">{note}</p>)}
+                      {message.metadata?.referenceImages?.map((reference: { id: string; name: string; sourceUrl: string }) => <details key={reference.id} className="mt-2 text-xs">
+                        <summary>今回の参照画像（生成画像とは別）</summary><ChatPhoto id={reference.id} name={reference.name} accountId={accountId} />
+                        {/^https:\/\//.test(reference.sourceUrl) && <a href={reference.sourceUrl} target="_blank" rel="noopener noreferrer" className="text-blue-700 underline">参照元を開く</a>}
+                      </details>)}
                       {message.metadata?.images?.map((photo: { id: string; name: string }) =>
                         <ChatPhoto key={photo.id} id={photo.id} name={photo.name} accountId={accountId} />)}
                       {message.metadata?.task && <details className="mt-2 text-xs">
@@ -502,6 +511,8 @@ export default function StreamingChat() {
                       </details>}
                       {message.metadata?.task?.steps?.map((step: { tool: string; result?: { sourceUrl?: string; roadUrl?: string } }, index: number) =>
                         step.result?.sourceUrl && /^https:\/\//.test(step.result.sourceUrl) ? <a key={index} href={step.result.sourceUrl} target="_blank" rel="noopener noreferrer" className="mt-1 block text-blue-700 underline">{step.tool}の出典を開く</a> : null)}
+                      {message.metadata?.task?.steps?.flatMap((step: { result?: { sources?: Array<{ title: string; url: string }> } }) => step.result?.sources ?? []).map((source: { title: string; url: string }, index: number) =>
+                        /^https:\/\//.test(source.url) ? <a key={index} href={source.url} target="_blank" rel="noopener noreferrer" className="mt-1 block text-xs text-blue-700 underline">検索の出典: {source.title}</a> : null)}
                       {message.metadata?.task?.documents?.map((output: { file: string; type: 'xlsx' | 'pdf' }) =>
                         <button key={output.file} className="mt-2 block text-blue-700 underline" onClick={() => downloadDocument(output.file, output.type)} disabled={exportDocument.isPending}>{output.type.toUpperCase()}をダウンロード</button>)}
                       {message.metadata?.task?.presentations?.map((id: string) =>
