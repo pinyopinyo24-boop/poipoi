@@ -1,7 +1,11 @@
+import type { ImageEditPlan } from './GroundedImageEdit';
 import { imageAppearanceIntent, normalizeImageEditText } from './ImageEditIntent';
 import type { ChatMessage } from '../repositories/ChatRepository';
 import { isCodeImplementationRequest } from './AZCapabilityCatalog';
-export type ImageChatRequest = { prompt: string; rootPrompt: string; query?: string; webMode: 'auto' | 'required' | 'off'; identityCorrection?: boolean; previousImageId?: string; inputImageId?: string; editInstruction?: string; editStrength?: number; priorPrompt?: string; headToBodyRatio?: number; preserveAppearance?: boolean; accepted?: boolean; clarification?: string; retry?: boolean };
+export type ImageChatRequest = { previousEditPlan?: ImageEditPlan; prompt: string; rootPrompt: string; query?: string; webMode: 'auto' | 'required' | 'off'; identityCorrection?: boolean; previousImageId?: string; inputImageId?: string; editInstruction?: string; editStrength?: number; priorPrompt?: string; headToBodyRatio?: number; preserveAppearance?: boolean; accepted?: boolean; clarification?: string; retry?: boolean };
+export function imageChoices(turn: ChatMessage): Array<{ id: string }> {
+  return [...(turn.metadata?.images ?? []), ...(turn.metadata?.referenceImages ?? []), ...(turn.metadata?.editSourceImages ?? [])];
+}
 function editPrompt(root: string, previous: string, instruction: string) {
   if (instruction.length > 2500) throw new Error('画像の編集指示は2500文字以内にしてください。');
   const original = root.slice(0, 1000);
@@ -26,7 +30,7 @@ export function resolveChatImageRequest(message: string, turns: ChatMessage[], h
   const otherOperation = /Excel|PDF|PowerPoint|資料|文書|文章|回答|答え|説明文|チャット|名前|記憶|人格|口調|ニュース|天気|原価|製造|在庫|予定|タスク|プログラム|印刷|メール|送信|共有|ダウンロード/i.test(text);
   if (selectedImageId && hasAttachments) throw new Error('履歴の編集対象と新しい添付写真を同時には指定できません。編集する画像を1枚選んでください。');
   const targetIndex = turns.findLastIndex(turn => (turn.role === 'user' || turn.metadata?.generated) &&
-    (selectedImageId ? turn.metadata?.images?.some((image: { id?: string }) => image.id === selectedImageId) : turn.metadata?.images?.[0]?.id));
+    (selectedImageId ? imageChoices(turn).some(image => image.id === selectedImageId) : turn.metadata?.images?.[0]?.id));
   if (selectedImageId && targetIndex < 0) throw new Error('選択した画像はこの会話にありません。画像のある会話で選び直してください。');
   const target = targetIndex >= 0 ? turns[targetIndex] : undefined;
   const appearanceIntent = imageAppearanceIntent(text);
@@ -44,7 +48,7 @@ export function resolveChatImageRequest(message: string, turns: ChatMessage[], h
     const rootPrompt = hasAttachments ? '添付画像の被写体を保ち、指定された部分を編集する。'
       : target?.metadata?.imageRequest?.rootPrompt ?? '入力画像の被写体を保ち、指定された部分を編集する。';
     const currentPrompt = hasAttachments ? rootPrompt : target?.metadata?.imageRequest?.prompt ?? rootPrompt;
-    return { rootPrompt, prompt: editPrompt(rootPrompt, currentPrompt, text),
+    return { rootPrompt, previousEditPlan: hasAttachments ? undefined : target?.metadata?.imageRequest?.editPlan, prompt: editPrompt(rootPrompt, currentPrompt, text),
       query: target?.metadata?.imageRequest?.query, inputImageId, editInstruction: text,
       priorPrompt: hasAttachments ? undefined : target?.metadata?.imageRequest?.preparedPrompt,
       preserveAppearance: appearanceIntent.preserveAppearance || (!hasAttachments && Boolean(target?.metadata?.imageRequest?.preserveAppearance)),
@@ -73,7 +77,7 @@ export function resolveChatImageRequest(message: string, turns: ChatMessage[], h
   const currentPrompt = generated.metadata?.imageRequest?.prompt ?? rootPrompt;
   if (renamedTarget) rootPrompt = renamedTarget + 'の画像を作成してください。';
   const identityCorrection = Boolean(renamedTarget) || identityLanguage;
-  return { rootPrompt, query: renamedTarget || generated.metadata?.imageRequest?.query,
+  return { rootPrompt, previousEditPlan: identityCorrection ? undefined : generated.metadata?.imageRequest?.editPlan, query: renamedTarget || generated.metadata?.imageRequest?.query,
     editInstruction: text, priorPrompt: identityCorrection ? undefined : generated.metadata?.imageRequest?.preparedPrompt,
     preserveAppearance: appearanceIntent.preserveAppearance || (!identityCorrection && Boolean(generated.metadata?.imageRequest?.preserveAppearance)),
     headToBodyRatio: appearanceIntent.headToBodyRatio ?? (identityCorrection ? undefined : generated.metadata?.imageRequest?.headToBodyRatio),
@@ -81,3 +85,4 @@ export function resolveChatImageRequest(message: string, turns: ChatMessage[], h
     webMode: identityCorrection ? (mode === 'off' ? 'off' : 'required') : mode === 'required' ? 'required' : 'off', identityCorrection,
     previousImageId: identityCorrection ? (mode === 'off' ? generated.metadata?.referenceImages?.[0]?.id : undefined) : generated.metadata.images[0].id };
 }
+

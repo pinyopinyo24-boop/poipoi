@@ -105,8 +105,8 @@ export const streamingRouter = router({
               const oldImage = [...recentImages].reverse().find(turn => turn.metadata?.generated)?.metadata?.images?.[0]?.id;
               if (oldImage) await rememberImageFeedback(userId, imageRequest.rootPrompt, input.message, oldImage, false).catch(error => console.warn('[PoiPoi] Image feedback was not saved:', error));
             }
-            const output = await generateImage({ prompt: imagePrompt, userId, webMode: imageRequest?.webMode,
-              searchQuery: imageRequest?.query, requireReference: imageRequest?.identityCorrection, referenceImage: previousImage, editInstruction: imageRequest?.editInstruction, editStrength: imageRequest?.editStrength, priorPrompt: imageRequest?.priorPrompt, headToBodyRatio: imageRequest?.headToBodyRatio, preserveAppearance: imageRequest?.preserveAppearance });
+            const output = await generateImage({ prompt: imagePrompt, rootPrompt: imageRequest?.rootPrompt, userId, webMode: imageRequest?.webMode,
+              searchQuery: imageRequest?.query, requireReference: imageRequest?.identityCorrection, referenceImage: previousImage, editInstruction: imageRequest?.editInstruction, editStrength: imageRequest?.editStrength, priorPrompt: imageRequest?.priorPrompt, previousEditPlan: imageRequest?.previousEditPlan, headToBodyRatio: imageRequest?.headToBodyRatio, preserveAppearance: imageRequest?.preserveAppearance });
             const encoded = output.url?.match(/^data:image\/(?:png|jpeg|webp);base64,([A-Za-z0-9+/]+=*)$/)?.[1];
             if (!encoded) throw new Error('有効な生成画像が返りませんでした。');
             const image = await saveChatImage(userId, 'AZ-generated.png', encoded);
@@ -119,8 +119,26 @@ export const streamingRouter = router({
                 output.notes = [...(output.notes ?? []), '生成画像は保存しましたが、参照画像の保存に失敗しました。'];
               }
             }
-            const answer = { id: randomUUID(), userId, role: 'assistant' as const, content: (imageRequest?.retry ? '前の条件で画像を再生成しました。' : '画像を生成しました。') + (output.referenceUsed ? previousImage ? '指定した入力画像を使って編集しています。' : '取得した参照画像を使って生成しています。' : output.sources?.length ? '取得したネット情報を説明に反映しました。参照画像は取得できませんでした。' : imageRequest?.webMode === 'off' ? 'ネット検索を使わずに生成しました。' : 'ネットの参照情報は取得できていません。') + '対象との見た目の一致はまだ確認していません。',
-              timestamp: Date.now(), metadata: { replyTo: input.messageId, sourceImageId, images: [{ id: image.id, name: image.name }], generated: true, referenceImages, webSources: output.sources, webResearch: { learned: output.learned, notes: output.notes }, imageRequest: { rootPrompt: imageRequest?.rootPrompt, prompt: imagePrompt, preparedPrompt: output.preparedPrompt, headToBodyRatio: imageRequest?.headToBodyRatio, preserveAppearance: imageRequest?.preserveAppearance, retry: imageRequest?.retry, editStrength: output.usedEditStrength, query: output.query ?? imageRequest?.query, referenceUsed: output.referenceUsed } } };
+            const editSourceImages: Array<{ id: string; name: string }> = [];
+            const editMaskImages: Array<{ id: string; name: string }> = [];
+            for (const [encodedPreview, name, destination] of [
+              [output.editSource, '今回の編集元.png', editSourceImages],
+              [output.editMask, '編集範囲.png', editMaskImages],
+            ] as const) {
+              if (!encodedPreview) continue;
+              try { const saved = await saveChatImage(userId, name, encodedPreview); destination.push({ id: saved.id, name: saved.name }); }
+              catch { output.notes = [...(output.notes ?? []), name + 'の比較用プレビューは保存できませんでした。編集結果は保存済みです。']; }
+            }
+            const meetsConditions = output.assessment?.changes === 'yes' && output.assessment?.preserved === 'yes' && output.assessment?.instructionCoverage === 'yes'
+              && output.editPlan?.sourceMatchesRequest === 'yes' && (output.changedFraction ?? 0) >= 0.05;
+            const imageStatus = output.editPlan
+              ? meetsConditions ? '画像解析AIは変更条件と保持条件の反映を推定しました。目視での最終確認は必要です。'
+                : output.assessment?.changes === 'no' || output.assessment?.preserved === 'no' || output.assessment?.instructionCoverage === 'no'
+                  ? '条件を満たしていない点を画像解析AIが検出しました。修正候補として表示します。'
+                  : '条件どおりに編集できたかは未確認です。修正候補として表示します。'
+              : '対象との見た目の一致はまだ確認していません。';
+            const answer = { id: randomUUID(), userId, role: 'assistant' as const, content: (imageRequest?.retry ? '前の条件で画像を再生成しました。' : '画像を生成しました。') + (output.referenceUsed ? previousImage ? '指定した入力画像を使って編集しています。' : '取得した参照画像を使って生成しています。' : output.sources?.length ? '取得したネット情報を説明に反映しました。参照画像は取得できませんでした。' : imageRequest?.webMode === 'off' ? 'ネット検索を使わずに生成しました。' : 'ネットの参照情報は取得できていません。') + imageStatus,
+              timestamp: Date.now(), metadata: { replyTo: input.messageId, sourceImageId, images: [{ id: image.id, name: image.name }], generated: true, referenceImages, editSourceImages, editMaskImages, imageEditPlan: output.editPlan, imageAssessment: output.assessment, protectedPixelsPreserved: output.protectedPixelsPreserved, imageConditionsEstimated: meetsConditions, webSources: output.sources, webResearch: { learned: output.learned, notes: output.notes }, imageRequest: { rootPrompt: imageRequest?.rootPrompt, prompt: imagePrompt, originalInstruction: input.message, editPlan: output.editPlan, preparedPrompt: output.preparedPrompt, headToBodyRatio: imageRequest?.headToBodyRatio, preserveAppearance: imageRequest?.preserveAppearance, retry: imageRequest?.retry, editStrength: output.usedEditStrength, query: output.query ?? imageRequest?.query, referenceUsed: output.referenceUsed } } };
             await repository.saveMessage(answer, conversationId);
             return { conversationId, tokens: [answer.content], fullText: answer.content, tokenCount: 1, isImage: true, messageId: answer.id, metadata: answer.metadata };
           } finally { imageJobs.delete(userId); }
@@ -431,3 +449,4 @@ export const streamingRouter = router({
       };
     }),
 });
+

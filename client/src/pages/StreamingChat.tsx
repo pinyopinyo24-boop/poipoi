@@ -575,9 +575,30 @@ export default function StreamingChat() {
                       {message.metadata?.webResearch?.error && <p className="mt-1 text-xs text-red-700">ネット確認: {message.metadata.webResearch.error}</p>}
                       {message.metadata?.webResearch?.notes?.map((note: string, index: number) => <p key={index} className="mt-1 text-xs">{note}</p>)}
                       {message.metadata?.referenceImages?.map((reference: { id: string; name: string; sourceUrl: string }) => <details key={reference.id} className="mt-2 text-xs">
-                        <summary>今回の参照画像（生成画像とは別）</summary><ChatPhoto id={reference.id} name={reference.name} accountId={accountId} />
+                        <summary>今回の参照画像（生成画像とは別・ここから編集できます）</summary><ChatPhoto id={reference.id} name={reference.name} accountId={accountId}
+                          disabled={isLoading || isUploading || isPasting || authLoading} onEdit={() => { setEditTarget({ id: reference.id, name: reference.name }); setChatError(''); }} />
                         {/^https:\/\//.test(reference.sourceUrl) && <a href={reference.sourceUrl} target="_blank" rel="noopener noreferrer" className="text-blue-700 underline">参照元を開く</a>}
                       </details>)}
+                      {message.metadata?.editSourceImages?.map((photo: { id: string; name: string }) => <details key={photo.id} className="mt-2 text-xs">
+                        <summary>今回の編集元（生成結果とは別）</summary>
+                        <ChatPhoto id={photo.id} name={photo.name} accountId={accountId} disabled={isLoading || isUploading || isPasting || authLoading}
+                          onEdit={() => { setEditTarget({ id: photo.id, name: photo.name }); setChatError(''); }} />
+                      </details>)}
+                      {message.metadata?.editMaskImages?.map((photo: { id: string; name: string }) => <details key={photo.id} className="mt-2 text-xs">
+                        <summary>編集範囲（白が編集・黒が保護）</summary><ChatPhoto id={photo.id} name={photo.name} accountId={accountId} />
+                      </details>)}
+                      {message.metadata?.imageEditPlan && <details className="mt-2 text-xs">
+                        <summary>AZが読み取った変更・保持条件</summary>
+                        <p>変える内容：{message.metadata.imageEditPlan.change?.join(' ／ ')}</p>
+                        <p>残す内容：{message.metadata.imageEditPlan.preserve?.join(' ／ ') || '指定なし'}</p>
+                        {message.metadata.protectedPixelsPreserved && <p>黒く示した範囲の画素は、サイズを整えた編集元から保持しました。</p>}
+                      </details>}
+                      {message.metadata?.imageAssessment && <div className="mt-2 text-xs">
+                        <p>画像解析AIによる見立て（最終確認ではありません）</p>
+                        <p>変更条件：{({ yes: '反映と推定', no: '不足を検出', uncertain: '未確認' } as Record<string, string>)[message.metadata.imageAssessment.changes] ?? '未確認'} ／ 保持条件：{({ yes: '反映と推定', no: '不一致を検出', uncertain: '未確認' } as Record<string, string>)[message.metadata.imageAssessment.preserved] ?? '未確認'}</p>
+                        <p>元の依頼の網羅：{({ yes: '反映と推定', no: '読み落としを検出', uncertain: '未確認' } as Record<string, string>)[message.metadata.imageAssessment.instructionCoverage] ?? '未確認'}</p>
+                        <p>{message.metadata.imageAssessment.reason}</p>
+                      </div>}
                       {message.metadata?.images?.map((photo: { id: string; name: string }) =>
                         <ChatPhoto key={photo.id} id={photo.id} name={photo.name} accountId={accountId}
                           disabled={isLoading || isUploading || isPasting || authLoading}
@@ -798,3 +819,4 @@ export default function StreamingChat() {
     </div>
   );
 }
+

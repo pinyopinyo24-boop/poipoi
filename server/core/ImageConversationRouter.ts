@@ -2,7 +2,7 @@ import type { ConversationUnderstanding } from './AZConversationUnderstanding';
 import type { ChatMessage } from '../repositories/ChatRepository';
 import { invokeLLM } from '../_core/llm';
 import { isCodeImplementationRequest } from './AZCapabilityCatalog';
-import { resolveChatImageRequest, type ImageChatRequest } from './ChatImageRequests';
+import { resolveChatImageRequest, imageChoices, type ImageChatRequest } from './ChatImageRequests';
 import { normalizeImageEditText, imageAppearanceIntent } from './ImageEditIntent';
 
 const unrelated = /Excel|PDF|PowerPoint|資料|文書|文章|回答|答え|説明文|チャット|名前|記憶|人格|口調|ニュース|天気|原価|製造|在庫|予定|タスク|コード|プログラム|印刷|メール|送信|共有|ダウンロード/i;
@@ -42,7 +42,7 @@ function imageFromUnderstanding(value: ConversationUnderstanding, turns: ChatMes
   const retry = value.act === 'retry';
   const source = retry && !selectedImageId && !attachmentIds.length && target?.metadata?.generated
     ? target.metadata.sourceImageId ?? target.metadata.referenceImages?.[0]?.id : currentImageId;
-  return { prompt: retry ? (state?.preparedPrompt ?? value.resolvedRequest) : value.resolvedRequest,
+  return { previousEditPlan: state?.editPlan, prompt: retry ? (state?.preparedPrompt ?? value.resolvedRequest) : value.resolvedRequest,
     rootPrompt, query: state?.query, inputImageId: source,
     priorPrompt: state?.preparedPrompt, editInstruction: retry ? undefined : value.resolvedRequest, retry,
     headToBodyRatio: shape.headToBodyRatio ?? state?.headToBodyRatio,
@@ -66,7 +66,7 @@ export async function resolveImageConversationRequest(
   if (/説明|解析|分析|読み取|何が|なにが|何色|誰|だれ|どこに|写って/u.test(text) && !/生成|編集|加工|作り直|描き直/.test(text)) return direct;
   if (attachmentIds.length || direct?.accepted || direct?.identityCorrection || isCodeImplementationRequest(text) || unrelated.test(text)) return direct;
   const index = turns.findLastIndex(turn => (turn.role === 'user' || turn.metadata?.generated) &&
-    (selectedImageId ? turn.metadata?.images?.some((image: { id?: string }) => image.id === selectedImageId) : turn.metadata?.images?.[0]?.id));
+    (selectedImageId ? imageChoices(turn).some(image => image.id === selectedImageId) : turn.metadata?.images?.[0]?.id));
   if (index < 0) return direct;
   const target = turns[index];
   if (!selectedImageId && !/画像|がぞう|写真|しゃしん|イラスト|絵/.test(text) &&
@@ -87,7 +87,7 @@ export async function resolveImageConversationRequest(
     const source = retry && !selectedImageId
       ? (typeof target.metadata?.sourceImageId === 'string' ? target.metadata.sourceImageId : target.metadata?.referenceImages?.[0]?.id)
       : imageId;
-    return { rootPrompt, prompt: retry ? currentPrompt.slice(0, 4000) : rootPrompt.slice(0, 1000) + '\n今回の修正: ' + instruction,
+    return { rootPrompt, previousEditPlan: state?.editPlan, prompt: retry ? currentPrompt.slice(0, 4000) : rootPrompt.slice(0, 1000) + '\n今回の修正: ' + instruction,
       query: state?.query, inputImageId: source, priorPrompt: prepared,
       editInstruction: retry ? undefined : instruction, retry,
       headToBodyRatio: appearance.headToBodyRatio ?? state?.headToBodyRatio,
@@ -123,3 +123,4 @@ export async function resolveImageConversationRequest(
   }
   return clarify('画像の追加指示か別の質問かを判定できませんでした。画像を直す場合は変更内容を、同じ条件で作り直す場合は「もう一度」と送ってください。');
 }
+
