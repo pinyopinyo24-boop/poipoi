@@ -107,11 +107,10 @@ export class PoipoiCodeAgent {
   }
 
   private extractJson(text: string): GeneratedCodeProposal {
-    const cleaned = text
-      .replace(/```json/gi, "")
-      .replace(/```typescript/gi, "")
-      .replace(/```ts/gi, "")
-      .replace(/```/g, "")
+    // Remove only an outer Markdown fence, preserving fences inside source strings.
+    const cleaned = text.trim()
+      .replace(/^```(?:json|typescript|ts)?[ \t]*\r?\n/i, "")
+      .replace(/\r?\n```[ \t]*$/, "")
       .trim();
 
     const start = cleaned.indexOf("{");
@@ -187,7 +186,7 @@ export class PoipoiCodeAgent {
     // than a path. Never run project code or expose configuration/secrets.
     // Route from the actual request, not from the generic evolution instructions.
     const intent = task.split("\n現在のユーザー依頼:\n")[1]?.split("\n直前の参考会話")[0] ?? task;
-    const explicit = intent.match(/(?:server|mobile|client|shared|src)\/[a-zA-Z0-9_./-]+\.(?:ts|tsx|js|jsx)/g) ?? [];
+    const explicit = intent.replace(/\\/g, "/").match(/(?:server|mobile|client|shared|src)\/[a-zA-Z0-9_./-]+\.(?:tsx?|jsx?)\b/g) ?? [];
     const tokens: string[] = intent.normalize('NFKC').toLowerCase().match(/[a-z][a-z0-9_-]{2,}/g) ?? [];
     const hints = [
       [/ネット|ウェブ|検索|画像|イラスト|参照/, ['azwebknowledge', 'webimagereferences', 'publicwebresource', 'chatimagerequests', 'imagegeneration', 'routers.streaming']],
@@ -212,8 +211,8 @@ export class PoipoiCodeAgent {
         }
       }
     };
-    for (const directory of ['server', 'client/src', 'shared']) {
-      const full = resolve(this.root, directory);
+    for (const directory of ['server', 'client/src', 'shared', 'src', 'mobile/src']) {
+      const full = this.safePath(directory);
       if (existsSync(full)) walk(full);
     }
     const ranked = candidates.map(file => ({ file, score: tokens.reduce((sum, token) =>
@@ -361,7 +360,10 @@ export class PoipoiCodeAgent {
 
     let proposals: GeneratedCodeChange[] = [];
     let followUp = '';
-    for (let attempt = 0; attempt < 2; attempt++) {
+    let sourceReadUsed = false;
+    let formatRetryUsed = false;
+    // One source request and one format correction share the existing deadline.
+    for (let attempt = 0; attempt < 3; attempt++) {
       const prompt = buildPrompt(followUp);
       const response = await callCoder(attempt ? "追加確認後のコード再生成" : "コード生成", { userId, timeoutMs,
       // prompt already contains the source context; do not count it twice.
@@ -431,7 +433,19 @@ export class PoipoiCodeAgent {
       throw new Error("LLM returned empty response");
     }
 
-      const proposal = this.extractJson(content);
+      let proposal: GeneratedCodeProposal;
+      try {
+        proposal = this.extractJson(content);
+      } catch (error) {
+        if (formatRetryUsed) throw error;
+        formatRetryUsed = true;
+        proposals = [];
+        followUp = "The previous response was not a valid code proposal. Return valid JSON with a changes array. NEW files require complete non-empty content without edits; EXISTING files require exact edits from reviewed source. Regenerate the complete requested change set.";
+        continue;
+      }
+      if (proposal.readFiles !== undefined && !Array.isArray(proposal.readFiles)) {
+        throw new Error('追加ソースの要求形式が不正です。');
+      }
       proposals = proposal.changes;
       if (proposals.length) {
         if (proposal.readFiles?.length) throw new Error('変更案と追加ソース要求が混在しています。未確認の変更案は保存しません。');
@@ -440,17 +454,21 @@ export class PoipoiCodeAgent {
           return typeof file === "string" &&
             /^(?:server|client\/src|shared|src|mobile\/src)\/[a-zA-Z0-9_./-]+\.[jt]sx?$/.test(file) &&
             !existsSync(this.safePath(file)) &&
-            (change.edits !== undefined || typeof change.content !== "string");
+            (change.edits !== undefined || typeof change.content !== "string" || !change.content.trim());
         });
         if (invalidNewFiles.length) {
-          if (attempt === 1) throw new Error("AIが新規ファイルをcontent形式で生成できませんでした。変更は適用していません。");
-          followUp = "Regenerate COMPLETE changes. NEW files must use content, never edits: " +
-            invalidNewFiles.map(change => change.path).join(", ");
+          if (formatRetryUsed) throw new Error("AIが新規ファイルをcontent形式で生成できませんでした。変更は適用していません。");
+          formatRetryUsed = true;
+          followUp = "Regenerate COMPLETE changes. These NEW files do not exist and have no oldText: " +
+            JSON.stringify(invalidNewFiles.map(change => change.path)) +
+            ". Return non-empty complete content and omit edits for each NEW file. Preserve all requested functionality and use exact reviewed edits for existing files.";
+          proposals = [];
           continue;
         }
         break;
       }
-      if (attempt === 1) throw new Error('AIが有効な変更案を生成できませんでした。' + (typeof proposal.reason === 'string' ? proposal.reason.slice(0, 500) : '未実装のままです。'));
+      if (sourceReadUsed) throw new Error('AIが有効な変更案を生成できませんでした。' + (typeof proposal.reason === 'string' ? proposal.reason.slice(0, 500) : '未実装のままです。'));
+      sourceReadUsed = true;
       const requests: NonNullable<GeneratedCodeProposal['readFiles']> = proposal.readFiles?.length ? proposal.readFiles : inventory
         .filter(file => !sourceContents.has(file)).slice(0, 2).map(path => ({ path }));
       if (!Array.isArray(requests) || requests.length > 3) throw new Error('追加ソースの要求件数が不正です。');
@@ -464,6 +482,7 @@ export class PoipoiCodeAgent {
       if (!added) throw new Error('AIが変更案を作成できず、追加で確認できるソースもありません。未実装です。');
       followUp = 'The previous response produced no changes. Additional requested source is now included. Implement the complete user request with exact edits and new modules as needed. Do not treat the catalogue saying unsupported as a prohibition on implementing a feature. Do not replace the request with only a help-text change. If still blocked, provide a concrete reason.';
     }
+    if (!proposals.length) throw new Error("AIが有効な変更案を生成できませんでした。変更は適用していません。");
     const generated: CodeChange[] = [];
     if (proposals.length > 5) throw new Error("Generated changes exceed the five-file safety limit");
     const allowed = new Set(sourceContents.keys());
