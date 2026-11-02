@@ -332,6 +332,8 @@ export class PoipoiCodeAgent {
       "Make the minimum necessary file changes.",
       "For existing files, return compact exact-text edits, never copy the entire file. Each oldText must occur exactly once in that supplied file. Apply edits in array order. Include sufficient unchanged text in oldText to identify a unique location.",
       "For new files only, return complete content. Never return both edits and content for one path. Do not omit requested functionality or return placeholder implementations.",
+      "Requested paths that do not exist (CREATE with content, never edits):",
+      JSON.stringify([...new Set(explicit)].filter(file => !existsSync(this.safePath(file)))),
       "First reason about dependencies and preserve all existing exports. Wire user-facing features into reviewed entry points when requested. For an explicitly requested standalone module, respect its requested path and do not invent entry-point changes.",
       "Do not fabricate unknown source. If you need more context, return changes:[] and readFiles:[{path,startLine,endLine}]. Request specific inventory paths and up to 200 lines per read. The host will read source without executing it. Explain a blocker in reason if implementation is impossible; an empty changes array is not success.",
       "Only edit exact text from supplied existing source excerpts. You may also CREATE new TypeScript/JavaScript source files under server/, client/src/, shared/, src/ or mobile/src/ when necessary. Never replace an existing file whose content is absent. Connect new exports to the existing implementation; preserve compatibility.",
@@ -361,7 +363,7 @@ export class PoipoiCodeAgent {
     let followUp = '';
     for (let attempt = 0; attempt < 2; attempt++) {
       const prompt = buildPrompt(followUp);
-      const response = await callCoder(attempt ? "追加ソース確認後のコード生成" : "コード生成", { userId, timeoutMs,
+      const response = await callCoder(attempt ? "追加確認後のコード再生成" : "コード生成", { userId, timeoutMs,
       // prompt already contains the source context; do not count it twice.
       contextWindow: contextFor(prompt.length + 8192),
       max_tokens: 4096,
@@ -433,6 +435,21 @@ export class PoipoiCodeAgent {
       proposals = proposal.changes;
       if (proposals.length) {
         if (proposal.readFiles?.length) throw new Error('変更案と追加ソース要求が混在しています。未確認の変更案は保存しません。');
+        const invalidNewPaths = proposals
+          .filter(change => {
+            const file = change.path.replace(/\\/g, "/");
+            return /^(?:server|client\/src|shared|src|mobile\/src)\/[a-zA-Z0-9_./-]+\.[jt]sx?$/.test(file)
+              && !existsSync(this.safePath(file))
+              && (change.edits !== undefined || typeof change.content !== "string" || !change.content.trim());
+          })
+          .map(change => change.path);
+        if (invalidNewPaths.length) {
+          if (attempt === 1) throw new Error("AIが新規ファイルをcontent形式で生成できませんでした。変更は適用していません。");
+          followUp = "The previous proposal used an invalid format for NEW files: " + JSON.stringify(invalidNewPaths)
+            + ". These files do not exist and have no oldText to edit. Regenerate the complete change set. For every new file return non-empty complete content and omit edits entirely. Do not invent existing source or drop requested functionality. Existing-file edits must still match reviewed source.";
+          proposals = [];
+          continue;
+        }
         break;
       }
       if (attempt === 1) throw new Error('AIが有効な変更案を生成できませんでした。' + (typeof proposal.reason === 'string' ? proposal.reason.slice(0, 500) : '未実装のままです。'));
