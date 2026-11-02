@@ -1,3 +1,4 @@
+import { imageAppearanceIntent, normalizeImageEditText } from './ImageEditIntent';
 import type { ChatMessage } from '../repositories/ChatRepository';
 import { isCodeImplementationRequest } from './AZCapabilityCatalog';
 export type ImageChatRequest = { prompt: string; rootPrompt: string; query?: string; webMode: 'auto' | 'required' | 'off'; identityCorrection?: boolean; previousImageId?: string; inputImageId?: string; editInstruction?: string; editStrength?: number; accepted?: boolean };
@@ -9,7 +10,7 @@ function editPrompt(root: string, previous: string, instruction: string) {
 }
 /** Resolve only this session's image context; another task must not become an image edit. */
 export function resolveChatImageRequest(message: string, turns: ChatMessage[], hasAttachments: boolean, attachmentIds: string[] = [], selectedImageId?: string): ImageChatRequest | undefined {
-  const text = message.normalize('NFKC').split(/\n添付写真:/u)[0].trim();
+  const text = normalizeImageEditText(message).split(/\n添付写真:/u)[0].trim();
   const explicit = text.match(/^\/imagine\s+([\s\S]+)$/i)?.[1]?.trim();
   const generationText = text.replace(/(?:ネット|ウェブ|Web|インターネット)(?:を)?(?:使わない(?:で)?|使うな)|(?:ネット)?検索しない(?:で)?|オフライン(?:で)?/gi, '');
   const create = !hasAttachments && !isCodeImplementationRequest(text) && !/しない|するな|禁止|ないで|はいけない|(?:と(?:言|い)(?:われ|った|って))|できますか|できるか/.test(generationText) && !/画像(?:の|を)?(?:解析|分析|説明)|読み取|Excel|PDF|PowerPoint|原価表/i.test(text)
@@ -28,7 +29,10 @@ export function resolveChatImageRequest(message: string, turns: ChatMessage[], h
     (selectedImageId ? turn.metadata?.images?.some((image: { id?: string }) => image.id === selectedImageId) : turn.metadata?.images?.[0]?.id));
   if (selectedImageId && targetIndex < 0) throw new Error('選択した画像はこの会話にありません。画像のある会話で選び直してください。');
   const target = targetIndex >= 0 ? turns[targetIndex] : undefined;
-  const identityLanguage = /じゃない|ではない|じゃなく|ではなく|似てない|似ていない|別人|違うキャラ|ちがう/.test(text) && !/背景|色|表情|服|ポーズ|体型|髪|目|鼻/.test(text);
+  const appearanceIntent = imageAppearanceIntent(text);
+  const replacement = text.match(/^(.*?)(?:じゃなく|ではなく)/u);
+  const explicitSubjectReplacement = Boolean(replacement && !imageAppearanceIntent(replacement[1]).appearance);
+  const identityLanguage = explicitSubjectReplacement || /別人|(?:違う|ちがう)(?:キャラ|人物|被写体)|(?:人物|キャラ(?:クター)?|被写体)(?:が|は|自体が)?(?:違う|ちがう)/.test(text) || (/じゃない|ではない|似てない|似ていない/.test(text) && !appearanceIntent.appearance);
   const changedTopic = target ? turns.slice(targetIndex + 1).some(turn => turn.role === 'user' && /ニュース|天気|原価|製造|在庫|予定|タスク|コード|プログラム/.test(turn.content)) : false;
   if (!explicit && !isCodeImplementationRequest(text) && !editingQuestion && !forbiddenEdit && !otherOperation && (!identityLanguage || selectedImageId || hasAttachments) &&
       (editAction || editFragment || (selectedImageId && identityLanguage) || ((hasAttachments || selectedImageId || explicitTarget) && /生成して|せいせいして|作成して|さくせいして|作って|つくって|描いて|かいて|風(?:で|に)?[。！!\s]*$/u.test(text))) && (hasAttachments || selectedImageId || explicitTarget || (target && !changedTopic && targetIndex >= turns.length - 6))) {
@@ -41,7 +45,7 @@ export function resolveChatImageRequest(message: string, turns: ChatMessage[], h
     const currentPrompt = hasAttachments ? rootPrompt : target?.metadata?.imageRequest?.prompt ?? rootPrompt;
     return { rootPrompt, prompt: editPrompt(rootPrompt, currentPrompt, text),
       query: target?.metadata?.imageRequest?.query, inputImageId, editInstruction: text,
-      editStrength: /ムキムキ|筋肉|マッチョ|体型|太く|細く|大きく|小さく|ポーズ/u.test(text) ? 0.55 : 0.45,
+      editStrength: appearanceIntent.bodybuilder ? 0.62 : appearanceIntent.muscle || /体型|太く|細く|大きく|小さく|ポーズ/u.test(text) ? 0.55 : 0.45,
       webMode: mode === 'required' ? 'required' : 'off' };
   }
   if (explicit || create || researchedCreation) return { prompt: explicit || text, rootPrompt: explicit || text, webMode: mode };
@@ -64,9 +68,9 @@ export function resolveChatImageRequest(message: string, turns: ChatMessage[], h
   const renamedTarget = text.match(/(?:じゃなく|ではなく)(?:て)?(.{1,80}?)(?:に(?:して|変更)|(?:の)?画像|を(?:描|作)|[。！!]*$)/)?.[1]?.trim();
   const currentPrompt = generated.metadata?.imageRequest?.prompt ?? rootPrompt;
   if (renamedTarget) rootPrompt = renamedTarget + 'の画像を作成してください。';
-  const identityCorrection = Boolean(renamedTarget) || /じゃない|ではない|じゃなく|ではなく|似てない|似ていない|別人|違うキャラ|ちがう/.test(text);
+  const identityCorrection = Boolean(renamedTarget) || identityLanguage;
   return { rootPrompt, query: renamedTarget || generated.metadata?.imageRequest?.query,
     prompt: editPrompt(rootPrompt, currentPrompt, text + (renamedTarget ? '\n対象を「' + renamedTarget + '」に変更してください。' : '\n元の対象を保ち、前の誤った見た目を修正してください。')),
-    webMode: mode === 'off' ? 'off' : identityCorrection ? 'required' : mode, identityCorrection,
-    previousImageId: identityCorrection ? (mode === 'off' ? generated.metadata?.referenceImages?.[0]?.id : undefined) : mode === 'required' ? undefined : generated.metadata.images[0].id };
+    webMode: identityCorrection ? (mode === 'off' ? 'off' : 'required') : mode === 'required' ? 'required' : 'off', identityCorrection,
+    previousImageId: identityCorrection ? (mode === 'off' ? generated.metadata?.referenceImages?.[0]?.id : undefined) : generated.metadata.images[0].id };
 }

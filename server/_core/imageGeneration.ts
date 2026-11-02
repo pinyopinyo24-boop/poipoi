@@ -1,3 +1,4 @@
+import { imageAppearanceIntent } from '../core/ImageEditIntent';
 /** Local image generation with optional public research and actual image conditioning. */
 import { claimImageGeneration, checkImageEngine, readImageEngineJSON } from './ImageEngineClient';
 import { normalizeChatImage } from '../core/ChatImageStore';
@@ -40,9 +41,11 @@ async function generateImageOnce(options: GenerateImageOptions): Promise<Generat
   const inputReference = options.referenceImage ?? research?.image;
   const reference = inputReference ? await normalizeChatImage(inputReference.base64, true) : undefined;
   if (options.requireReference && !reference) throw new Error('対象の参照画像を取得できず、見た目を確認できませんでした。参照する公開ページのURLを指定してください。');
-  const muscularEdit = Boolean(reference) && /^(?:(?:この|その|今の|さっきの|直前の|添付(?:した)?)(?:画像|写真|絵|イラスト)(?:を|は)?\s*)?(?:もっと|さらに)?(?:ムキムキ|マッチョ|筋肉質)に(?:して(?:ください|ほしい)?|してください)?[。！!\s]*$/u.test((options.editInstruction ?? '').normalize('NFKC').trim());
+  const appearanceIntent = imageAppearanceIntent(options.editInstruction ?? '');
+  const muscularEdit = Boolean(reference) && appearanceIntent.simpleMuscle;
   if (muscularEdit && options.webMode !== 'required') {
-    prompt = 'Edit the supplied reference image. Preserve the same subject, recognizable face, head, outfit colors and background unless explicitly changed. Make the body visibly very muscular: broad shoulders, large chest, thick powerful arms and well-defined biceps. Keep the subject clothed. Show the full muscular upper body. Keep the original illustration or photo style.';
+    prompt = 'Edit the supplied reference image. Preserve the same subject, recognizable face, head, outfit colors and background unless explicitly changed. Make the body visibly very muscular: broad shoulders, large chest, thick powerful arms and well-defined biceps. Keep the subject clothed. Show the full muscular upper body. Keep the original illustration or photo style.'
+      + (appearanceIntent.bodybuilder ? ' Competitive bodybuilder physique, extremely developed deltoids, pectorals, biceps and triceps, dramatic V-shaped torso, much larger muscles than the input image. Keep the original character head and face.' : '');
   }
   if ((!muscularEdit || options.webMode === 'required') && (/[\u3040-\u30ff\u3400-\u9fff]/u.test(prompt) || research?.sources.length)) {
     const facts = research?.sources.slice(0, 3).map(source => ({ title: source.title, excerpt: source.excerpt.slice(0, 600), url: source.url })) ?? [];
