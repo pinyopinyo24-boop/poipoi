@@ -1,6 +1,6 @@
 import { describePoiPoiChatFailure } from '@/lib/poipoiConnection';
 import AZMusicPlayer from '@/components/AZMusicPlayer';
-import AZPersonalTasksPanel from '@/components/AZPersonalTasksPanel';
+import AZPersonalTasksPanel, { AZPersonalReminderObserver } from '@/components/AZPersonalTasksPanel';
 import { useState, useRef, useEffect } from "react";
 import { loadConversations, saveConversations, createConversation } from "@/lib/poipoiChatHistory";
 import { useLocation } from "wouter";
@@ -96,6 +96,9 @@ export default function StreamingChat() {
   const [isLoading, setIsLoading] = useState(false);
   const [showMultimodal, setShowMultimodal] = useState(false);
   const [showAuxiliaryTools, setShowAuxiliaryTools] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [reminderError, setReminderError] = useState('');
+  useEffect(() => { setReminderError(''); setSettingsOpen(false); }, [accountId]);
   const [historyOpen, setHistoryOpen] = useState(false);
   const [evolutionFeedback, setEvolutionFeedback] = useState("");
   const [programRequirements, setProgramRequirements] = useState("");
@@ -440,6 +443,7 @@ export default function StreamingChat() {
         <h2 className="text-2xl font-bold bg-gradient-to-r from-cyan-600 to-blue-600 bg-clip-text text-transparent">
           ⚡ AZ チャット
         </h2>
+        <div className="flex items-center gap-3">
         <button
           onClick={() => navigate("/facefusion-hybrid")}
           className="text-2xl hover:opacity-70 transition-opacity cursor-pointer"
@@ -447,6 +451,11 @@ export default function StreamingChat() {
         >
           ♻️
         </button>
+          <button type="button" onClick={() => setSettingsOpen(true)} aria-label="設定" aria-haspopup="dialog"
+            title="設定・タスク・リマインダー・補助ツール" className="text-2xl hover:opacity-70 transition-opacity">
+            ⚙️{reminderError && <span className="ml-1 text-sm text-red-700" aria-label="通知エラーあり">●</span>}
+          </button>
+        </div>
       </div>
 
       {user && <details className="rounded-lg border bg-white p-3">
@@ -479,7 +488,7 @@ export default function StreamingChat() {
         </section>}
       </aside>
       <div className="flex-1 min-w-0 flex flex-col gap-4">
-        <p className="text-sm text-gray-600">会話・実務操作・自己進化・プログラム作成は、下のチャットから依頼できます。コードの変更案は確認・承認後に適用します。</p>
+        <p className="text-sm text-gray-600">会話・実務操作・自己進化・プログラム作成は、下のチャットから依頼できます。コードの変更案は右上の⚙で確認・承認後に適用します。</p>
           {/* STEP36_SEARCH_UI */}
           <div className="rounded-lg border bg-white p-3">
             <button type="button" onClick={()=>setMemoryOpen(!memoryOpen)} className="rounded bg-blue-600 px-3 py-2 text-white">長期記憶を検索</button>
@@ -513,6 +522,12 @@ export default function StreamingChat() {
                       }`}
                     >
                       <p className="text-sm whitespace-pre-wrap">{message.content}</p>
+                      {message.role === 'assistant' && message.metadata?.understanding && <details className="mt-2 text-xs">
+                        <summary>AZが読み取った依頼</summary>
+                        <p>{message.metadata.understanding.goal}</p>
+                        {message.metadata.understanding.targetDescription && <p>対象: {message.metadata.understanding.targetDescription}</p>}
+                        {message.metadata.understanding.constraints?.map((condition: string, index: number) => <p key={index}>条件: {condition}</p>)}
+                      </details>}
                       {message.metadata?.everyday?.links?.map((link: { label: string; url: string }) =>
                         /^https:\/\//.test(link.url) ? <a key={link.url} href={link.url} target="_blank" rel="noopener noreferrer" className="mt-1 block text-sm text-blue-700 underline">{link.label}</a> : null)}
                       {(message.metadata?.everyday?.kind === 'music' || message.metadata?.task?.steps?.some((step: { tool: string }) => step.tool === 'playMusic')) &&
@@ -561,8 +576,7 @@ export default function StreamingChat() {
             )}
           </Card>
 
-          <AZEvolutionPanel key={accountId} reviewOnly />
-          <AZPersonalTasksPanel key={"personal-" + accountId} accountId={accountId} />
+          <AZPersonalReminderObserver key={"reminder-" + accountId} accountId={accountId} onError={setReminderError} />
 
           {editTarget && <div className="flex items-center gap-3 rounded-lg border bg-white p-2 text-sm" aria-label="画像の編集対象">
             <ChatPhoto id={editTarget.id} name={editTarget.name} accountId={accountId} />
@@ -614,6 +628,17 @@ export default function StreamingChat() {
               {isLoading ? <Spinner className="w-4 h-4" /> : "送信"}
             </Button>
           </div>
+
+      </div>
+      </div>
+
+      <Dialog open={settingsOpen} onOpenChange={open => { setSettingsOpen(open); if (!open) setShowAuxiliaryTools(false); }}>
+        <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader><DialogTitle>設定・ツール</DialogTitle></DialogHeader>
+          <p className="text-sm text-gray-600">通常の操作はチャットから依頼できます。ここでは一覧の確認、通知の許可、コード変更案の承認、補助ツールを利用できます。</p>
+          {reminderError && <p role="alert" className="text-sm text-red-700">通知: {reminderError}</p>}
+          <AZPersonalTasksPanel key={"personal-" + accountId} accountId={accountId} notifications={false} />
+          <AZEvolutionPanel key={"review-" + accountId} reviewOnly />
         <details className="rounded-lg border bg-white p-3" onToggle={event => setShowAuxiliaryTools(event.currentTarget.open)}>
           <summary className="cursor-pointer text-sm text-gray-600">補助ツール（従来の分析・コード生成）</summary>
           <div className="mt-3 space-y-4">
@@ -718,8 +743,8 @@ export default function StreamingChat() {
           </section>
           </div>
         </details>
-      </div>
-      </div>
+        </DialogContent>
+      </Dialog>
 
       {/* マルチモーダルダイアログ */}
       <Dialog open={showMultimodal} onOpenChange={setShowMultimodal}>

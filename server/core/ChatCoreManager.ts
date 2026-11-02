@@ -1,3 +1,4 @@
+import { understandingContext, type ConversationUnderstanding } from './AZConversationUnderstanding';
 import { researchForAZ, webResearchContext, webResearchQuery } from './AZWebKnowledge';
 import type { WebSource } from './WebImageReferences';
 import { describeLocalAIError } from '../_core/ai/LocalAIError';
@@ -84,7 +85,8 @@ export class ChatCoreManager {
     sessionId: string,
     userMessage: string,
     mobileHistory: Array<{ role: 'user' | 'assistant'; content: string }> = [],
-    messageId?: string
+    messageId?: string,
+    understanding?: ConversationUnderstanding
   ): Promise<ChatResponse> {
     const storedSession = await this.chatRepository.getSession(sessionId);
     if (!storedSession || storedSession.userId !== userId) {
@@ -108,13 +110,15 @@ export class ChatCoreManager {
     );
     const history = await this.chatRepository.getMessages(sessionId, 25);
     (context as any).messages = history.filter(m => m.id !== userMsg.id);
+    (context as any).understanding = understanding;
 
     // 3. 郢晢ｽ｡郢昴・縺晉ｹ晢ｽｼ郢ｧ・ｸ陷・ｽｦ騾・・・ｼ蝓溯ｳ髫ｲ謔ｶ繝ｻ郢ｧ・ｨ郢晢ｽｼ郢ｧ・ｸ郢ｧ・ｧ郢晢ｽｳ郢晏沺・ｴ・ｻ騾包ｽｨ繝ｻ繝ｻ
     /* Explicit corrections are linked to the immediately preceding assistant turn. */
     const correctionMatch = userMessage.trim().match(
       /^(?:正しくは|正解は|訂正[：:]?|違います[。\s]*正しくは|それは違います[。\s]*正しくは)[、,：:\s]*([\s\S]{1,3000})$/u
     );
-    if (correctionMatch?.[1]?.trim()) {
+    const correctionText = correctionMatch?.[1]?.trim() || (understanding?.act === 'correction' && ['conversation','memory'].includes(understanding.domain) ? understanding.resolvedRequest : undefined);
+    if (correctionText) {
       const turns = ((context as typeof context & { messages?: ChatMessage[] }).messages ?? []);
       const lastAssistantIndex = turns.findLastIndex(m => m.role === 'assistant');
       const previousAssistant = turns[lastAssistantIndex];
@@ -127,7 +131,7 @@ export class ChatCoreManager {
             previousUser.content,
             previousAssistant.content,
             false,
-            correctionMatch[1].trim(),
+            correctionText,
             userId
           );
         } catch (error) {
@@ -148,7 +152,7 @@ export class ChatCoreManager {
                 value: JSON.stringify({
                   question: previousUser.content.slice(0, 800),
                   incorrectAnswer: previousAssistant.content.slice(0, 800),
-                  correction: correctionMatch[1].trim().slice(0, 1500),
+                  correction: correctionText.slice(0, 1500),
                 }),
               }],
             });
@@ -393,6 +397,8 @@ export class ChatCoreManager {
       messages.unshift({ role: 'system', content:
         'AZはPoiPoiの会話・機能統合コアです。過去の会話や検索された記憶は参考情報として扱い、現在の指示と矛盾する場合は確認してください。書き込み・コード変更・外部操作を実行したと主張するのは、認証済みツールの成功結果がある場合のみです。承認が必要な操作は承認を求め、承認前に実行しないでください。PC未接続時はAndroid側のローカルAIに処理を委ね、未接続状態を成功と偽らないでください。'
       });
+      if (context.understanding) messages.unshift({ role: 'system', content: understandingContext(context.understanding) +
+        '\n依頼・質問・結果への訂正を区別し、直前の対象と条件を引き継いで自然な日本語で答える。曖昧なら一点を確認する。定型の拒否や「他にお手伝い」だけで終わらせない。処理済みという表現には実際の成功記録が必要。' });
       const latestGenerated = [...previous].reverse().find(turn => turn.role === 'assistant' && turn.metadata?.generated);
       if (latestGenerated && /画像|イラスト|絵|写真|なぜ|どうして|違う|ちがう|じゃない|似て/.test(userMessage)) {
         messages.unshift({ role: 'system', content: 'この会話には接続済みの画像生成ツールが画像を生成・保存した記録がある。画像生成能力がないという過去の説明は誤り。描かれた対象の正しさは別で、ユーザーが違うと指摘した場合は不一致を認め、参照画像や条件の修正につなぐ。対象を正確に再現できたと未確認の断定をしない。' });

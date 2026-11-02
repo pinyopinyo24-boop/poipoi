@@ -1,3 +1,4 @@
+import type { ConversationUnderstanding } from './AZConversationUnderstanding';
 import type { ChatMessage } from '../repositories/ChatRepository';
 import { invokeLLM } from '../_core/llm';
 import { isCodeImplementationRequest } from './AZCapabilityCatalog';
@@ -7,10 +8,52 @@ import { normalizeImageEditText, imageAppearanceIntent } from './ImageEditIntent
 const unrelated = /Excel|PDF|PowerPoint|資料|文書|文章|回答|答え|説明文|チャット|名前|記憶|人格|口調|ニュース|天気|原価|製造|在庫|予定|タスク|コード|プログラム|印刷|メール|送信|共有|ダウンロード/i;
 const topicChange = /ニュース|天気|原価|製造|在庫|予定|タスク|Excel|PDF|プログラム|コード/;
 function shortReply(text: string) { return text.replace(/[、,。！!？?\s]/gu, ''); }
+function imageFromUnderstanding(value: ConversationUnderstanding, turns: ChatMessage[], attachmentIds: string[], selectedImageId?: string): ImageChatRequest | undefined {
+  if (value.domain !== 'image') return undefined;
+  const visibleImages = (turn: ChatMessage) => [...(turn.metadata?.images ?? []), ...(turn.metadata?.referenceImages ?? []), ...(turn.metadata?.editSourceImages ?? [])] as Array<{ id: string }>;
+  const target = selectedImageId
+    ? [...turns].reverse().find(turn => visibleImages(turn).some(image => image.id === selectedImageId))
+    : [...turns].reverse().find(turn => value.targetMessageIds.includes(turn.id) && visibleImages(turn).length)
+      ?? (!value.newTask ? [...turns].reverse().find(turn => turn.metadata?.images?.length) : undefined);
+  if (selectedImageId && !target) throw new Error('選択した画像はこの会話にありません。');
+  if (selectedImageId && attachmentIds.length) throw new Error('編集する画像を1枚だけ選んでください。');
+  const state = target?.metadata?.imageRequest;
+  const rootPrompt = value.newTask ? value.resolvedRequest : state?.rootPrompt ?? value.goal;
+  const clarify = (question: string): ImageChatRequest => ({ prompt: value.resolvedRequest, rootPrompt,
+    webMode: 'off', clarification: question, inputImageId: selectedImageId ?? target?.metadata?.images?.[0]?.id });
+  if (value.needsClarification) return clarify(value.question || '画像のどの部分を変更するか教えてください。');
+  if (!value.execute) return ['constraint','feedback','acknowledgment'].includes(value.act)
+    ? clarify('前の画像の条件として受け取りました。この条件で画像を修正しますか？') : undefined;
+  if (attachmentIds.length > 1 || (!selectedImageId && target?.metadata?.images?.length > 1)) return clarify('編集する画像を1枚選んでください。');
+  const shape = imageAppearanceIntent(value.resolvedRequest);
+  const directives = value.originalMessage + '\n' + value.constraints.join('\n');
+  const mode = /検索しない|ネット.*使わない|オフライン/u.test(directives) ? 'off'
+    : /ネット|ウェブ|web|検索|調べ|参照画像/iu.test(value.originalMessage) ? 'required' : value.newTask ? 'auto' : 'off';
+  if (value.newTask && !selectedImageId && !attachmentIds.length) return { prompt: value.resolvedRequest, rootPrompt,
+    headToBodyRatio: shape.headToBodyRatio, preserveAppearance: shape.preserveAppearance, webMode: mode };
+  const currentImageId = selectedImageId ?? attachmentIds[0] ?? target?.metadata?.images?.[0]?.id;
+  if (!currentImageId) return clarify('修正する画像を特定できません。画像を選ぶか、元の画像のある会話で依頼してください。');
+  // Keep the existing explicit identity-correction path, including its reference acquisition.
+  if (!selectedImageId && !attachmentIds.length && value.act === 'correction') {
+    const identity = resolveChatImageRequest(value.originalMessage, turns, false);
+    if (identity?.identityCorrection) return { ...identity, prompt: value.resolvedRequest, headToBodyRatio: shape.headToBodyRatio ?? state?.headToBodyRatio };
+  }
+  const retry = value.act === 'retry';
+  const source = retry && !selectedImageId && !attachmentIds.length && target?.metadata?.generated
+    ? target.metadata.sourceImageId ?? target.metadata.referenceImages?.[0]?.id : currentImageId;
+  return { prompt: retry ? (state?.preparedPrompt ?? value.resolvedRequest) : value.resolvedRequest,
+    rootPrompt, query: state?.query, inputImageId: source,
+    priorPrompt: state?.preparedPrompt, editInstruction: retry ? undefined : value.resolvedRequest, retry,
+    headToBodyRatio: shape.headToBodyRatio ?? state?.headToBodyRatio,
+    preserveAppearance: shape.preserveAppearance || Boolean(state?.preserveAppearance),
+    editStrength: retry ? state?.editStrength : shape.bodybuilder ? 0.62 : shape.muscle ? 0.55 : 0.45,
+    webMode: mode };
+}
 /** Resolve dialogue acts in image context, not just individual editing verbs. */
 export async function resolveImageConversationRequest(
-  message: string, turns: ChatMessage[], attachmentIds: string[] = [], selectedImageId?: string, userId?: string,
+  message: string, turns: ChatMessage[], attachmentIds: string[] = [], selectedImageId?: string, userId?: string, understanding?: ConversationUnderstanding,
 ): Promise<ImageChatRequest | undefined> {
+  if (understanding) return imageFromUnderstanding(understanding, turns, attachmentIds, selectedImageId);
   const text = normalizeImageEditText(message).split(/\n添付写真:/u)[0].trim();
   let direct: ImageChatRequest | undefined;
   try { direct = resolveChatImageRequest(message, turns, attachmentIds.length > 0, attachmentIds, selectedImageId); }

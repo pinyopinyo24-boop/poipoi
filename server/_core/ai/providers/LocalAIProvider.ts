@@ -1,3 +1,4 @@
+import { conversationModel } from '../ConversationModel';
 import { describeLocalAIError } from '../LocalAIError';
 import { invokeLLM } from '../../llm';
 import {
@@ -33,7 +34,7 @@ export class LocalAIProvider extends BaseAIProvider {
   async invoke(messages: AIMessage[], options?: AIInvokeOptions): Promise<AIResponse> {
     const requestId = this.generateRequestId();
     const isChat = options?.metadata?.purpose === 'chat';
-    const model = options?.model || (isChat ? this.chatModel() : process.env.LOCAL_CODER_MODEL || 'qwen2.5-coder:7b');
+    const model = options?.model || (isChat ? await this.chatModel() : process.env.LOCAL_CODER_MODEL || 'qwen2.5-coder:7b');
     const configuredOutput = Number(process.env.LOCAL_CHAT_MAX_TOKENS);
     // Keep caller limits and existing unlimited-output behavior unless a chat
     // output limit was explicitly configured.
@@ -79,8 +80,8 @@ export class LocalAIProvider extends BaseAIProvider {
     };
   }
 
-  private chatModel(): string {
-    return process.env.LOCAL_CHAT_MODEL?.trim() || process.env.LOCAL_CODER_MODEL?.trim() || 'qwen2.5-coder:7b';
+  private chatModel(): Promise<string> {
+    return conversationModel(this.apiUrl);
   }
 
   async getModels(): Promise<AIModel[]> {
@@ -107,8 +108,9 @@ export class LocalAIProvider extends BaseAIProvider {
         const names = models.map(model => model.name).filter((name): name is string => typeof name === 'string' && Boolean(name.trim()));
         modelsAvailable = names.length;
         const canonical = (name: string) => name.includes(':') ? name : name + ':latest';
-        isAvailable = names.some(name => canonical(name) === canonical(this.chatModel()));
-        if (!isAvailable) errorMessage = '指定モデル「' + this.chatModel() + '」がインストールされていません';
+        const selectedModel = await this.chatModel();
+        isAvailable = names.some(name => canonical(name) === canonical(selectedModel));
+        if (!isAvailable) errorMessage = '指定モデル「' + selectedModel + '」がインストールされていません';
 
       } else {
         errorMessage = 'ローカル推論サーバーのURL設定を確認してください';

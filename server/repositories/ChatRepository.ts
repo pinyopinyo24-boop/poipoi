@@ -88,6 +88,15 @@ export class ChatRepository {
     this.persist();
   }
 
+  /** Attach interpretation to an owned assistant response, without changing the raw user message. */
+  async annotateAssistantMessage(sessionId: string, userId: string, messageId: string, metadata: Record<string, unknown>): Promise<void> {
+    if (this.sessions.get(sessionId)?.userId !== userId) throw new Error('Chat session owner mismatch');
+    const message = this.messages.get(sessionId)?.find(turn => turn.id === messageId && turn.userId === userId && turn.role === 'assistant');
+    if (!message) throw new Error('Assistant message not found');
+    message.metadata = { ...message.metadata, ...metadata };
+    this.persist();
+  }
+
   /**
    * メッセージを取得
    */

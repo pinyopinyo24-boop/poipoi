@@ -1,3 +1,4 @@
+import { understandConversationTurn } from './core/AZConversationUnderstanding';
 import { resolveImageConversationRequest } from './core/ImageConversationRouter';
 import { appendPoiPoiMemory, getPoiPoiMemoryHistory, searchPoiPoiMemory, getRecentPoiPoiMemory, getPoiPoiMemoryCacheStatus } from "./core/PoiPoiLongTermMemory";
 import { recordLearningFeedback } from "./core/LearningContextIntegration";
@@ -58,11 +59,13 @@ export const streamingRouter = router({
           }
         }
         if (input.messageId) {
-          const cached = (await repository.getMessages(conversationId, 100000)).find(turn => turn.role === 'assistant' && (turn.metadata?.generated || turn.metadata?.imageClarification) && turn.metadata?.replyTo === input.messageId);
+          const cached = (await repository.getMessages(conversationId, 100000)).find(turn => turn.role === 'assistant' && turn.metadata?.replyTo === input.messageId);
           if (cached) return { conversationId, tokens: [cached.content], fullText: cached.content, tokenCount: 1, isImage: Boolean(cached.metadata?.generated), messageId: cached.id, metadata: cached.metadata };
         }
         const recentImages = await repository.getMessages(conversationId, input.sourceImageId ? 100000 : 60);
-        const imageRequest = await resolveImageConversationRequest(input.message, recentImages, input.images ?? [], input.sourceImageId, ctx.user ? userId : undefined);
+        const understanding = await understandConversationTurn(userId, conversationId, input.message, recentImages, input.messageId);
+        const executeTurn = async () => {
+        const imageRequest = await resolveImageConversationRequest(input.message, recentImages, input.images ?? [], input.sourceImageId, ctx.user ? userId : undefined, understanding);
         const imagePrompt = imageRequest?.prompt;
         if (imageRequest && input.images?.length && !imageRequest.inputImageId) throw new Error('添付写真の解析と新規画像生成は別々に依頼してください。');
         if (imagePrompt) {
@@ -139,6 +142,11 @@ export const streamingRouter = router({
         const text = response.message.content;
         return { conversationId, tokens: [text], fullText: text, tokenCount: 1, isImage: false,
           messageId: response.message.id, metadata: 'metadata' in response.message ? response.message.metadata : undefined };
+        };
+        const result = await executeTurn();
+        if (result.messageId) await repository.annotateAssistantMessage(conversationId, userId, result.messageId, { understanding })
+          .catch(error => console.warn('[AZ] Interpretation record was not saved:', error));
+        return { ...result, metadata: { ...result.metadata, understanding } };
       }
 
       const codeRequest =

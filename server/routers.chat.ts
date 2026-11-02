@@ -1,4 +1,5 @@
-import { capabilityReply, isCodeImplementationRequest, resolveImplementationRequest, implementationPrompt, isUserNameQuestion, nameAnswerToPreviousQuestion, recoverExplicitUserName } from './core/AZCapabilityCatalog';
+import { understandConversationTurn } from './core/AZConversationUnderstanding';
+import { capabilityReply, resolveImplementationRequest, implementationPrompt, isUserNameQuestion, nameAnswerToPreviousQuestion, recoverExplicitUserName } from './core/AZCapabilityCatalog';
 import { router, publicProcedure, protectedProcedure } from './_core/trpc';
 import { z } from 'zod';
 import { TRPCError } from '@trpc/server';
@@ -111,12 +112,23 @@ export const chatRouter = router({
           throw new TRPCError({ code: 'NOT_FOUND', message: 'チャットセッションが見つかりません' });
         }
         const recentDialogue = await dialogueRepository.getMessages(input.sessionId, 100);
+        const understanding = await understandConversationTurn(dialogueUserId, input.sessionId, input.message, recentDialogue, input.messageId);
+        const dispatch = async () => {
+          if (understanding.needsClarification || understanding.act === 'cancel') {
+            const askedAt = Date.now();
+            await dialogueRepository.saveMessage({ id: input.messageId ?? uuidv4(), userId: dialogueUserId, role: 'user', content: input.message, timestamp: askedAt }, input.sessionId);
+            const message = { id: uuidv4(), userId: dialogueUserId, role: 'assistant' as const,
+              content: understanding.act === 'cancel' ? 'この指示では新しい作業を開始しません。' : understanding.question || '対象と、行いたい内容を教えてください。',
+              timestamp: askedAt + 1, metadata: { replyTo: input.messageId } };
+            await dialogueRepository.saveMessage(message, input.sessionId);
+            return { message, session: dialogueSession, relatedMemories: [], reasoning: 'Clarified before execution' };
+          }
         // Practical requests use real fetch/storage/player actions before the help catalogue.
-        if (!isCodeImplementationRequest(input.message)) {
+        if (understanding.domain !== 'code' && (understanding.execute || (['information','web'].includes(understanding.domain) && understanding.readOnly))) {
           const { handleEverydayRequest } = await import('./core/AZEverydayAssistant');
           let everyday: Awaited<ReturnType<typeof handleEverydayRequest>>;
           try {
-            everyday = await handleEverydayRequest(input.message, ctx.user ? String(ctx.user.id) : undefined, recentDialogue,
+            everyday = await handleEverydayRequest(understanding.resolvedRequest, ctx.user ? String(ctx.user.id) : undefined, recentDialogue,
               input.messageId ? input.sessionId + ':' + input.messageId : undefined);
           } catch (error) {
             everyday = { answer: '処理を完了できませんでした。' + (error instanceof Error ? error.message : String(error)), metadata: { everyday: { failed: true } } };
@@ -142,10 +154,10 @@ export const chatRouter = router({
           await dialogueRepository.saveMessage(message, input.sessionId);
           return { message, session: (await dialogueRepository.getSession(input.sessionId))!, relatedMemories: [], reasoning: 'Grounded PC capability catalogue and selection' };
         }
-        if (isCodeImplementationRequest(input.message)) {
+        if (understanding.domain === 'code' && understanding.execute && !understanding.readOnly) {
           if (!ctx.user) throw new TRPCError({ code: 'UNAUTHORIZED', message: '機能の追加実装にはログインが必要です' });
           if (ctx.user.role !== 'admin') throw new TRPCError({ code: 'FORBIDDEN', message: '機能の追加実装には管理者権限が必要です' });
-          const resolvedRequest = resolveImplementationRequest(input.message.trim(), recentDialogue);
+          const resolvedRequest = resolveImplementationRequest(understanding.resolvedRequest, recentDialogue);
           const request = implementationPrompt(resolvedRequest, recentDialogue);
           const askedAt = Date.now();
           await dialogueRepository.saveMessage({ id: input.messageId ?? uuidv4(), userId: dialogueUserId,
@@ -166,9 +178,10 @@ export const chatRouter = router({
           return { message, session: (await dialogueRepository.getSession(input.sessionId))!, relatedMemories: [], reasoning: previewId ? 'Code preview awaiting explicit approval' : 'Code preview generation failed' };
         }
         // All explicit tools share the authenticated unified router.
-        const command = input.message.trim();
-        const codeRequest = /^(?:PoiPoiコードエージェント|コードエージェント)[：:\s]+(?:実装|修正|変更|作成|追加|改修)/u.test(command);
-        const explicitToolRequest = command.match(/^PoiPoiツール[：:\s]+(分析|原価|製造記録|製造一覧|資料作成|コード確認|コード適用|Excel|PDF|資料分析|複数資料|PPT出力|製造分析|予定追加)[：:\s]+([\s\S]+)$/u);
+        const command = understanding.resolvedRequest;
+        const rawCommand = input.message.trim();
+        const codeRequest = /^(?:PoiPoiコードエージェント|コードエージェント)[：:\s]+(?:実装|修正|変更|作成|追加|改修)/u.test(rawCommand);
+        const explicitToolRequest = rawCommand.match(/^PoiPoiツール[：:\s]+(分析|原価|製造記録|製造一覧|資料作成|コード確認|コード適用|Excel|PDF|資料分析|複数資料|PPT出力|製造分析|予定追加)[：:\s]+([\s\S]+)$/u);
         // Natural-language read-only discovery uses the same authenticated tool API.
         // Mutating operations remain explicit and require their existing approvals.
         const naturalManufacturingList = /^(?:製造(?:記録|履歴|データ)?|生産(?:記録|履歴|データ)?)(?:の)?(?:一覧|リスト)(?:を)?(?:見せて|表示して|教えて|確認したい|出して)[。！!]?$/u.test(command);
@@ -218,17 +231,16 @@ export const chatRouter = router({
         // Natural language goes through an actual bounded tool loop, not an LLM
         // description of work. Explicit legacy commands retain their API contract.
         if (ctx.user && !explicitToolRequest && !codeRequest) {
-          const { shouldRunAZTask, runAZTask } = await import('./core/AZTaskRunner');
+          const { runAZTask } = await import('./core/AZTaskRunner');
           const repository = (await import('./repositories/ChatRepository')).getSharedChatRepository();
           const session = await repository.getSession(input.sessionId);
           if (!session || session.userId !== String(ctx.user.id)) {
             throw new TRPCError({ code: 'NOT_FOUND', message: 'チャットセッションが見つかりません' });
           }
-          const history = await repository.getMessages(input.sessionId, 12);
-          if (shouldRunAZTask(command, history.map(turn => turn.content))) {
+          if (['documents','manufacturing','schedule','information','personal_tasks','music','web'].includes(understanding.domain) && (understanding.execute || understanding.readOnly || understanding.act === 'question')) {
             const userId = String(ctx.user.id);
-            await repository.saveMessage({ id: input.messageId ?? uuidv4(), userId, role: 'user', content: command, timestamp: Date.now() }, input.sessionId);
-            const task = await runAZTask(ctx, input.sessionId, command);
+            await repository.saveMessage({ id: input.messageId ?? uuidv4(), userId, role: 'user', content: input.message, timestamp: Date.now() }, input.sessionId);
+            const task = await runAZTask(ctx, input.sessionId, command, understanding);
             const message = { id: uuidv4(), userId, role: 'assistant' as const,
               content: task.answer, timestamp: Date.now(), metadata: { task, replyTo: input.messageId } };
             await repository.saveMessage(message, input.sessionId);
@@ -246,7 +258,7 @@ export const chatRouter = router({
           if (!session || session.userId !== userId) {
             throw new TRPCError({ code: 'NOT_FOUND', message: 'チャットセッションが見つかりません' });
           }
-          await repository.saveMessage({ id: input.messageId ?? uuidv4(), userId, role: 'user', content: command, timestamp: Date.now() }, input.sessionId);
+          await repository.saveMessage({ id: input.messageId ?? uuidv4(), userId, role: 'user', content: input.message, timestamp: Date.now() }, input.sessionId);
           const { unifiedToolsRouter } = await import('./routers/unifiedTools');
           const caller = unifiedToolsRouter.createCaller(ctx);
           let result: unknown;
@@ -407,10 +419,11 @@ export const chatRouter = router({
         const { PoiPoiIdentity } = await import("./core/PoiPoiIdentity");
 
         const originalMessage = input.message.trim();
+        const identityMessage = understanding.domain === 'memory' ? understanding.resolvedRequest : originalMessage;
         // AI and user identity are distinct, including corrections.
-        const inferredUserName = nameAnswerToPreviousQuestion(originalMessage, recentDialogue);
-        const userRename = originalMessage.match(/^(?:私の名前は|わたしの名前は|僕の名前は|俺の名前は|私の名前を|私を)[「『"]?(.{1,40}?)[」』"]?(?:です|だよ|にして|と呼んで|にしてください)?[。！!]*$/u) ?? (inferredUserName ? [originalMessage, inferredUserName] : null);
-        const aiRename = originalMessage.match(/^(?:あなたの名前|AIの名前|AZの呼び名)(?:を|は)[ \\t]*[「『"]?(.{1,40}?)[」』"]?[ \\t]*(?:にして|に変更して|に変えて|です|だよ|と呼んで|にしてください)[。！!]*$/u);
+        const inferredUserName = nameAnswerToPreviousQuestion(identityMessage, recentDialogue);
+        const userRename = understanding.execute ? identityMessage.match(/^(?:私の名前は|わたしの名前は|僕の名前は|俺の名前は|私の名前を|私を)[「『"]?(.{1,40}?)[」』"]?(?:です|だよ|にして|と呼んで|にしてください)?[。！!]*$/u) ?? (inferredUserName ? [identityMessage, inferredUserName] : null) : null;
+        const aiRename = understanding.execute ? identityMessage.match(/^(?:あなたの名前|AIの名前|AZの呼び名)(?:を|は)[ \\t]*[「『"]?(.{1,40}?)[」』"]?[ \\t]*(?:にして|に変更して|に変えて|です|だよ|と呼んで|にしてください)[。！!]*$/u) : null;
         // Reconcile the Android identity record without overwriting a newer PC identity.
         if (ctx.user) {
           const { getUserPoiPoiUnifiedState } = await import('./core/PoiPoiUnifiedStateStore');
@@ -432,7 +445,7 @@ export const chatRouter = router({
         let directAnswer: string | undefined;
         if (/^(?:これからは|今後は)?名前は[「『"]?.{1,40}?(?:です|だよ|にして)[。！!]*$/u.test(originalMessage)) {
           directAnswer = '変更するのは、あなたの名前ですか？ それともAIの名前ですか？';
-        } else if (isUserNameQuestion(originalMessage)) {
+        } else if (isUserNameQuestion(identityMessage)) {
           let name = PoiPoiIdentity.getUserName(userId);
           if (!name) {
             const recovered = recoverExplicitUserName(recentDialogue);
@@ -447,7 +460,7 @@ export const chatRouter = router({
             }
           }
           directAnswer = name ? `あなたの名前は「${name}」です。` : 'あなたの名前はまだ登録されていません。何とお呼びすればよいですか？';
-        } else if (/^(?:あなた|AI|AZ)の名前(?:は|って|を)?(?:[？?]|(?:教えて(?:ください)?|何(?:ですか)?|なん(?:ですか|だっけ)?)[？?。！!]*)$/u.test(originalMessage) || /^名前は[？?]$/u.test(originalMessage)) {
+        } else if (/^(?:あなた|AI|AZ)の名前(?:は|って|を)?(?:[？?]|(?:教えて(?:ください)?|何(?:ですか)?|なん(?:ですか|だっけ)?)[？?。！!]*)$/u.test(identityMessage) || /^名前は[？?]$/u.test(identityMessage)) {
           directAnswer = `私の名前は「${PoiPoiIdentity.getAIName(userId)}」です。`;
         } else if (userRename) {
           const name = PoiPoiIdentity.setUserName(userId, userRename[1].trim());
@@ -493,7 +506,8 @@ export const chatRouter = router({
           input.sessionId,
           originalMessage,
           mobileHistory,
-          input.messageId
+          input.messageId,
+          understanding
         );
 
         // Persist a bounded, per-user conversation summary for tool and agent context.
@@ -521,6 +535,11 @@ export const chatRouter = router({
           relatedMemories: response.relatedMemories,
           reasoning: response.reasoning,
         };
+        };
+        const result = await dispatch();
+        await dialogueRepository.annotateAssistantMessage(input.sessionId, dialogueUserId, result.message.id, { understanding })
+          .catch(error => console.warn('[AZ] Interpretation record was not saved:', error));
+        return { ...result, message: { ...result.message, metadata: { ...result.message.metadata, understanding } } };
       } catch (error) {
         console.error('Chat processing error:', error);
         throw error;

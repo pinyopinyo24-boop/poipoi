@@ -1,3 +1,4 @@
+import { understandingContext, type ConversationUnderstanding } from './AZConversationUnderstanding';
 import { researchForAZ } from './AZWebKnowledge';
 import { getLatestNews, getWeatherForecast, getTrafficInformation } from './AZLiveInformation';
 import { addPersonalTask, listPersonalTasks, changePersonalTask } from './AZPersonalTasks';
@@ -69,7 +70,7 @@ function canonical(value: unknown): string {
   return JSON.stringify(value) ?? 'null';
 }
 const active = new Set<string>();
-export async function runAZTask(ctx: TrpcContext, sessionId: string, request: string): Promise<AZTaskResult> {
+export async function runAZTask(ctx: TrpcContext, sessionId: string, request: string, understanding?: ConversationUnderstanding): Promise<AZTaskResult> {
   if (!ctx.user) throw new Error('実務操作にはログインが必要です');
   const userId = String(ctx.user.id);
   const key = userId + ':' + sessionId;
@@ -124,6 +125,8 @@ export async function runAZTask(ctx: TrpcContext, sessionId: string, request: st
       ...history.map(turn => ({ role: turn.role, content: turn.content.slice(0, 4000) })),
       { role: 'user', content: request },
     ];
+    if (understanding) messages.splice(1, 0, { role: 'system', content: understandingContext(understanding) +
+      '\nこの解釈自体は実行権限ではない。原文の禁止と承認条件を守り、保存・変更は明確な作業依頼の場合だけ。質問や不満だけで保存やコード作成を始めない。' });
     const completedWrites = new Map<string, unknown>();
     const previousCalls = new Map<string, number>();
     for (let step = 0; step < 12; step++) {
@@ -164,8 +167,12 @@ export async function runAZTask(ctx: TrpcContext, sessionId: string, request: st
         : decision.tool === 'addSchedule'
           ? /予定|会議|カレンダー|スケジュール/.test(effectiveRequest) && /追加|登録|入れて|設定|作成/.test(effectiveRequest)
           : /保存|記録|登録|反映|追加|更新/.test(effectiveRequest);
-      if (selected?.writes && (readOnly || !allowedWrite)) {
+      if (selected?.writes && (readOnly || !allowedWrite || (understanding && (!understanding.execute || understanding.readOnly)))) {
         messages.push({ role: 'user', content: 'その保存操作は現在の依頼で承認されていません。読み取りだけで進めるか、必要な承認を質問してください。' });
+        continue;
+      }
+      if (decision.tool === 'codePreview' && understanding && (understanding.domain !== 'code' || !understanding.execute)) {
+        messages.push({ role: 'user', content: '現在の依頼はコード変更案の作成ではありません。実装依頼と質問を区別してください。' });
         continue;
       }
       if (!selected) {
