@@ -63,7 +63,7 @@ export const streamingRouter = router({
           if (cached) return { conversationId, tokens: [cached.content], fullText: cached.content, tokenCount: 1, isImage: Boolean(cached.metadata?.generated), messageId: cached.id, metadata: cached.metadata };
         }
         const recentImages = await repository.getMessages(conversationId, input.sourceImageId ? 100000 : 60);
-        const understanding = await understandConversationTurn(userId, conversationId, input.message, recentImages, input.messageId);
+        const understanding = await understandConversationTurn(userId, conversationId, input.message, recentImages, input.messageId, { images: input.images, selectedImageId: input.sourceImageId });
         const executeTurn = async () => {
         const imageRequest = await resolveImageConversationRequest(input.message, recentImages, input.images ?? [], input.sourceImageId, ctx.user ? userId : undefined, understanding);
         const imagePrompt = imageRequest?.prompt;

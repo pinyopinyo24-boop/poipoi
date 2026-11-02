@@ -1,7 +1,7 @@
 import { describePoiPoiChatFailure } from '@/lib/poipoiConnection';
 import AZMusicPlayer from '@/components/AZMusicPlayer';
 import AZPersonalTasksPanel, { AZPersonalReminderObserver } from '@/components/AZPersonalTasksPanel';
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, type ClipboardEvent } from "react";
 import { loadConversations, saveConversations, createConversation } from "@/lib/poipoiChatHistory";
 import { useLocation } from "wouter";
 import { trpc } from "@/lib/trpc";
@@ -73,6 +73,8 @@ export default function StreamingChat() {
   const attachmentInput = useRef<HTMLInputElement>(null);
   const sendLock = useRef(false);
   const uploadLock = useRef(false);
+  const pasteLock = useRef(false);
+  const [isPasting, setIsPasting] = useState(false);
   const [messages, setMessages] = useState<Message[]>(() => { const id = localStorage.getItem(lastConversationKey) ?? (accountId === "guest" ? localStorage.getItem("poipoi_last_conversation_v1") : null); const c = loadConversations(accountId).find(x => x.id === id); return c ? c.messages.map(m => ({ ...m, timestamp: new Date(m.timestamp) })) : []; });
   const [conversations, setConversations] = useState(() => loadConversations(accountId));
   // STEP36_MEMORY_SEARCH
@@ -107,9 +109,9 @@ export default function StreamingChat() {
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const [, navigate] = useLocation();
 
-  const openConversation = (id: string) => { const c = conversations.find(x => x.id === id); if (!c || isLoading || uploadLock.current) return; localStorage.setItem(lastConversationKey, id); setConversationId(id); setMessages(c.messages.map(m => ({ ...m, timestamp: new Date(m.timestamp) }))); setAttachments([]); setEditTarget(null); setChatError(""); setFileError(""); };
+  const openConversation = (id: string) => { const c = conversations.find(x => x.id === id); if (!c || isLoading || uploadLock.current || pasteLock.current) return; localStorage.setItem(lastConversationKey, id); setConversationId(id); setMessages(c.messages.map(m => ({ ...m, timestamp: new Date(m.timestamp) }))); setAttachments([]); setEditTarget(null); setChatError(""); setFileError(""); };
   const deleteConversation = async (id: string) => {
-    if (isLoading || historyAccount !== accountId || !window.confirm('この会話を削除しますか？')) return;
+    if (isLoading || pasteLock.current || uploadLock.current || historyAccount !== accountId || !window.confirm('この会話を削除しますか？')) return;
     const deletingAccount = accountId;
     try {
       await deleteServerSession.mutateAsync({ userId: String(user?.id ?? 'mobile'), sessionId: id, confirm: 'DELETE_SESSION' });
@@ -122,7 +124,7 @@ export default function StreamingChat() {
     } catch (error) { if (requestAccount.current === deletingAccount) setFileError(error instanceof Error ? error.message : String(error)); }
   };
   const renameConversation = (id: string) => { const c = conversations.find(x => x.id === id); if (!c) return; const title = window.prompt("新しい会話タイトル", c.title)?.trim(); if (!title) return; const next = conversations.map(x => x.id === id ? { ...x, title } : x); setConversations(next); saveConversations(next, historyAccount); };
-  const startNewConversation = () => { if (isLoading || uploadLock.current) return; const c = createConversation(); setConversations(prev => { const next = [c, ...prev]; return next; }); localStorage.setItem(lastConversationKey, c.id); setConversationId(c.id); setMessages([]); setInput(""); setAttachments([]); setEditTarget(null); setChatError(""); setFileError(""); };
+  const startNewConversation = () => { if (isLoading || uploadLock.current || pasteLock.current) return; const c = createConversation(); setConversations(prev => { const next = [c, ...prev]; return next; }); localStorage.setItem(lastConversationKey, c.id); setConversationId(c.id); setMessages([]); setInput(""); setAttachments([]); setEditTarget(null); setChatError(""); setFileError(""); };
   const persistChatMessage = (id: string, message: Message) => { setConversations(prev => { const next = prev.map(c => c.id !== id ? c : { ...c, title: c.title === "新しいチャット" && message.role === "user" ? message.content.slice(0, 30) : c.title, updatedAt: new Date().toISOString(), messages: [...c.messages, { id: message.id, role: message.role, content: message.content, timestamp: message.timestamp.toISOString(), type: message.type, metadata: message.metadata }] }); return next; }); };
   useEffect(() => {
     if (authLoading || accountId === historyAccount) return;
@@ -243,7 +245,7 @@ export default function StreamingChat() {
   }, [messages]);
 
   const handleSendMessage = async () => {
-    if (sendLock.current || uploadLock.current || isLoading) return;
+    if (sendLock.current || uploadLock.current || pasteLock.current || isLoading) return;
     const draft = input.trim() || (attachments.some(item => item.type === "image") ? "添付した写真について説明してください。" : "");
     if (!draft) { setChatError("AZに依頼する内容を入力してください。"); return; }
     if (authLoading || historyAccount !== accountId) {
@@ -406,16 +408,16 @@ export default function StreamingChat() {
       setTimeout(() => URL.revokeObjectURL(url), 1000);
     } catch (error) { setFileError(error instanceof Error ? error.message : String(error)); }
   };
-  const uploadFile = async (file: File) => {
-    if (uploadLock.current || sendLock.current) return;
+  const uploadFile = async (file: File, fromPaste = false): Promise<boolean> => {
+    if (uploadLock.current || sendLock.current || (pasteLock.current && !fromPaste)) return false;
     setFileError('');
-    if (!user) { setFileError('資料の添付にはログインが必要です。'); return; }
-    if (authLoading || historyAccount !== accountId) { setFileError('アカウントの読み込み完了をお待ちください。'); return; }
-    if (!/\.(xlsx|pdf|png|jpe?g|webp)$/i.test(file.name)) { setFileError('Excel・PDF・写真（JPG／PNG／WebP）を選んでください。'); return; }
+    if (!user) { setFileError('資料の添付にはログインが必要です。'); return false; }
+    if (authLoading || historyAccount !== accountId) { setFileError('アカウントの読み込み完了をお待ちください。'); return false; }
+    if (!/\.(xlsx|pdf|png|jpe?g|webp)$/i.test(file.name)) { setFileError('Excel・PDF・写真（JPG／PNG／WebP）を選んでください。'); return false; }
     const isPhoto = /\.(png|jpe?g|webp)$/i.test(file.name);
-    if (isPhoto && file.size > 5 * 1024 * 1024) { setFileError('写真は1枚5MB以下にしてください。'); return; }
-    if (file.size > 10 * 1024 * 1024) { setFileError('資料は10MB以下にしてください。'); return; }
-    if (attachments.length >= 6) { setFileError('一度に添付できる資料は6件までです。'); return; }
+    if (isPhoto && file.size > 5 * 1024 * 1024) { setFileError('写真は1枚5MB以下にしてください。'); return false; }
+    if (file.size > 10 * 1024 * 1024) { setFileError('資料は10MB以下にしてください。'); return false; }
+    if (attachments.length >= 6) { setFileError('一度に添付できる資料は6件までです。'); return false; }
     const uploadingAccount = accountId;
     uploadLock.current = true; setIsUploading(true);
     try {
@@ -424,17 +426,52 @@ export default function StreamingChat() {
       for (let offset = 0; offset < bytes.length; offset += 8192) binary += String.fromCharCode(...bytes.subarray(offset, offset + 8192));
       if (isPhoto) {
         const output = await uploadPhoto.mutateAsync({ fileName: file.name, base64: btoa(binary) });
-        if (requestAccount.current !== uploadingAccount) return;
+        if (requestAccount.current !== uploadingAccount) return false;
         setAttachments(current => [...current, { file: output.id, name: output.name, type: 'image' }]);
       } else {
         const type = file.name.toLowerCase().endsWith('.pdf') ? 'pdf' as const : 'xlsx' as const;
         const output = await upload.mutateAsync({ fileName: file.name, type, base64: btoa(binary) });
-        if (requestAccount.current !== uploadingAccount) return;
+        if (requestAccount.current !== uploadingAccount) return false;
         setAttachments(current => [...current, { file: output.file, name: file.name, type }]);
       }
+      return true;
     } catch (error) {
       if (requestAccount.current === uploadingAccount) setFileError(error instanceof Error ? error.message : String(error));
+      return false;
     } finally { uploadLock.current = false; setIsUploading(false); }
+  };
+
+  const handleImagePaste = async (event: ClipboardEvent<HTMLInputElement>) => {
+    const clipboardFiles = Array.from(event.clipboardData.files);
+    const candidates = clipboardFiles.length ? clipboardFiles : Array.from(event.clipboardData.items)
+      .filter(item => item.kind === 'file').map(item => item.getAsFile()).filter((file): file is File => Boolean(file));
+    const images = candidates.filter(file => file.type.startsWith('image/') || /\.(png|jpe?g|webp|gif|bmp)$/i.test(file.name));
+    if (!images.length) return; // Preserve ordinary text pasting.
+    event.preventDefault();
+    if (pasteLock.current || uploadLock.current || sendLock.current || isLoading) { setFileError('処理が終わってから画像を貼り付けてください。'); return; }
+    if (!user) { setFileError('画像の貼り付けにはログインが必要です。'); return; }
+    if (authLoading || historyAccount !== accountId) { setFileError('アカウントの読み込み完了をお待ちください。'); return; }
+    if (images.some(file => !['image/png','image/jpeg','image/webp'].includes(file.type))) { setFileError('貼り付ける画像はPNG・JPG・WebPにしてください。'); return; }
+    if (attachments.length + images.length > 6) { setFileError('添付は資料と画像を合わせて6件までです。添付を減らしてから貼り付けてください。'); return; }
+    if (images.some(file => file.size > 5 * 1024 * 1024)) { setFileError('画像は1枚5MB以下にしてください。'); return; }
+    // An image clipboard can also contain text. Insert it at the caret without losing the draft.
+    const pastedText = event.clipboardData.getData('text/plain');
+    const element = event.currentTarget;
+    if (pastedText && !/^data:image\//i.test(pastedText)) {
+      const start = element.selectionStart ?? element.value.length, end = element.selectionEnd ?? start;
+      setInput(element.value.slice(0, start) + pastedText + element.value.slice(end));
+      requestAnimationFrame(() => { if (document.activeElement === element) element.setSelectionRange(start + pastedText.length, start + pastedText.length); });
+    }
+    const pastingAccount = accountId;
+    pasteLock.current = true; setIsPasting(true); setFileError('');
+    try {
+      for (const [index, image] of images.entries()) {
+        if (requestAccount.current !== pastingAccount) break;
+        const extension = image.type === 'image/jpeg' ? 'jpg' : image.type === 'image/webp' ? 'webp' : 'png';
+        const name = /\.(png|jpe?g|webp)$/i.test(image.name) ? image.name : '貼り付け画像-' + Date.now() + '-' + (index + 1) + '.' + extension;
+        if (!await uploadFile(new File([image], name, { type: image.type, lastModified: image.lastModified }), true)) break;
+      }
+    } finally { pasteLock.current = false; setIsPasting(false); }
   };
 
   return (
@@ -543,7 +580,7 @@ export default function StreamingChat() {
                       </details>)}
                       {message.metadata?.images?.map((photo: { id: string; name: string }) =>
                         <ChatPhoto key={photo.id} id={photo.id} name={photo.name} accountId={accountId}
-                          disabled={isLoading || isUploading || authLoading}
+                          disabled={isLoading || isUploading || isPasting || authLoading}
                           onEdit={() => { setEditTarget({ id: photo.id, name: photo.name }); setChatError(''); }} />)}
                       {message.metadata?.task && <details className="mt-2 text-xs">
                         <summary>実行記録（{message.metadata.task.status}）</summary>
@@ -587,7 +624,7 @@ export default function StreamingChat() {
             {attachments.map(item => <span key={item.file} className="inline-flex items-center gap-2 rounded-lg border bg-white px-3 py-1 text-sm">
               {item.type === "image" && <ChatPhoto id={item.file} name={item.name} accountId={accountId} />}
               <span>{item.name}</span>
-              <button type="button" aria-label={item.name + "の添付を外す"} disabled={isLoading || isUploading}
+              <button type="button" aria-label={item.name + "の添付を外す"} disabled={isLoading || isUploading || isPasting}
                 onClick={() => setAttachments(current => current.filter(file => file.file !== item.file))}>×</button>
             </span>)}
           </div>}
@@ -595,6 +632,7 @@ export default function StreamingChat() {
           {chatError && <p role="alert" className="rounded border border-red-300 bg-red-50 p-3 text-sm text-red-800 whitespace-pre-wrap">{chatError}</p>}
           {(authLoading || historyAccount !== accountId) && <p role="status" className="text-sm">アカウントを読み込んでいます...</p>}
           {isLoading && <p role="status" className="text-sm">AZが応答を作成しています...</p>}
+          {isPasting && <p role="status" className="text-sm">画像を貼り付けています...</p>}
           {isUploading && <p role="status" className="text-sm">資料を添付しています...</p>}
           <div className="flex items-center gap-2">
             <input ref={attachmentInput} type="file" accept=".xlsx,.pdf,.jpg,.jpeg,.png,.webp" className="hidden" tabIndex={-1}
@@ -605,11 +643,13 @@ export default function StreamingChat() {
               }} />
             <Button type="button" variant="outline" aria-label="資料・写真を添付" title="写真（JPG / PNG / WebP、5MBまで）・Excel / PDF（10MBまで）"
               className="h-10 w-10 shrink-0 p-0 text-2xl"
-              disabled={isLoading || isUploading || authLoading || historyAccount !== accountId}
+              disabled={isLoading || isUploading || isPasting || authLoading || historyAccount !== accountId}
               onClick={() => attachmentInput.current?.click()}>＋</Button>
             <Input
               value={input}
               aria-label="AZへのメッセージ"
+              onPaste={event => { void handleImagePaste(event); }}
+              title="画像はコピーしてCtrl＋Vでも添付できます"
               onChange={event => setInput(event.target.value)}
               onKeyDown={event => {
                 if (event.key === "Enter" && !event.nativeEvent.isComposing && event.nativeEvent.keyCode !== 229) {
@@ -622,7 +662,7 @@ export default function StreamingChat() {
             />
             <Button type="button"
               onClick={() => void handleSendMessage()}
-              disabled={isLoading || isUploading || authLoading || historyAccount !== accountId || (!input.trim() && !attachments.some(item => item.type === "image"))}
+              disabled={isLoading || isUploading || isPasting || authLoading || historyAccount !== accountId || (!input.trim() && !attachments.some(item => item.type === "image"))}
               className="px-6 bg-gradient-to-r from-cyan-500 to-blue-500 hover:from-cyan-600 hover:to-blue-600"
             >
               {isLoading ? <Spinner className="w-4 h-4" /> : "送信"}

@@ -9,6 +9,7 @@ const unrelated = /Excel|PDF|PowerPoint|資料|文書|文章|回答|答え|説�
 const topicChange = /ニュース|天気|原価|製造|在庫|予定|タスク|Excel|PDF|プログラム|コード/;
 function shortReply(text: string) { return text.replace(/[、,。！!？?\s]/gu, ''); }
 function imageFromUnderstanding(value: ConversationUnderstanding, turns: ChatMessage[], attachmentIds: string[], selectedImageId?: string): ImageChatRequest | undefined {
+  if (value.nativeImageRequest) return value.nativeImageRequest;
   if (value.domain !== 'image') return undefined;
   const visibleImages = (turn: ChatMessage) => [...(turn.metadata?.images ?? []), ...(turn.metadata?.referenceImages ?? []), ...(turn.metadata?.editSourceImages ?? [])] as Array<{ id: string }>;
   const target = selectedImageId
