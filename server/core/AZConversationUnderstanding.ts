@@ -6,7 +6,7 @@ import { z } from 'zod';
 import { createHash } from 'node:crypto';
 import { invokeLLM } from '../_core/llm';
 import { conversationModel } from '../_core/ai/ConversationModel';
-import { capabilityReply, isUserNameQuestion, nameAnswerToPreviousQuestion, isCodeImplementationRequest, resolveImplementationRequest } from './AZCapabilityCatalog';
+import { capabilityReply, isUserNameQuestion, nameAnswerToPreviousQuestion, isCodeImplementationRequest, isSourceCodeRequest, resolveImplementationRequest } from './AZCapabilityCatalog';
 import type { ChatMessage } from '../repositories/ChatRepository';
 
 const domain = z.enum(['conversation', 'memory', 'image', 'code', 'documents', 'manufacturing', 'schedule', 'information', 'personal_tasks', 'music', 'web']);
@@ -71,6 +71,7 @@ async function interpret(userId: string, original: string, turns: ChatMessage[],
     try { const task = resolveImplementationRequest(original, turns); return task.length > 3000 ? clarification(original, '追加・修正したい機能を3000文字以内で指定してください。') : simple('code', 'request', task, true); }
     catch (error) { return clarification(original, error instanceof Error ? error.message : '追加・修正したい機能を教えてください。'); }
   }
+  if (isSourceCodeRequest(original)) return simple('code', 'question');
   const priorImage = [...turns].reverse().find(turn => turn.metadata?.generated && turn.metadata?.images?.[0]?.id);
   const previousState = [...turns].reverse().find(turn => turn.role === 'assistant' && turn.metadata?.understanding)?.metadata?.understanding;
   try {

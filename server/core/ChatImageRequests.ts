@@ -1,7 +1,7 @@
 import type { ImageEditPlan } from './GroundedImageEdit';
 import { imageAppearanceIntent, normalizeImageEditText } from './ImageEditIntent';
 import type { ChatMessage } from '../repositories/ChatRepository';
-import { isCodeImplementationRequest } from './AZCapabilityCatalog';
+import { isCodeImplementationRequest, isSourceCodeRequest } from './AZCapabilityCatalog';
 export type ImageChatRequest = { previousEditPlan?: ImageEditPlan; prompt: string; rootPrompt: string; query?: string; webMode: 'auto' | 'required' | 'off'; identityCorrection?: boolean; previousImageId?: string; inputImageId?: string; editInstruction?: string; editStrength?: number; priorPrompt?: string; headToBodyRatio?: number; preserveAppearance?: boolean; accepted?: boolean; clarification?: string; retry?: boolean };
 export function imageChoices(turn: ChatMessage): Array<{ id: string }> {
   return [...(turn.metadata?.images ?? []), ...(turn.metadata?.referenceImages ?? []), ...(turn.metadata?.editSourceImages ?? [])];
@@ -15,6 +15,7 @@ function editPrompt(root: string, previous: string, instruction: string) {
 /** Resolve only this session's image context; another task must not become an image edit. */
 export function resolveChatImageRequest(message: string, turns: ChatMessage[], hasAttachments: boolean, attachmentIds: string[] = [], selectedImageId?: string): ImageChatRequest | undefined {
   const text = normalizeImageEditText(message).split(/\n添付写真:/u)[0].trim();
+  if (isSourceCodeRequest(text) || isCodeImplementationRequest(text)) return undefined;
   const explicit = text.match(/^\/imagine\s+([\s\S]+)$/i)?.[1]?.trim();
   const generationText = text.replace(/(?:ネット|ウェブ|Web|インターネット)(?:を)?(?:使わない(?:で)?|使うな)|(?:ネット)?検索しない(?:で)?|オフライン(?:で)?/gi, '');
   const create = !hasAttachments && !isCodeImplementationRequest(text) && !/しない|するな|禁止|ないで|はいけない|(?:と(?:言|い)(?:われ|った|って))|できますか|できるか/.test(generationText) && !/画像(?:の|を)?(?:解析|分析|説明)|読み取|Excel|PDF|PowerPoint|原価表/i.test(text)

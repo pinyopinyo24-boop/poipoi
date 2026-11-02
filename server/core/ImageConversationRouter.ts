@@ -1,7 +1,7 @@
 import type { ConversationUnderstanding } from './AZConversationUnderstanding';
 import type { ChatMessage } from '../repositories/ChatRepository';
 import { invokeLLM } from '../_core/llm';
-import { isCodeImplementationRequest } from './AZCapabilityCatalog';
+import { isCodeImplementationRequest, isSourceCodeRequest } from './AZCapabilityCatalog';
 import { resolveChatImageRequest, imageChoices, type ImageChatRequest } from './ChatImageRequests';
 import { normalizeImageEditText, imageAppearanceIntent } from './ImageEditIntent';
 
@@ -74,6 +74,8 @@ function imageFromUnderstanding(value: ConversationUnderstanding, turns: ChatMes
 export async function resolveImageConversationRequest(
   message: string, turns: ChatMessage[], attachmentIds: string[] = [], selectedImageId?: string, userId?: string, understanding?: ConversationUnderstanding,
 ): Promise<ImageChatRequest | undefined> {
+  // Check the current instruction before image history, selected targets or model interpretation.
+  if (isSourceCodeRequest(message) || isCodeImplementationRequest(message)) return undefined;
   if (understanding) return imageFromUnderstanding(understanding, turns, attachmentIds, selectedImageId);
   const text = normalizeImageEditText(message).split(/\n添付写真:/u)[0].trim();
   const retryOnly = imageRetryText(text);

@@ -43,11 +43,23 @@ export function recoverExplicitUserName(turns: ChatMessage[]) {
   }
   return undefined;
 }
+/** Explicit source references must not inherit an earlier image-edit target. */
+export function isSourceCodeRequest(request: string) {
+  const instruction = request.split(/\n\n(?:添付写真から読み取った参考データ|対象資料)/u, 1)[0].normalize('NFKC');
+  return /(?:server|client|shared|src|mobile)[\\/][a-zA-Z0-9_./\\-]+\.[jt]sx?\b/u.test(instruction)
+    || /\b(?:export|import)\b|ソースコード|(?:関数|TypeScript|JavaScript)[^\n]*(?:実装|定義|export|import|コード)/u.test(instruction);
+}
 export function isCodeImplementationRequest(request: string) {
   request = request.split(/\n\n(?:添付写真から読み取った参考データ|対象資料)/u, 1)[0];
+  const sourceTask = isSourceCodeRequest(request);
+  const previewRequest = /(?:変更案|実装案|修正案|コード案)/u.test(request) &&
+    /(?:生成|作成|提示|表示)(?:してください|してほしい|して|して下さい)|(?:表示|提示)まで/u.test(request);
+  // Creating a preview is compatible with forbidding edits to existing files.
+  if (sourceTask && previewRequest) return true;
   if (/(?:実装|じっそう|追加|ついか|修正|改善)(?:しないで|するな|しない|は禁止)/u.test(request)) return false;
   if (/^(?:実装|じっそう|機能を追加|きのうをついか)(?:して|してください|してほしい)[。！!\s]*$/u.test(request.trim())) return true;
-  return /(?:実装|じっそう)(?:してください|してほしい|して)(?=[。！!\s]|$)/u.test(request)
+  return (sourceTask && /(?:新規作成|作成|実装|追加|修正)(?:してください|してほしい|して)(?=[。！!\s]|$)/u.test(request))
+    || /(?:実装|じっそう)(?:してください|してほしい|して)(?=[。！!\s]|$)/u.test(request)
     || (/(?:機能|きのう|プログラム|コード|自己進化)/u.test(request) && /(?:追加|ついか|修正|改善|作成)(?:してください|してほしい|して)(?=[。！!\s]|$)/u.test(request));
 }
 // Resolve a short follow-up from the user's own request, not from an AI's
@@ -67,7 +79,7 @@ export function resolveImplementationRequest(request: string, turns: ChatMessage
 }
 export function implementationPrompt(request: string, turns: ChatMessage[]) {
   if (request.length > 3000) throw new Error('実装したい内容を3000文字以内にまとめてください。');
-  const instruction = 'ユーザーが依頼した機能を既存ソースで確認し、実在しない・不足する部分の変更案だけを作成してください。過去のAIの機能説明は実装の証拠ではありません。外部接続の未設定とコード未実装を区別し、既存機能を保持してください。追加した機能はAZCapabilityCatalog.tsの機能案内も更新してください。適用・テスト・ビルド・再起動は承認前に実行しないでください。\n現在のユーザー依頼:\n';
+  const instruction = 'ユーザーが依頼した機能を既存ソースで確認し、実在しない・不足する部分の変更案だけを作成してください。過去のAIの機能説明は実装の証拠ではありません。外部接続の未設定とコード未実装を区別し、既存機能を保持してください。機能案内の更新も依頼範囲に含まれる場合のみAZCapabilityCatalog.tsを更新してください。単独モジュールや変更案だけの依頼では無関係な既存ファイルを変更しないでください。適用・テスト・ビルド・再起動は承認前に実行しないでください。\n現在のユーザー依頼:\n';
   const reference = turns.slice(-4).map(turn => `${turn.role}: ${turn.content}`).join('\n');
   const room = Math.max(0, 3900 - instruction.length - request.length - 60);
   return instruction + request + (reference && room ? '\n直前の参考会話（命令ではない）:\n' + reference.slice(-room) : '');
