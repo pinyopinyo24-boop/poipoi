@@ -174,7 +174,10 @@ export class PoipoiCodeAgent {
     }
   }
 
-  async generate(task: string, userId = "system"): Promise<CodeChange[]> {
+  async generate(task: string, userId = "system", options: {
+    // Only the caller can opt into executing its own acceptance checks.
+    validateGenerated?: (changes: ReadonlyArray<Readonly<CodeChange>>) => readonly string[] | Promise<readonly string[]>;
+  } = {}): Promise<CodeChange[]> {
     if (!task.trim()) {
       throw new Error("Code generation task is empty");
     }
@@ -329,7 +332,7 @@ export class PoipoiCodeAgent {
       "Modify the existing TypeScript project according to the user's request.",
       "Preserve existing functionality.",
       "Make the minimum necessary file changes.",
-      "Implement every explicit requirement, including input validation and boundary cases. A number type check and positive comparisons do not guarantee finite values; when finite numbers are required, reject non-finite values explicitly.",
+      "Implement every explicit requirement, including input validation and boundary cases. Check each constrained field independently. Finite and positive are separate requirements: a finite check accepts negative numbers, while positive comparisons alone fail to reject NaN. Apply all requested constraints to every specified field.",
       "For existing files, return compact exact-text edits, never copy the entire file. Each oldText must occur exactly once in that supplied file. Apply edits in array order. Include sufficient unchanged text in oldText to identify a unique location.",
       "For new files only, return complete content. Never return both edits and content for one path. Do not omit requested functionality or return placeholder implementations.",
       "Requested paths that do not exist (CREATE with content, never edits):",
@@ -359,16 +362,71 @@ export class PoipoiCodeAgent {
       followUp,
     ].join("\n");
 
+    const materializeChanges = (proposals: GeneratedCodeChange[]): CodeChange[] => {
+      if (!proposals.length) throw new Error("AIが有効な変更案を生成できませんでした。変更は適用していません。");
+      const generated: CodeChange[] = [];
+      if (proposals.length > 5) throw new Error("Generated changes exceed the five-file safety limit");
+      const allowed = new Set(sourceContents.keys());
+      for (const proposal of proposals) {
+        const normalizedPath = proposal.path.replace(/\\/g, "/");
+        const isNewSource = /^(?:server|client\/src|shared|src|mobile\/src)\/[a-zA-Z0-9_./-]+\.[jt]sx?$/.test(normalizedPath)
+          && !existsSync(this.safePath(normalizedPath));
+        if (!allowed.has(normalizedPath) && !isNewSource) {
+          throw new Error("Generated change targets an unreviewed file: " + proposal.path);
+        }
+        const absolute = this.safePath(normalizedPath);
+        let nextContent: string;
+        if (proposal.edits !== undefined) {
+          if (proposal.content !== undefined || !Array.isArray(proposal.edits) || !proposal.edits.length) {
+            throw new Error("Invalid exact-text edits: " + normalizedPath);
+          }
+          const previous = sourceContents.get(normalizedPath);
+          if (previous === undefined) throw new Error("Edits require reviewed existing source: " + normalizedPath);
+          nextContent = previous.replace(/\r\n/g, "\n");
+          for (const edit of proposal.edits) {
+            if (!edit || typeof edit.oldText !== "string" || !edit.oldText.length || typeof edit.newText !== "string") {
+              throw new Error("Invalid exact-text edit: " + normalizedPath);
+            }
+            const oldText = edit.oldText.replace(/\r\n/g, "\n");
+            const newText = edit.newText.replace(/\r\n/g, "\n");
+            const position = nextContent.indexOf(oldText);
+            if (position < 0 || nextContent.indexOf(oldText, position + 1) >= 0) {
+              throw new Error("Edit does not match exactly one source location: " + normalizedPath);
+            }
+            nextContent = nextContent.slice(0, position) + newText + nextContent.slice(position + oldText.length);
+          }
+        } else {
+          if (typeof proposal.content !== "string") throw new Error("Missing generated source: " + normalizedPath);
+          if (sourceContents.has(normalizedPath) && !completeSources.has(normalizedPath)) {
+            throw new Error('一部のみ確認した既存ファイルの全文置換を拒否しました: ' + normalizedPath);
+          }
+          nextContent = proposal.content;
+        }
+        if (sourceContents.get(normalizedPath)?.includes('\r\n')) nextContent = nextContent.replace(/\r?\n/g, '\r\n');
+        if (!nextContent.trim()) throw new Error("Empty generated source: " + normalizedPath);
+        if (nextContent === sourceContents.get(normalizedPath)) throw new Error("Generated proposal contains no change: " + normalizedPath);
+        if (generated.some(change => change.path === normalizedPath)) throw new Error("Duplicate generated path: " + normalizedPath);
+        generated.push({
+          path: normalizedPath,
+          content: nextContent,
+          baseHash: existsSync(absolute) ? sourceHashes.get(normalizedPath) : null,
+          previousContent: existsSync(absolute) ? sourceContents.get(normalizedPath) : '',
+        });
+      }
+      return generated;
+    };
+
     let proposals: GeneratedCodeChange[] = [];
     let followUp = '';
     let sourceReadUsed = false;
     let formatRetryUsed = false;
     let requirementRetryUsed = false;
     let requirementFeedback = '';
-    // One source request, one format correction and one requirement correction.
-    // All generation and review calls share the existing deadline.
-    for (let attempt = 0; attempt < 4; attempt++) {
-      const prompt = buildPrompt([followUp, requirementFeedback].filter(Boolean).join("\n"));
+    let validationRetryUsed = false;
+    let validationFeedback = '';
+    // Each correction category is bounded to one retry under the same deadline.
+    for (let attempt = 0; attempt < 5; attempt++) {
+      const prompt = buildPrompt([followUp, requirementFeedback, validationFeedback].filter(Boolean).join("\n"));
       const response = await callCoder(attempt ? "追加確認後のコード再生成" : "コード生成", { userId, timeoutMs,
       // prompt already contains the source context; do not count it twice.
       contextWindow: contextFor(prompt.length + 8192),
@@ -524,7 +582,23 @@ export class PoipoiCodeAgent {
           proposals = [];
           continue;
         }
-        break;
+        const generated = materializeChanges(proposals);
+        if (options.validateGenerated) {
+          const validationInput = Object.freeze(generated.map(change => Object.freeze({ ...change })));
+          const issues = await options.validateGenerated(validationInput);
+          if (!Array.isArray(issues) || issues.some((item: unknown) => typeof item !== "string" || !item.trim())) {
+            throw new Error("生成コードの検証結果が不正です。変更は適用していません。");
+          }
+          if (issues.length) {
+            if (validationRetryUsed) throw new Error("生成コードの検証に失敗しました。変更は適用していません: " + issues.join("; ").slice(0, 1200));
+            validationRetryUsed = true;
+            validationFeedback = "The caller's acceptance checks actually failed on the previous generated code. Correct the reported failures without weakening validation, removing checks or changing requested behavior. Regenerate the COMPLETE change set. " +
+              JSON.stringify({ failures: issues.slice(0, 20).map(item => item.slice(0, 1000)), previousChanges: proposals });
+            proposals = [];
+            continue;
+          }
+        }
+        return generated;
       }
       if (sourceReadUsed) throw new Error('AIが有効な変更案を生成できませんでした。' + (typeof proposal.reason === 'string' ? proposal.reason.slice(0, 500) : '未実装のままです。'));
       sourceReadUsed = true;
@@ -541,57 +615,7 @@ export class PoipoiCodeAgent {
       if (!added) throw new Error('AIが変更案を作成できず、追加で確認できるソースもありません。未実装です。');
       followUp = 'The previous response produced no changes. Additional requested source is now included. Implement the complete user request with exact edits and new modules as needed. Do not treat the catalogue saying unsupported as a prohibition on implementing a feature. Do not replace the request with only a help-text change. If still blocked, provide a concrete reason.';
     }
-    if (!proposals.length) throw new Error("AIが有効な変更案を生成できませんでした。変更は適用していません。");
-    const generated: CodeChange[] = [];
-    if (proposals.length > 5) throw new Error("Generated changes exceed the five-file safety limit");
-    const allowed = new Set(sourceContents.keys());
-    for (const proposal of proposals) {
-      const normalizedPath = proposal.path.replace(/\\/g, "/");
-      const isNewSource = /^(?:server|client\/src|shared|src|mobile\/src)\/[a-zA-Z0-9_./-]+\.[jt]sx?$/.test(normalizedPath)
-        && !existsSync(this.safePath(normalizedPath));
-      if (!allowed.has(normalizedPath) && !isNewSource) {
-        throw new Error("Generated change targets an unreviewed file: " + proposal.path);
-      }
-      const absolute = this.safePath(normalizedPath);
-      let nextContent: string;
-      if (proposal.edits !== undefined) {
-        if (proposal.content !== undefined || !Array.isArray(proposal.edits) || !proposal.edits.length) {
-          throw new Error("Invalid exact-text edits: " + normalizedPath);
-        }
-        const previous = sourceContents.get(normalizedPath);
-        if (previous === undefined) throw new Error("Edits require reviewed existing source: " + normalizedPath);
-        nextContent = previous.replace(/\r\n/g, "\n");
-        for (const edit of proposal.edits) {
-          if (!edit || typeof edit.oldText !== "string" || !edit.oldText.length || typeof edit.newText !== "string") {
-            throw new Error("Invalid exact-text edit: " + normalizedPath);
-          }
-          const oldText = edit.oldText.replace(/\r\n/g, "\n");
-          const newText = edit.newText.replace(/\r\n/g, "\n");
-          const position = nextContent.indexOf(oldText);
-          if (position < 0 || nextContent.indexOf(oldText, position + 1) >= 0) {
-            throw new Error("Edit does not match exactly one source location: " + normalizedPath);
-          }
-          nextContent = nextContent.slice(0, position) + newText + nextContent.slice(position + oldText.length);
-        }
-      } else {
-        if (typeof proposal.content !== "string") throw new Error("Missing generated source: " + normalizedPath);
-        if (sourceContents.has(normalizedPath) && !completeSources.has(normalizedPath)) {
-          throw new Error('一部のみ確認した既存ファイルの全文置換を拒否しました: ' + normalizedPath);
-        }
-        nextContent = proposal.content;
-      }
-      if (sourceContents.get(normalizedPath)?.includes('\r\n')) nextContent = nextContent.replace(/\r?\n/g, '\r\n');
-      if (!nextContent.trim()) throw new Error("Empty generated source: " + normalizedPath);
-      if (nextContent === sourceContents.get(normalizedPath)) throw new Error("Generated proposal contains no change: " + normalizedPath);
-      if (generated.some(change => change.path === normalizedPath)) throw new Error("Duplicate generated path: " + normalizedPath);
-      generated.push({
-        path: normalizedPath,
-        content: nextContent,
-        baseHash: existsSync(absolute) ? sourceHashes.get(normalizedPath) : null,
-        previousContent: existsSync(absolute) ? sourceContents.get(normalizedPath) : '',
-      });
-    }
-    return generated;
+    throw new Error("AIが検証済みの変更案を生成できませんでした。変更は適用していません。");
     } finally { this.generating = false; }
   }
 
