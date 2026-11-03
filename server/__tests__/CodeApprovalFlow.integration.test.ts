@@ -1,8 +1,8 @@
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
-import { mkdirSync, writeFileSync, readFileSync, existsSync, rmSync } from 'node:fs';
+import { mkdirSync, writeFileSync, readFileSync, existsSync, rmSync, symlinkSync } from 'node:fs';
 import path from 'node:path';
 import { devNull } from 'node:os';
-import { execFileSync } from 'node:child_process';
+import { execFileSync, spawn } from 'node:child_process';
 import { createHash } from 'node:crypto';
 
 const fixture = vi.hoisted(() => {
@@ -13,7 +13,7 @@ const fixture = vi.hoisted(() => {
 });
 
 import { unifiedToolsRouter } from '../routers/unifiedTools';
-import { createCodePreview, readCodePreview, listCodePreviews } from '../core/CodePreviewStore';
+import { createCodePreview, readCodePreview, listCodePreviews, saveCodePreview, describeCodePreview } from '../core/CodePreviewStore';
 import { getSharedChatRepository } from '../repositories/ChatRepository';
 
 const user = { id: 990001, role: 'admin', name: 'Isolated approval test' };
@@ -28,8 +28,11 @@ const originalGlobal = process.env.GIT_CONFIG_GLOBAL;
 
 beforeAll(() => {
   mkdirSync(absolute('server/core'), { recursive: true });
-  writeFileSync(absolute('.gitignore'), 'data/\n');
+  writeFileSync(absolute('.gitignore'), 'data/\nnode_modules\nscripts\n');
   writeFileSync(absolute('package.json'), '{"type":"module","dependencies":{}}');
+  symlinkSync(fixture.original + '/node_modules', absolute('node_modules'), 'junction');
+  symlinkSync(fixture.original + '/scripts', absolute('scripts'), 'junction');
+  writeFileSync(absolute('tsconfig.json'), JSON.stringify({ compilerOptions: { target: 'ES2022', strict: true, skipLibCheck: true, types: [] }, include: ['server/core/*.ts'] }));
   process.env.GIT_CONFIG_GLOBAL = devNull;
   git('init', '-q');
   git('config', 'user.name', 'Approval integration');
@@ -156,4 +159,109 @@ describe('approved code changes through the real API, store and Git', () => {
       git('config', 'user.email', 'approval@example.invalid');
     }
   });
+
+  it('continues in its independent worker after the requesting server process exits', async () => {
+    const target = 'server/core/DetachedFeature.ts';
+    const sessionId = 'detached-session';
+    const repository = getSharedChatRepository();
+    await repository.saveSession({ id: sessionId, userId: String(user.id), title: 'Detached approval', createdAt: Date.now(), updatedAt: Date.now(), messageCount: 0 });
+    const preview = await createCodePreview(String(user.id), [{ path: target, content: 'export const detached = true;\n', baseHash: null }], sessionId);
+    const code = `
+      const {reserveCodePreview}=await import(${JSON.stringify(fixture.original + '/server/core/CodePreviewStore.ts')});
+      const {applyCodePreviewInWorker}=await import(${JSON.stringify(fixture.original + '/server/core/CodeApprovalWorker.ts')});
+      await applyCodePreviewInWorker(await reserveCodePreview(${JSON.stringify(String(user.id))},${JSON.stringify(preview.id)}),true);
+    `;
+    const parent = spawn(process.execPath, ['--import', 'tsx', '--input-type=module', '--eval', code], {
+      cwd: fixture.directory, env: { ...process.env }, stdio: 'ignore',
+    });
+    try {
+      const active = await waitForPreview(preview.id, record => record.application?.phase === 'type-checking');
+      expect(active.application?.workerPid).not.toBe(parent.pid);
+      parent.kill('SIGTERM');
+      const completed = await waitForPreview(preview.id, record => record.status !== 'applying');
+      expect(completed).toMatchObject({ status: 'applied', application: { committed: true, typeChecked: true } });
+      expect(git('show', 'HEAD:' + target)).toBe(preview.changes[0].content);
+      expect((await repository.getMessages(sessionId, 100))).toHaveLength(0);
+      await tools().listCodePreviews({ accountId: String(user.id), includeHistory: true });
+      await tools().listCodePreviews({ accountId: String(user.id), includeHistory: true });
+      expect((await repository.getMessages(sessionId, 100)).filter(row => row.id === 'code-approval-' + preview.id)).toHaveLength(1);
+    } finally { parent.kill('SIGTERM'); }
+  });
+
+  it('continues an interrupted approved new file with real type checking and no duplicate writes', async () => {
+    const target = 'server/core/ResumedFeature.ts';
+    const content = 'export function identity(input: string): string { return input; }\n';
+    const preview = await interruptedPreview(target, content);
+    expect(describeCodePreview(preview)).toMatchObject({ interrupted: true, canResume: true });
+    const outcome = await tools().applyCodePreview({ previewId: preview.id, confirm: 'APPLY_AND_VERIFY', resume: true });
+    expect(outcome).toMatchObject({ success: true, typeChecked: true, committed: true });
+    expect(readFileSync(absolute(target), 'utf8')).toBe(content);
+    expect(git('show', 'HEAD:' + target)).toBe(content);
+    expect(describeCodePreview(await readCodePreview(String(user.id), preview.id))).toMatchObject({ interrupted: false, canResume: false });
+  });
+
+  it('preserves user changes to an interrupted file and refuses continuation', async () => {
+    const target = 'server/core/ChangedInterruptedFeature.ts';
+    const preview = await interruptedPreview(target, 'export const value = 1;\n');
+    const changed = 'export const value = 2;\n';
+    writeFileSync(absolute(target), changed);
+    const head = git('rev-parse', 'HEAD');
+    const outcome = await tools().applyCodePreview({ previewId: preview.id, confirm: 'APPLY_AND_VERIFY', resume: true });
+    expect(outcome.success).toBe(false);
+    expect(readFileSync(absolute(target), 'utf8')).toBe(changed);
+    expect(git('rev-parse', 'HEAD')).toBe(head);
+  });
+
+  it('requires type-check approval when continuing an interrupted application', async () => {
+    const preview = await interruptedPreview('server/core/VerifyRequired.ts', 'export const verify = true;\n');
+    await expect(tools().applyCodePreview({ previewId: preview.id, confirm: 'APPLY_ONLY', resume: true })).rejects.toThrow('型チェック');
+    expect((await readCodePreview(String(user.id), preview.id)).application?.phase).toBe('type-checking');
+  });
+
+  it('preserves a user edit made while asynchronous type checking is running', async () => {
+    const target = 'server/core/EditedDuringCheck.ts';
+    const preview = await createCodePreview(String(user.id), [{ path: target, content: 'export const value = 1;\n', baseHash: null }]);
+    const head = git('rev-parse', 'HEAD');
+    const applying = tools().applyCodePreview({ previewId: preview.id, confirm: 'APPLY_AND_VERIFY' });
+    await waitForPreview(preview.id, record => record.application?.phase === 'type-checking');
+    const edit = 'export const value = 2; // user edit\n';
+    writeFileSync(absolute(target), edit);
+    const outcome = await applying;
+    expect(outcome.success).toBe(false);
+    expect(readFileSync(absolute(target), 'utf8')).toBe(edit);
+    expect(git('rev-parse', 'HEAD')).toBe(head);
+    expect(git('diff', '--cached', '--name-only').trim()).toBe('');
+  });
+
+  it('retains an interrupted file without committing if its type check fails', async () => {
+    const target = 'server/core/TypeErrorFeature.ts';
+    const content = 'export const invalid: string = 123;\n';
+    const preview = await interruptedPreview(target, content);
+    const head = git('rev-parse', 'HEAD');
+    const outcome = await tools().applyCodePreview({ previewId: preview.id, confirm: 'APPLY_AND_VERIFY', resume: true });
+    expect(outcome.success).toBe(false);
+    expect(outcome.error).toContain('Type check failed');
+    expect(readFileSync(absolute(target), 'utf8')).toBe(content);
+    expect(git('rev-parse', 'HEAD')).toBe(head);
+    expect((await readCodePreview(String(user.id), preview.id)).status).toBe('failed');
+  });
+
 });
+
+async function interruptedPreview(target: string, content: string) {
+  const preview = await createCodePreview(String(user.id), [{ path: target, content, baseHash: null }]);
+  writeFileSync(absolute(target), content);
+  preview.status = 'applying';
+  preview.application = { startedAt: 1, phase: 'type-checking' };
+  await saveCodePreview(preview);
+  return preview;
+}
+async function waitForPreview(id: string, predicate: (preview: Awaited<ReturnType<typeof readCodePreview>>) => boolean) {
+  const deadline = Date.now() + 15000;
+  while (Date.now() < deadline) {
+    const record = await readCodePreview(String(user.id), id);
+    if (predicate(record)) return record;
+    await new Promise(resolve => setTimeout(resolve, 20));
+  }
+  throw new Error('Expected approval state was not reached');
+}

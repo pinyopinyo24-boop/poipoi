@@ -20,7 +20,9 @@ export default function AZApprovalNotice() {
     preview.status === 'pending' && preview.expiresInSeconds > 0).length ?? 0;
 
   const workingCount = previews.data?.filter(preview =>
-    preview.status === 'applying').length ?? 0;
+    preview.status === 'applying' && !preview.interrupted).length ?? 0;
+
+  const interruptedCount = previews.data?.filter(preview => preview.interrupted).length ?? 0;
 
   if (user?.role !== 'admin') return null;
   return <>
@@ -41,6 +43,12 @@ export default function AZApprovalNotice() {
       onClick={() => setOpen(true)}>
       <span aria-hidden="true" className="h-2 w-2 rounded-full bg-cyan-500 motion-safe:animate-pulse" />
       <span role="status" aria-live="polite" aria-atomic="true">作業中 <span className="tabular-nums">{workingCount}</span></span>
+    </Button>}
+    {interruptedCount > 0 && <Button type="button" variant="outline"
+      className="h-10 shrink-0 border-red-400 bg-red-50 text-red-800"
+      aria-label={"中断" + interruptedCount + "件。処理状況を確認"}
+      aria-haspopup="dialog" onClick={() => setOpen(true)}>
+      中断 {interruptedCount}
     </Button>}
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogContent className="max-h-[85vh] max-w-3xl overflow-y-auto">

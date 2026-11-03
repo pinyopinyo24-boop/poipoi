@@ -26,7 +26,7 @@ export default function AZEvolutionPanel({ reviewOnly = false }: { reviewOnly?: 
     'loading-compiler': '構文確認の準備中',
     'checking-syntax': '構文を確認中', 'checking-local-changes': '未保存の変更を確認中',
     'writing-files': 'ファイルを作成・更新中', 'type-checking': '承認された型チェックを実行中',
-    committing: 'Gitコミット中', completed: '完了', failed: '失敗',
+    committing: 'Gitコミット中', completed: '完了', failed: '失敗', interrupted: '処理中断・完了未確認',
   };
   const create = async () => {
     setResult('');
@@ -36,9 +36,9 @@ export default function AZEvolutionPanel({ reviewOnly = false }: { reviewOnly?: 
       setResult('変更案を生成しました。まだ適用していません。');
     } catch (error) { setResult(error instanceof Error ? error.message : String(error)); }
   };
-  const approve = async (previewId: string) => {
+  const approve = async (previewId: string, resume = false) => {
     if (approvalLock.current || busy || !reviewed[previewId]) return;
-    if (!window.confirm(typeCheck[previewId]
+    if (!window.confirm(resume ? '中断した承認済みファイルを照合し、型チェック・Gitコミットを続けますか？ 内容が異なる場合は停止します。' : typeCheck[previewId]
       ? '表示された変更の適用・型チェック・Gitコミットを承認しますか？ テスト・ビルド・再起動は行いません。'
       : '表示された変更の適用・Gitコミットを承認しますか？ 型チェック・テスト・ビルド・再起動は行いません。')) return;
     approvalLock.current = true;
@@ -49,10 +49,10 @@ export default function AZEvolutionPanel({ reviewOnly = false }: { reviewOnly?: 
       // "applying" does not claim that file creation or Git commit succeeded.
       utils.unifiedTools.listCodePreviews.setData(approvalQuery, current =>
         current?.map(preview => preview.previewId === previewId
-          ? { ...preview, status: 'applying' as const }
+          ? { ...preview, status: 'applying' as const, interrupted: false, canResume: false }
           : preview));
       const outcome = await apply.mutateAsync({ previewId,
-        confirm: typeCheck[previewId] ? 'APPLY_AND_VERIFY' : 'APPLY_ONLY' });
+        confirm: resume || typeCheck[previewId] ? 'APPLY_AND_VERIFY' : 'APPLY_ONLY', resume });
       setResult(outcome.success
         ? `適用・Gitコミット済み。型チェック: ${outcome.typeChecked ? '実行済み' : '未実行'}。テスト・実動作確認は未実施です。`
         : `適用失敗: ${outcome.error ?? '詳細不明'}。復元結果はエラー詳細を確認してください。`);
@@ -81,10 +81,11 @@ export default function AZEvolutionPanel({ reviewOnly = false }: { reviewOnly?: 
       {pending.error && <p role="alert">{pending.error.message}</p>}
       {result && <p role="status" className="whitespace-pre-wrap">{result}</p>}
       {pending.data?.map(preview => <section key={preview.previewId} className="space-y-3 rounded border p-3">
-        <p role="status">{statusLabels[preview.status]}・{preview.changes.length}ファイル
+        <p role="status">{preview.interrupted ? '処理中断・完了未確認' : statusLabels[preview.status]}・{preview.changes.length}ファイル
           {preview.status === 'pending' && <>。有効期限まで約{Math.ceil(preview.expiresInSeconds / 60)}分</>}</p>
         {preview.application && <p className="text-sm">{phaseLabels[preview.application.phase] ?? '処理状況を確認中'}</p>}
-        {preview.status === 'applying' && <p className="text-sm">作業中（完了未確認）です。再承認せずお待ちください。完了・失敗の結果はチャットに表示します。</p>}
+        {preview.status === 'applying' && !preview.interrupted && <p className="text-sm">作業中（完了未確認）です。再承認せずお待ちください。完了・失敗の結果はチャットに表示します。</p>}
+        {preview.interrupted && <p role="alert" className="text-sm text-red-700">承認処理が中断しています。作業中ではありません。ファイルとGitの完了状態は未確認です。</p>}
         {preview.application?.error && <p role="alert" className="whitespace-pre-wrap text-red-700">{preview.application.error}</p>}
         {preview.status === 'applied' && <p className="text-sm">型チェック: {preview.application?.typeChecked ? '実行済み' : '未確認または未実行'}。テスト・実動作確認は未実施です。</p>}
         {preview.changes.map(change => <details key={change.path}>
@@ -94,17 +95,17 @@ export default function AZEvolutionPanel({ reviewOnly = false }: { reviewOnly?: 
             <div><p>変更後</p><pre className="max-h-80 overflow-auto whitespace-pre-wrap bg-cyan-50 p-2">{change.content}</pre></div>
           </div>
         </details>)}
-        {preview.status === 'pending' && preview.expiresInSeconds > 0 && <>
+        {((preview.status === 'pending' && preview.expiresInSeconds > 0) || preview.canResume) && <>
         <label className="block text-sm"><input type="checkbox" checked={reviewed[preview.previewId] ?? false}
           onChange={event => setReviewed(current => ({ ...current, [preview.previewId]: event.target.checked }))} /> 全ファイルの変更内容を確認した</label>
-        <label className="block text-sm"><input type="checkbox" checked={typeCheck[preview.previewId] ?? false}
-          onChange={event => setTypeCheck(current => ({ ...current, [preview.previewId]: event.target.checked }))} /> 適用後の型チェックも承認する（テスト・ビルドは実行しない）</label>
+        {!preview.canResume && <label className="block text-sm"><input type="checkbox" checked={typeCheck[preview.previewId] ?? false}
+          onChange={event => setTypeCheck(current => ({ ...current, [preview.previewId]: event.target.checked }))} /> 適用後の型チェックも承認する（テスト・ビルドは実行しない）</label>}
         <div className="flex gap-2">
-          <Button disabled={busy || !reviewed[preview.previewId]} onClick={() => approve(preview.previewId)}>適用を承認</Button>
-          <Button variant="outline" disabled={busy} onClick={async () => {
+          <Button disabled={busy || !reviewed[preview.previewId]} onClick={() => approve(preview.previewId, preview.canResume)}>{preview.canResume ? "中断した処理を続ける（型チェック付き）" : "適用を承認"}</Button>
+          {preview.status === "pending" && <Button variant="outline" disabled={busy} onClick={async () => {
             try { await reject.mutateAsync({ previewId: preview.previewId }); await pending.refetch(); }
             catch (error) { setResult(error instanceof Error ? error.message : String(error)); }
-          }}>却下</Button>
+          }}>却下</Button>}
         </div>
         </>}
       </section>)}

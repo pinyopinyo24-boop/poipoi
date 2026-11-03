@@ -8,7 +8,7 @@ import {
   readdirSync,
 } from "fs";
 import { dirname, resolve, relative } from "path";
-import { execFileSync } from "child_process";
+import { execFile, execFileSync } from "child_process";
 import { createHash } from "node:crypto";
 import { createRequire } from "node:module";
 import { invokeLLM } from "../_core/llm";
@@ -708,13 +708,22 @@ export class PoipoiCodeAgent {
 
   async applyAndTest(changes: CodeChange[], options: {
     typeCheck?: boolean;
+    resumeWritten?: boolean;
     onProgress?: (phase: string) => void | Promise<void>;
   } = {}): Promise<CodeTaskResult> {
     if (this.applying) return { success: false, changes: [], tested: false, error: '別のコード変更を適用中です' };
     this.applying = true;
     const backups = new Map<string, string | null>();
+    const written = new Map<string, string>();
+    let stagedByAgent = false;
+    let preserveAfterGitChange = false;
     const rollback = () => {
+      const skipped: string[] = [];
       for (const [absolute, previous] of backups) {
+        if (!written.has(absolute)) continue;
+        if (!existsSync(absolute) || readFileSync(absolute, 'utf8') !== written.get(absolute)) {
+          skipped.push(absolute); continue;
+        }
         if (previous === null) {
           if (existsSync(absolute)) unlinkSync(absolute);
         } else {
@@ -722,9 +731,12 @@ export class PoipoiCodeAgent {
           writeFileSync(absolute, previous, "utf8");
         }
       }
+      if (skipped.length) throw new Error('User edits preserved during rollback: ' + skipped.join(', '));
     };
 
     try {
+      if (options.resumeWritten && (!options.typeCheck || changes.length !== 1 || changes[0].baseHash !== null))
+        throw new Error('Continuation requires one approved new file and type checking');
       await options.onProgress?.("checking-source");
       if (!changes.length) throw new Error("No generated changes to apply");
       const paths = changes.map(change => this.safePath(change.path));
@@ -737,7 +749,8 @@ export class PoipoiCodeAgent {
         const currentHash = existsSync(absolute)
           ? createHash("sha256").update(readFileSync(absolute, "utf8")).digest("hex")
           : null;
-        if (currentHash !== change.baseHash) {
+        const expectedHash = options.resumeWritten ? createHash("sha256").update(change.content).digest("hex") : change.baseHash;
+        if (currentHash !== expectedHash) {
           throw new Error("Source changed after generation: " + change.path);
         }
       }
@@ -795,27 +808,44 @@ export class PoipoiCodeAgent {
       }).trim();
       if (staged) throw new Error("Refusing self-evolution while unrelated staged changes exist");
       for (const path of changes.map(item => item.path.replace(/\\/g, "/"))) {
-        if (dirty.some(line => line.slice(3) === path || line.slice(3).endsWith(" -> " + path))) {
+        if (dirty.some(line => (line.slice(3) === path || line.slice(3).endsWith(" -> " + path)) &&
+            !(options.resumeWritten && line === "?? " + path))) {
           throw new Error("Refusing to overwrite existing local changes: " + path);
         }
       }
 
+      const startingHead = execFileSync("git", ["rev-parse", "HEAD"], { cwd: this.root, encoding: "utf8", timeout: 15000 }).trim();
       await options.onProgress?.("writing-files");
-      for (const change of changes) {
+      for (const change of options.resumeWritten ? [] : changes) {
         const absolute = this.safePath(change.path);
         backups.set(absolute, existsSync(absolute) ? readFileSync(absolute, "utf8") : null);
         mkdirSync(dirname(absolute), { recursive: true });
         writeFileSync(absolute, change.content, { encoding: "utf8", flag: change.baseHash === null ? "wx" : "w" });
+        written.set(absolute, change.content);
       }
 
       // Type checking is optional and separately approved. Functional tests are never
       // implied by applying a patch; tested stays false in either mode.
       if (options.typeCheck) await options.onProgress?.("type-checking");
-      if (options.typeCheck) execFileSync(process.platform === "win32" ? "cmd.exe" : "pnpm",
-        process.platform === "win32" ? ["/d", "/s", "/c", "pnpm exec tsc --noEmit"] : ["exec", "tsc", "--noEmit"], {
-        cwd: this.root, encoding: "utf8", timeout: 120000,
-        windowsHide: true, stdio: "pipe",
+      if (options.typeCheck) await new Promise<void>((done, fail) => {
+        execFile(process.execPath, ["--max-old-space-size=4096", requireCompiler.resolve("typescript/bin/tsc"), "--noEmit"], {
+          cwd: this.root, encoding: "utf8", timeout: 120000, maxBuffer: 8 * 1024 * 1024, windowsHide: true,
+        }, (error, stdout, stderr) => {
+          if (error) fail(new Error('Type check failed: ' + String(stdout || stderr || error.message).slice(0, 4000)));
+          else done();
+        });
       });
+      // Asynchronous checking must not race a user's edits or Git operations.
+      if (execFileSync("git", ["rev-parse", "HEAD"], { cwd: this.root, encoding: "utf8", timeout: 15000 }).trim() !== startingHead ||
+          execFileSync("git", ["diff", "--cached", "--name-only"], { cwd: this.root, encoding: "utf8", timeout: 15000 }).trim())
+      {
+        preserveAfterGitChange = true;
+        throw new Error('Git changed during verification; generated files preserved without committing');
+      }
+      for (const change of changes) {
+        if (!existsSync(this.safePath(change.path)) || readFileSync(this.safePath(change.path), 'utf8') !== change.content)
+          throw new Error('Source changed during verification: ' + change.path);
+      }
 
       // Only commit the exact generated paths after successful verification.
       // No git add -A: unrelated user changes are preserved.
@@ -823,6 +853,7 @@ export class PoipoiCodeAgent {
       execFileSync("git", ["add", "--", ...changes.map(item => item.path)], {
         cwd: this.root, timeout: 15000, windowsHide: true,
       });
+      stagedByAgent = true;
       execFileSync("git", ["-c", "core.hooksPath=" + (process.platform === "win32" ? "NUL" : "/dev/null"), "commit", "-m", "PoiPoi approved self-evolution [skip ci]", "--", ...changes.map(item => item.path)], {
         cwd: this.root, timeout: 30000, windowsHide: true,
       });
@@ -830,7 +861,7 @@ export class PoipoiCodeAgent {
     } catch (error) {
       let detail = error instanceof Error ? error.message : String(error);
       try {
-        if (backups.size) {
+        if (stagedByAgent) {
           // Discard only our staged paths, leaving unrelated staged changes alone.
           execFileSync("git", ["reset", "--quiet", "--", ...changes.map(item => item.path)], {
             cwd: this.root, timeout: 15000, windowsHide: true,
@@ -839,7 +870,7 @@ export class PoipoiCodeAgent {
       } catch (restoreError) {
         detail += "; rollback failed: " + String(restoreError);
       }
-      try { if (backups.size) rollback(); } catch (restoreError) { detail += "; file restore failed: " + String(restoreError); }
+      try { if (backups.size && !preserveAfterGitChange) rollback(); } catch (restoreError) { detail += "; file restore failed: " + String(restoreError); }
       return { success: false, changes: [], tested: false, error: detail };
     } finally {
       this.applying = false;

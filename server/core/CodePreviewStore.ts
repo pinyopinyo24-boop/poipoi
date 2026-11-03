@@ -12,6 +12,8 @@ const schema = z.object({
   application: z.object({
     startedAt: z.number(), finishedAt: z.number().optional(),
     phase: z.string().max(100),
+    jobId: z.string().uuid().optional(), workerPid: z.number().int().positive().optional(),
+    typeCheckRequested: z.boolean().optional(), resumeWritten: z.boolean().optional(),
     typeChecked: z.boolean().optional(), committed: z.boolean().optional(),
     error: z.string().max(4000).optional(),
   }).optional(),
@@ -68,11 +70,24 @@ export async function listCodePreviews(userId: string, options: { includeHistory
   const history = previews.filter(preview => preview.status !== 'pending' && preview.status !== 'applying').slice(0, 20);
   return [...active, ...history];
 }
+export function isCodeApprovalInterrupted(preview: CodePreview) {
+  if (preview.status !== 'applying') return false;
+  if (preview.application?.workerPid) {
+    try { process.kill(preview.application.workerPid, 0); return false; }
+    catch (error) { return (error as NodeJS.ErrnoException).code !== 'EPERM'; }
+  }
+  return (preview.application?.startedAt ?? preview.updatedAt ?? Infinity) < Date.now() - process.uptime() * 1000;
+}
+export function canResumeCodeApproval(preview: CodePreview) {
+  return isCodeApprovalInterrupted(preview) && preview.application?.phase === 'type-checking' &&
+    preview.changes.length === 1 && preview.changes[0].baseHash === null;
+}
 export function describeCodePreview(preview: CodePreview) {
   return {
     previewId: preview.id, expiresInSeconds: Math.max(0, Math.floor((preview.expires - Date.now()) / 1000)),
     status: preview.status, applied: preview.status === 'applied', tested: false,
     updatedAt: preview.updatedAt, application: preview.application,
+    interrupted: isCodeApprovalInterrupted(preview), canResume: canResumeCodeApproval(preview),
     changes: preview.changes.map(change => ({ ...change,
       operation: change.baseHash === null ? 'create' as const : 'modify' as const,
       proposedHash: createHash('sha256').update(change.content).digest('hex'),
@@ -90,6 +105,20 @@ export async function reserveCodePreview(userId: string, id: string) {
     const preview = await readCodePreview(userId, id);
     if (preview.status !== 'pending' || preview.expires <= Date.now()) throw new Error('Preview expired or already used');
     preview.status = 'applying';
+    await saveCodePreview(preview);
+    return preview;
+  } finally { reservations.delete(key); }
+}
+
+// Explicit continuation is limited to an interrupted, already-written new file.
+export async function reserveInterruptedCodePreview(userId: string, id: string) {
+  const key = location(userId, id);
+  if (reservations.has(key)) throw new Error('コード変更を処理中です');
+  reservations.add(key);
+  try {
+    const preview = await readCodePreview(userId, id);
+    if (!canResumeCodeApproval(preview)) throw new Error('安全に続行できる中断状態ではありません');
+    preview.application = { startedAt: Date.now(), phase: 'preparing', typeCheckRequested: true, resumeWritten: true };
     await saveCodePreview(preview);
     return preview;
   } finally { reservations.delete(key); }

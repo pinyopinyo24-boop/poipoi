@@ -1,3 +1,4 @@
+import { applyCodePreviewInWorker } from '../core/CodeApprovalWorker';
 import { listPersonalTasks, changePersonalTask, claimPersonalReminder } from '../core/AZPersonalTasks';
 import { saveChatImage, readChatImage } from '../core/ChatImageStore';
 import { createPDFParser } from '../managers/services/PDFParser';
@@ -12,7 +13,7 @@ import { createHash, randomUUID } from 'node:crypto';
 import path from 'node:path';
 import { getUserPoiPoiUnifiedState, syncUserPoiPoiUnifiedState } from '../core/PoiPoiUnifiedStateStore';
 import { PoipoiCodeAgent } from '../core/PoipoiCodeAgent';
-import { createCodePreview, describeCodePreview, listCodePreviews, readCodePreview, reserveCodePreview, saveCodePreview } from '../core/CodePreviewStore';
+import { createCodePreview, describeCodePreview, listCodePreviews, readCodePreview, reserveCodePreview, reserveInterruptedCodePreview, saveCodePreview } from '../core/CodePreviewStore';
 import { getPresentationRepository } from '../managers/PresentationRepository';
 import { PresentationAIManager } from '../managers/PresentationAIManager';
 
@@ -410,16 +411,20 @@ export const unifiedToolsRouter = router({
     // missing completion message in the live server repository; saveMessage
     // deduplicates by preview ID, including concurrent polling requests.
     for (const preview of previews) {
-      if (preview.status !== 'applied' || preview.application?.committed !== true || !preview.sessionId) continue;
+      const completed = preview.status === 'applied' && preview.application?.committed === true;
+      const failed = preview.status === 'failed' && Boolean(preview.application?.finishedAt && preview.application?.error);
+      if ((!completed && !failed) || !preview.sessionId || !preview.application) continue;
       try {
         const repository = (await import('../repositories/ChatRepository')).getSharedChatRepository();
         if ((await repository.getSession(preview.sessionId))?.userId !== String(ctx.user.id)) continue;
         await repository.saveMessage({
           id: 'code-approval-' + preview.id, userId: String(ctx.user.id), role: 'assistant',
-          content: '承認されたコード変更を適用・Gitコミットしました。型チェック: ' + (preview.application.typeChecked ? '実行済み' : '未実行') + '。テスト・実動作確認は未実施です。',
+          content: completed
+            ? '承認されたコード変更を適用・Gitコミットしました。型チェック: ' + (preview.application.typeChecked ? '実行済み' : '未実行') + '。テスト・実動作確認は未実施です。'
+            : (preview.application.phase === 'interrupted' ? '承認処理が中断しました。ファイル・Gitの完了状態は未確認です: ' : '承認されたコード変更の適用に失敗しました: ') + preview.application.error,
           timestamp: preview.application.finishedAt ?? preview.updatedAt ?? Date.now(),
-          metadata: { codeApproval: { previewId: preview.id, success: true, tested: false,
-            typeChecked: preview.application.typeChecked === true, committed: true } },
+          metadata: { codeApproval: { previewId: preview.id, success: completed, tested: false,
+            typeChecked: preview.application.typeChecked === true, committed: preview.application.committed, error: preview.application.error } },
         }, preview.sessionId);
       } catch (error) { console.warn('[PoiPoi] Approval completion report unavailable:', error); }
     }
@@ -458,28 +463,14 @@ export const unifiedToolsRouter = router({
   applyCodePreview: protectedProcedure.input(z.object({
     previewId: z.string().uuid(),
     confirm: z.enum(['APPLY_ONLY', 'APPLY_AND_VERIFY']),
+    resume: z.boolean().optional(),
   })).mutation(async ({ input, ctx }) => {
     if (ctx.user.role !== 'admin') throw new Error('Administrator permission required');
-    const preview = await reserveCodePreview(String(ctx.user.id), input.previewId);
-    const startedAt = Date.now();
-    preview.application = { startedAt, phase: 'preparing' };
-    await saveCodePreview(preview);
-    const outcome = await PoipoiCodeAgent.getInstance().applyAndTest(preview.changes, {
-      typeCheck: input.confirm === 'APPLY_AND_VERIFY',
-      onProgress: async phase => {
-        preview.application = { startedAt, phase };
-        ctx.trace?.('code.apply.' + phase);
-        try { await saveCodePreview(preview); }
-        catch { ctx.trace?.('code.apply.progress-record-failed'); }
-      },
-    });
-    preview.status = outcome.success ? 'applied' : 'failed';
-    preview.application = {
-      startedAt, finishedAt: Date.now(), phase: outcome.success ? 'completed' : 'failed',
-      typeChecked: outcome.typeChecked === true, committed: outcome.committed === true,
-      error: outcome.error?.slice(0, 4000),
-    };
-    await saveCodePreview(preview);
+    if (input.resume && input.confirm !== 'APPLY_AND_VERIFY') throw new Error('続行には型チェックの承認が必要です');
+    const preview = input.resume
+      ? await reserveInterruptedCodePreview(String(ctx.user.id), input.previewId)
+      : await reserveCodePreview(String(ctx.user.id), input.previewId);
+    const outcome = await applyCodePreviewInWorker(preview, input.confirm === 'APPLY_AND_VERIFY', input.resume === true);
     ctx.trace?.(outcome.success ? 'code.apply.completed' : 'code.apply.failed');
     if (preview.sessionId) {
       const repository = (await import('../repositories/ChatRepository')).getSharedChatRepository();
