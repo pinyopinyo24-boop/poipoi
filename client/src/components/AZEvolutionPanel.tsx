@@ -23,6 +23,7 @@ export default function AZEvolutionPanel({ reviewOnly = false }: { reviewOnly?: 
   const statusLabels = { pending: '承認待ち', applying: '適用中・完了未確認', applied: '適用・Gitコミット済み', failed: '適用失敗', rejected: '却下済み' } as const;
   const phaseLabels: Record<string, string> = {
     preparing: '適用準備中', 'checking-source': '変更対象を確認中',
+    'loading-compiler': '構文確認の準備中',
     'checking-syntax': '構文を確認中', 'checking-local-changes': '未保存の変更を確認中',
     'writing-files': 'ファイルを作成・更新中', 'type-checking': '承認された型チェックを実行中',
     committing: 'Gitコミット中', completed: '完了', failed: '失敗',

@@ -10,7 +10,12 @@ import {
 import { dirname, resolve, relative } from "path";
 import { execFileSync } from "child_process";
 import { createHash } from "node:crypto";
+import { createRequire } from "node:module";
 import { invokeLLM } from "../_core/llm";
+
+// TypeScript exposes a CommonJS compiler. Load it without entering an async
+// ESM-loader wait while an approved application has already been reserved.
+const requireCompiler = createRequire(import.meta.url);
 
 export interface CodeChange {
   path: string;
@@ -654,8 +659,9 @@ export class PoipoiCodeAgent {
       }
 
       // Validate syntax before modifying the working tree.
+      await options.onProgress?.("loading-compiler");
+      const ts = requireCompiler("typescript") as typeof import("typescript");
       await options.onProgress?.("checking-syntax");
-      const ts = await import("typescript");
       for (const change of changes) {
         if (!/\.[cm]?[jt]sx?$/.test(change.path)) continue;
         const checked = ts.transpileModule(change.content, {
