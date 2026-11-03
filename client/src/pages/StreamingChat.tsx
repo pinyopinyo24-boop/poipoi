@@ -14,6 +14,7 @@ import { Badge } from "@/components/ui/badge";
 import { Textarea } from "@/components/ui/textarea";
 import FaceSwapPanel from "@/components/FaceSwapPanel";
 import AZEvolutionPanel from "@/components/AZEvolutionPanel";
+import AZApprovalNotice from "@/components/AZApprovalNotice";
 import { useAuth } from "@/_core/hooks/useAuth";
 
 interface Message {
@@ -677,6 +678,7 @@ export default function StreamingChat() {
               className="h-10 w-10 shrink-0 p-0 text-2xl"
               disabled={isLoading || isUploading || isPasting || authLoading || historyAccount !== accountId}
               onClick={() => attachmentInput.current?.click()}>＋</Button>
+            <AZApprovalNotice key={"approval-" + accountId} />
             <Input
               value={input}
               aria-label="AZへのメッセージ"
@@ -690,7 +692,7 @@ export default function StreamingChat() {
               }}
               placeholder="AZへの依頼を入力..."
               disabled={isLoading}
-              className="border-cyan-300 focus:border-cyan-500"
+              className="min-w-0 flex-1 border-cyan-300 focus:border-cyan-500"
             />
             <Button type="button"
               onClick={() => void handleSendMessage()}

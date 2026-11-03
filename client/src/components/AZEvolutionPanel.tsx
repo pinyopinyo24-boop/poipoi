@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { trpc } from '@/lib/trpc';
 import { useAuth } from '@/_core/hooks/useAuth';
 import { Button } from '@/components/ui/button';
@@ -10,6 +10,9 @@ export default function AZEvolutionPanel({ reviewOnly = false }: { reviewOnly?: 
   const [reviewed, setReviewed] = useState<Record<string, boolean>>({});
   const [typeCheck, setTypeCheck] = useState<Record<string, boolean>>({});
   const [result, setResult] = useState('');
+  const approvalLock = useRef(false);
+  const utils = trpc.useUtils();
+  const approvalQuery = { accountId: String(user?.id ?? ""), includeHistory: true };
   const pending = trpc.unifiedTools.listCodePreviews.useQuery({ accountId: String(user?.id ?? ""), includeHistory: true }, {
     enabled: user?.role === 'admin', refetchInterval: 10000,
   });
@@ -33,19 +36,34 @@ export default function AZEvolutionPanel({ reviewOnly = false }: { reviewOnly?: 
     } catch (error) { setResult(error instanceof Error ? error.message : String(error)); }
   };
   const approve = async (previewId: string) => {
-    if (!reviewed[previewId]) return;
+    if (approvalLock.current || busy || !reviewed[previewId]) return;
     if (!window.confirm(typeCheck[previewId]
       ? '表示された変更の適用・型チェック・Gitコミットを承認しますか？ テスト・ビルド・再起動は行いません。'
       : '表示された変更の適用・Gitコミットを承認しますか？ 型チェック・テスト・ビルド・再起動は行いません。')) return;
+    approvalLock.current = true;
     setResult('');
     try {
+      await utils.unifiedTools.listCodePreviews.cancel(approvalQuery);
+      // The user confirmed this approval. Hide its pending notice immediately;
+      // "applying" does not claim that file creation or Git commit succeeded.
+      utils.unifiedTools.listCodePreviews.setData(approvalQuery, current =>
+        current?.map(preview => preview.previewId === previewId
+          ? { ...preview, status: 'applying' as const }
+          : preview));
       const outcome = await apply.mutateAsync({ previewId,
         confirm: typeCheck[previewId] ? 'APPLY_AND_VERIFY' : 'APPLY_ONLY' });
       setResult(outcome.success
         ? `適用・Gitコミット済み。型チェック: ${outcome.typeChecked ? '実行済み' : '未実行'}。テスト・実動作確認は未実施です。`
         : `適用失敗: ${outcome.error ?? '詳細不明'}。復元結果はエラー詳細を確認してください。`);
       await pending.refetch();
-    } catch (error) { setResult(error instanceof Error ? error.message : String(error)); }
+    } catch (error) {
+      setResult(error instanceof Error ? error.message : String(error));
+      // A rejected request may still be pending. Restore the server's status,
+      // without retrying an application whose outcome is unknown.
+      await pending.refetch();
+    } finally {
+      approvalLock.current = false;
+    }
   };
   if (!user) return <p className="text-sm"><a href="/login" className="text-blue-700 underline">ログイン</a>すると、記憶・実務操作・自己進化をアカウントに保存できます。</p>;
   if (reviewOnly && user.role !== 'admin') return null;
