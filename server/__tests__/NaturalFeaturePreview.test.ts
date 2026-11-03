@@ -76,6 +76,9 @@ describe('new feature requests without source paths through the actual PC chat r
       expect(changes[0].content).toBe(actual.replace(anchor, anchor + '\n' + addition));
       const proposal = model.requests[0];
       expect(proposal.messages.at(-1).content).toContain(anchor);
+      expect(JSON.stringify(proposal.messages).length).toBeLessThan(20000);
+      expect(proposal.contextWindow).toBe(8192);
+      expect(proposal.max_tokens).toBe(2048);
       expect(proposal.response_format.json_schema.schema.properties.changes.items.oneOf[0]
         .properties.edits.items.oneOf.some((item: any) => item.properties.anchorId.enum.includes(id))).toBe(true);
       expect(readFileSync(model.root + '/' + page, 'utf8')).toBe(actual);

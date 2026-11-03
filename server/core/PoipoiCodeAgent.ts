@@ -297,7 +297,8 @@ export class PoipoiCodeAgent {
       const stop = Math.min(lines.length, end);
       const key = file + ':' + start + ':' + stop;
       if (viewedRanges.has(key)) return false;
-      const limit = explicitExisting.includes(file) && startLine === undefined ? 60000 : 12000;
+      const limit = explicitExisting.includes(file) && startLine === undefined ? 60000
+        : uiFeature && !composerFeature ? 6000 : 12000;
       const selected: string[] = [];
       let size = 0;
       for (let index = start - 1; index < stop; index++) {
@@ -346,7 +347,7 @@ export class PoipoiCodeAgent {
           endLine: parsed.getLineAndCharacterOfPosition(node.end).line + 1 });
       };
       parsed.statements.filter(ts.isImportDeclaration).forEach(registerAnchor);
-      if (uiFeature) registerReadAnchors = (file, start, end) => {
+      if (composerFeature) registerReadAnchors = (file, start, end) => {
         if (file !== uiPage) return;
         const visit = (node: import('typescript').Node) => {
           if ((ts.isJsxElement(node) || ts.isJsxSelfClosingElement(node) || ts.isVariableStatement(node) ||
@@ -384,31 +385,44 @@ export class PoipoiCodeAgent {
         }
         ts.forEachChild(node, findControls);
       };
-      findControls(parsed);
+      if (composerFeature) findControls(parsed);
+      let shownNamedUI = 0;
       if (!composerFeature) {
-        const keywords = ['送信', '設定', '承認', '履歴', '添付', 'メニュー', '検索', '画像', 'ホーム', 'モデル']
+        const quoted = [...intent.matchAll(/「([^」]{2,40})」/g)].map(match => match[1]);
+        const keywords = quoted.length ? quoted : ['送信', '設定', '承認', '履歴', '添付', 'メニュー', '検索', '画像', 'ホーム', 'モデル']
           .filter(word => intent.includes(word));
         let shown = 0;
         const findNamedUI = (node: import('typescript').Node) => {
-          if (shown >= 6) return;
+          if (shown >= 2) return;
           if (ts.isJsxText(node) && keywords.some(word => node.text.includes(word))) {
             let element: import('typescript').Node = node.parent;
             while (element.parent && !ts.isJsxElement(element) && !ts.isJsxSelfClosingElement(element)) element = element.parent;
-            if (element.getText(parsed).length <= 11000) { showNode(element); shown++; }
+            if (element.getText(parsed).length <= 11000) {
+              showNode(element);
+              const line = parsed.getLineAndCharacterOfPosition(element.getStart(parsed)).line + 1;
+              loadSource(uiPage, Math.max(1, line - 8), line + 25);
+              const collect = (child: import('typescript').Node) => {
+                if (ts.isIdentifier(child)) references.add(child.text);
+                ts.forEachChild(child, collect);
+              };
+              collect(element.parent.getText(parsed).length <= 4000 ? element.parent : element);
+              shown++;
+            }
           }
           ts.forEachChild(node, findNamedUI);
         };
         findNamedUI(parsed);
+        shownNamedUI = shown;
       }
       const findDeclarations = (node: import('typescript').Node) => {
         if ((ts.isVariableDeclaration(node) || ts.isFunctionDeclaration(node)) &&
             node.name && handlers.has(node.name.getText(parsed))) showNode(node);
-        else if (composerFeature && ts.isVariableDeclaration(node) && ts.isArrayBindingPattern(node.name) &&
+        else if (ts.isVariableDeclaration(node) && ts.isArrayBindingPattern(node.name) &&
             node.name.elements.some(element => ts.isBindingElement(element) && references.has(element.name.getText(parsed)))) showNode(node);
         ts.forEachChild(node, findDeclarations);
       };
       findDeclarations(parsed);
-      if (!/入力欄|入力中|チャット欄/.test(intent)) {
+      if (!composerFeature && !shownNamedUI) {
         const lines = source.split(/\r?\n/);
         const index = lines.findIndex(line => /^\s*return\s*\(\s*$/.test(line));
         if (index >= 150) loadSource(uiPage, Math.max(1, index - 18), Math.min(lines.length, index + 25));
@@ -642,8 +656,8 @@ export class PoipoiCodeAgent {
       const anchorEdits = uiFeature && anchors.size > 0;
       const response = await callCoder(attempt ? "追加確認後のコード再生成" : "コード生成", { userId, timeoutMs,
       // prompt already contains the source context; do not count it twice.
-      contextWindow: contextFor(prompt.length + 8192),
-      max_tokens: 4096,
+      contextWindow: contextFor(prompt.length + (anchorEdits ? 0 : 8192)),
+      max_tokens: anchorEdits ? 2048 : 4096,
       model: process.env.LOCAL_CODER_MODEL || "qwen2.5-coder:7b",
       temperature: 0.1,
       response_format: {
