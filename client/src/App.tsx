@@ -39,6 +39,7 @@ function Router() {
       <Route path="/login" component={Login} />
       {/* <Route path="/agent" component={AIAgent} /> */}
       <Route path="/streaming" component={StreamingChat} />
+      <Route path="/app-builder" component={StreamingChat} />
       <Route path="/api-docs" component={APIDocs} />
       <Route path="/admin" component={AdminDashboard} />
       {/* <Route path="/export" component={ExportSettings} /> */}

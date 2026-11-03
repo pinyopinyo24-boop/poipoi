@@ -108,7 +108,8 @@ export default function StreamingChat() {
   const [isEvolutionLoading, setIsEvolutionLoading] = useState(false);
   const [isProgramLoading, setIsProgramLoading] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
-  const [, navigate] = useLocation();
+  const [location, navigate] = useLocation();
+  const isAppBuilder = location === "/app-builder";
 
   const openConversation = (id: string) => { const c = conversations.find(x => x.id === id); if (!c || isLoading || uploadLock.current || pasteLock.current) return; localStorage.setItem(lastConversationKey, id); setConversationId(id); setMessages(c.messages.map(m => ({ ...m, timestamp: new Date(m.timestamp) }))); setAttachments([]); setEditTarget(null); setChatError(""); setFileError(""); };
   const deleteConversation = async (id: string) => {
@@ -481,7 +482,7 @@ export default function StreamingChat() {
     <div className="flex flex-col min-h-screen gap-4 p-4 bg-gradient-to-br from-cyan-50 to-blue-50">
       <div className="flex justify-between items-center">
         <h2 className="text-2xl font-bold bg-gradient-to-r from-cyan-600 to-blue-600 bg-clip-text text-transparent">
-          ⚡ AZ チャット
+          {isAppBuilder ? "アプリ・ソフト作成" : "⚡ AZ チャット"}
         </h2>
         <div className="flex items-center gap-3">
         <button
@@ -528,7 +529,9 @@ export default function StreamingChat() {
         </section>}
       </aside>
       <div className="flex-1 min-w-0 flex flex-col gap-4">
-        <p className="text-sm text-gray-600">会話・実務操作・自己進化・プログラム作成は、下のチャットから依頼できます。コードの変更案は入力欄の左に出る「承認待ち」から確認・承認できます。完了すると、このチャットに結果を表示します。</p>
+        <p className="text-sm text-gray-600">{isAppBuilder
+          ? "作りたいアプリ・ソフトの目的、必要な機能、使い方を下の入力欄からAZに伝えてください。コードの変更案は入力欄の左に出る「承認待ち」から確認・承認できます。作業中の表示と完了結果も、この画面で確認できます。"
+          : "会話・実務操作・自己進化・プログラム作成は、下のチャットから依頼できます。コードの変更案は入力欄の左に出る「承認待ち」から確認・承認できます。完了すると、このチャットに結果を表示します。"}</p>
           {/* STEP36_SEARCH_UI */}
           <div className="rounded-lg border bg-white p-3">
             <button type="button" onClick={()=>setMemoryOpen(!memoryOpen)} className="rounded bg-blue-600 px-3 py-2 text-white">長期記憶を検索</button>
@@ -690,7 +693,7 @@ export default function StreamingChat() {
                   event.preventDefault(); void handleSendMessage();
                 }
               }}
-              placeholder="AZへの依頼を入力..."
+              placeholder={isAppBuilder ? "作りたいアプリ・ソフトの機能や使い方を入力..." : "AZへの依頼を入力..."}
               disabled={isLoading}
               className="min-w-0 flex-1 border-cyan-300 focus:border-cyan-500"
             />

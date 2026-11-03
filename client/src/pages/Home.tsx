@@ -1,6 +1,6 @@
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Loader2, Zap } from "lucide-react";
+import { Code2, Loader2, Zap } from "lucide-react";
 import { useLocation } from "wouter";
 
 export default function Home() {
@@ -19,10 +19,10 @@ export default function Home() {
       path: "/streaming",
     },
     {
-      title: "顔入れ替え動画",
-      description: "FaceFusion v3.6.1を使った高品質な顔入れ替え動画生成。ソース画像とターゲット動画をアップロードするだけで自動生成",
-      icon: Zap,
-      path: "/facefusion-hybrid",
+      title: "アプリ・ソフト作成",
+      description: "作りたいアプリやソフトの機能をAZに伝えて、コードの新規作成・修正を依頼できます。変更案は内容を確認・承認してから適用します。",
+      icon: Code2,
+      path: "/app-builder",
     },
   ];
 
