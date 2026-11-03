@@ -62,6 +62,27 @@ export class PoipoiCodeAgent {
     return PoipoiCodeAgent.instance;
   }
 
+  private syntaxErrors(changes: CodeChange[]): string[] {
+    const ts = requireCompiler("typescript") as typeof import("typescript");
+    const errors: string[] = [];
+    for (const change of changes) {
+      if (!/\.[cm]?[jt]sx?$/.test(change.path)) continue;
+      const checked = ts.transpileModule(change.content, {
+        fileName: change.path,
+        reportDiagnostics: true,
+        compilerOptions: { target: ts.ScriptTarget.ES2022, jsx: ts.JsxEmit.ReactJSX },
+      });
+      for (const diagnostic of checked.diagnostics ?? []) {
+        if (diagnostic.category !== ts.DiagnosticCategory.Error) continue;
+        const position = diagnostic.file && diagnostic.start !== undefined
+          ? diagnostic.file.getLineAndCharacterOfPosition(diagnostic.start) : undefined;
+        errors.push(change.path + (position ? `:${position.line + 1}:${position.character + 1}` : "") +
+          ` TS${diagnostic.code}: ` + ts.flattenDiagnosticMessageText(diagnostic.messageText, " "));
+      }
+    }
+    return errors;
+  }
+
   private safePath(filePath: string): string {
     const absolute = resolve(this.root, filePath);
     const rel = relative(this.root, absolute);
@@ -337,7 +358,10 @@ export class PoipoiCodeAgent {
       "Preserve existing functionality.",
       "Make the minimum necessary file changes.",
       "Implement every explicit requirement, including input validation and boundary cases. Check each constrained field independently. Finite and positive are separate requirements: a finite check accepts negative numbers, while positive comparisons alone fail to reject NaN. Apply all requested constraints to every specified field.",
-      "For existing files, return compact exact-text edits, never copy the entire file. Each oldText must occur exactly once in that supplied file. Apply edits in array order. Include sufficient unchanged text in oldText to identify a unique location.",
+      "For the small existing files listed below, return their COMPLETE updated content, preserving all unchanged code. Their complete source has been supplied. For OTHER existing files, return compact exact-text edits instead of copying the entire file. Each oldText must occur exactly once in that supplied file. Apply edits in array order. Include sufficient unchanged text in oldText to identify a unique location.",
+      "Small existing files eligible for complete content:",
+      JSON.stringify([...completeSources].filter(file => (sourceContents.get(file)?.length ?? Infinity) <= 12000)),
+      "Edits are literal replacements. When adding a function, anchor after a COMPLETE existing declaration, including its body and closing brace. Never replace only a function's opening line with whole functions: the original body would remain after them. Preserve the existing declaration exactly when requested.",
       "For new files only, return complete content. Never return both edits and content for one path. Do not omit requested functionality or return placeholder implementations.",
       "Requested paths that do not exist (CREATE with content, never edits):",
       JSON.stringify([...new Set(explicit)].filter(file => !existsSync(this.safePath(file)))),
@@ -427,9 +451,15 @@ export class PoipoiCodeAgent {
     let requirementFeedback = '';
     let validationRetryUsed = false;
     let validationFeedback = '';
+    let syntaxRetryUsed = false;
+    let syntaxFeedback = '';
     // Each correction category is bounded to one retry under the same deadline.
-    for (let attempt = 0; attempt < 5; attempt++) {
-      const prompt = buildPrompt([followUp, requirementFeedback, validationFeedback].filter(Boolean).join("\n"));
+    for (let attempt = 0; attempt < 6; attempt++) {
+      const prompt = buildPrompt([followUp, syntaxFeedback, requirementFeedback, validationFeedback].filter(Boolean).join("\n"));
+      // Constrain the model's JSON grammar too: small, fully reviewed files do
+      // not need fragile edit anchors. Larger/excerpted files still use edits.
+      const contentOnly = [...sourceContents].every(([file, source]) =>
+        completeSources.has(file) && source.length <= 12000);
       const response = await callCoder(attempt ? "追加確認後のコード再生成" : "コード生成", { userId, timeoutMs,
       // prompt already contains the source context; do not count it twice.
       contextWindow: contextFor(prompt.length + 8192),
@@ -450,17 +480,17 @@ export class PoipoiCodeAgent {
                   properties: {
                     path: { type: "string" },
                     content: { type: "string" },
-                    edits: { type: "array", minItems: 1, items: {
+                    ...(contentOnly ? {} : { edits: { type: "array", minItems: 1, items: {
                       type: "object",
                       properties: { oldText: { type: "string", minLength: 1 }, newText: { type: "string" } },
                       required: ["oldText", "newText"], additionalProperties: false,
-                    } },
+                    } } }),
                   },
-                  required: ["path"],
-                  oneOf: [
+                  required: contentOnly ? ["path", "content"] : ["path"],
+                  ...(contentOnly ? {} : { oneOf: [
                     { required: ["content"], not: { required: ["edits"] } },
                     { required: ["edits"], not: { required: ["content"] } },
-                  ],
+                  ] }),
                   additionalProperties: false,
                 },
               },
@@ -505,7 +535,7 @@ export class PoipoiCodeAgent {
         if (formatRetryUsed) throw error;
         formatRetryUsed = true;
         proposals = [];
-        followUp = "The previous response was not a valid code proposal. Return valid JSON with a changes array. NEW files require complete non-empty content without edits; EXISTING files require exact edits from reviewed source. Regenerate the complete requested change set.";
+        followUp = "The previous response was not a valid code proposal. Return valid JSON with a changes array. NEW files require complete non-empty content without edits; EXISTING files must follow the complete-content eligibility list or use exact edits from reviewed source. Regenerate the complete requested change set.";
         continue;
       }
       if (proposal.readFiles !== undefined && !Array.isArray(proposal.readFiles)) {
@@ -526,12 +556,23 @@ export class PoipoiCodeAgent {
           formatRetryUsed = true;
           followUp = "Regenerate COMPLETE changes. These NEW files do not exist and have no oldText: " +
             JSON.stringify(invalidNewFiles.map(change => change.path)) +
-            ". Return non-empty complete content and omit edits for each NEW file. Preserve all requested functionality and use exact reviewed edits for existing files.";
+            ". Return non-empty complete content and omit edits for each NEW file. Preserve all requested functionality; existing files must follow the complete-content eligibility list or use exact reviewed edits.";
           proposals = [];
           continue;
         }
         if (proposals.length > 5) throw new Error("Generated changes exceed the five-file safety limit");
         const generated = materializeChanges(proposals);
+        // Parse the reconstructed file, not edit fragments. This executes no
+        // generated code and catches incomplete replacement ranges before review.
+        const syntaxErrors = this.syntaxErrors(generated);
+        if (syntaxErrors.length) {
+          if (syntaxRetryUsed) throw new Error("生成コードの構文エラーが残っています。変更は適用していません: " + syntaxErrors.slice(0, 10).join("; ").slice(0, 2000));
+          syntaxRetryUsed = true;
+          syntaxFeedback = "The TypeScript compiler found syntax errors in the RECONSTRUCTED resulting files. No code was executed or applied. Correct the exact replacement ranges and regenerate the COMPLETE change set. Preserve existing bodies and closing braces; never leave the old function body after a newly inserted declaration. " +
+            JSON.stringify({ errors: syntaxErrors.slice(0, 10), previousChanges: proposals });
+          proposals = [];
+          continue;
+        }
         // Review the current request and the resulting code, not old dialogue or
         // whether a preview has already been applied to the working tree.
         const reviewPrompt = JSON.stringify({
@@ -705,20 +746,8 @@ export class PoipoiCodeAgent {
       await options.onProgress?.("loading-compiler");
       const ts = requireCompiler("typescript") as typeof import("typescript");
       await options.onProgress?.("checking-syntax");
-      for (const change of changes) {
-        if (!/\.[cm]?[jt]sx?$/.test(change.path)) continue;
-        const checked = ts.transpileModule(change.content, {
-          fileName: change.path,
-          reportDiagnostics: true,
-          compilerOptions: {
-            target: ts.ScriptTarget.ES2022,
-            jsx: ts.JsxEmit.ReactJSX,
-          },
-        });
-        if (checked.diagnostics?.some(item => item.category === ts.DiagnosticCategory.Error)) {
-          throw new Error("Invalid generated TypeScript: " + change.path);
-        }
-      }
+      const syntaxErrors = this.syntaxErrors(changes);
+      if (syntaxErrors.length) throw new Error("Invalid generated TypeScript: " + syntaxErrors.slice(0, 10).join("; "));
 
       // Preserve the existing public surface even when the model proposes a full
       // file replacement. This is a structural guard, not a functional test.

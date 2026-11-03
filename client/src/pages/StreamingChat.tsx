@@ -528,7 +528,7 @@ export default function StreamingChat() {
         </section>}
       </aside>
       <div className="flex-1 min-w-0 flex flex-col gap-4">
-        <p className="text-sm text-gray-600">会話・実務操作・自己進化・プログラム作成は、下のチャットから依頼できます。コードの変更案は右上の⚙で確認・承認後に適用します。</p>
+        <p className="text-sm text-gray-600">会話・実務操作・自己進化・プログラム作成は、下のチャットから依頼できます。コードの変更案は入力欄の左に出る「承認待ち」から確認・承認できます。完了すると、このチャットに結果を表示します。</p>
           {/* STEP36_SEARCH_UI */}
           <div className="rounded-lg border bg-white p-3">
             <button type="button" onClick={()=>setMemoryOpen(!memoryOpen)} className="rounded bg-blue-600 px-3 py-2 text-white">長期記憶を検索</button>
