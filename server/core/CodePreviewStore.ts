@@ -12,7 +12,7 @@ const schema = z.object({
   generation: z.object({
     jobId: z.string().uuid(), startedAt: z.number(), finishedAt: z.number().optional(),
     workerPid: z.number().int().positive().optional(), phase: z.string().max(100),
-    sourceTask: z.string().min(1).max(4000), request: z.string().min(1).max(4000),
+    sourceTask: z.string().min(1).max(65000), request: z.string().min(1).max(60000),
     replyTo: z.string().max(200).optional(), error: z.string().max(4000).optional(),
     reviewWarning: z.string().max(1000).optional(),
   }).optional(),

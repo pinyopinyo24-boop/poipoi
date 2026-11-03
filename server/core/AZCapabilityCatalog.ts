@@ -82,7 +82,7 @@ export function resolveImplementationRequest(request: string, turns: ChatMessage
   throw new Error('追加したい機能を特定できません。「最新ニュースを取得する機能を実装して」のように対象を伝えてください。');
 }
 export function implementationPrompt(request: string, turns: ChatMessage[]) {
-  if (request.length > 3000) throw new Error('実装したい内容を3000文字以内にまとめてください。');
+  if (request.length > 60000) throw new Error('依頼文が現在の保存上限60000文字を超えています。変更案は作成していません。');
   const instruction = 'ユーザーが依頼した機能を既存ソースで確認し、実在しない・不足する部分の変更案だけを作成してください。過去のAIの機能説明は実装の証拠ではありません。外部接続の未設定とコード未実装を区別し、既存機能を保持してください。機能案内の更新も依頼範囲に含まれる場合のみAZCapabilityCatalog.tsを更新してください。単独モジュールや変更案だけの依頼では無関係な既存ファイルを変更しないでください。適用・テスト・ビルド・再起動は承認前に実行しないでください。\n現在のユーザー依頼:\n';
   const reference = turns.slice(-4).map(turn => `${turn.role}: ${turn.content}`).join('\n');
   const room = Math.max(0, 3900 - instruction.length - request.length - 60);

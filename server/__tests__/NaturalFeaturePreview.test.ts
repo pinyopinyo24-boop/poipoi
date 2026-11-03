@@ -61,6 +61,36 @@ beforeEach(() => { model.replies.length = 0; model.requests.length = 0; });
 afterAll(() => { vi.restoreAllMocks(); rmSync(model.root, { recursive: true, force: true }); });
 
 describe('new feature requests without source paths through the actual PC chat route', () => {
+  it('stores a long feature request and sends verified smaller requirement segments before code generation', async () => {
+    const target = 'server/core/LongFeature.ts';
+    const leading = `Create exactly one NEW standalone file ${target}. Reference client/src/App.tsx only.`;
+    const trailing = 'Export identity(input: string) returning the same input.';
+    const request = leading + ' '.repeat(3300) + trailing;
+    const warning = vi.fn();
+    model.replies.push(
+      JSON.stringify({ requirements: [leading] }),
+      JSON.stringify({ requirements: [trailing] }),
+      JSON.stringify({ changes: [{ path: target, content: 'export const identity = (input: string) => input;' }] }),
+      accepted,
+    );
+    const changes = await PoipoiCodeAgent.getInstance().generate(implementationPrompt(request, []), 'system', { onReviewWarning: warning });
+    expect(changes).toHaveLength(1);
+    expect(changes[0].path).toBe(target);
+    expect(model.requests).toHaveLength(4);
+    expect(model.requests[0].messages.at(-1).content).toContain(leading);
+    expect(model.requests[1].messages.at(-1).content).toContain(trailing);
+    expect(model.requests[2].messages.at(-1).content).toContain(trailing);
+    expect(JSON.stringify(model.requests[2].messages).length).toBeLessThan(20000);
+    expect(warning).toHaveBeenCalledOnce();
+    expect(existsSync(model.root + '/' + target)).toBe(false);
+  });
+  it('does not generate or apply from a long request when a segment cannot be tied to its original text', async () => {
+    const request = 'Create a standalone program. Reference client/src/App.tsx. ' + ' '.repeat(3100) + 'Export a function.';
+    model.replies.push(JSON.stringify({ requirements: ['A requirement not in the request'] }));
+    await expect(PoipoiCodeAgent.getInstance().generate(implementationPrompt(request, [])))
+      .rejects.toThrow('原文と照合できませんでした');
+    expect(model.requests).toHaveLength(1);
+  });
   it('keeps a large reviewed source bounded and lets the coder request more ranges without losing the full file for reconstruction', async () => {
     const file = 'server/core/LargeFeature.ts';
     const lines = Array.from({ length: 650 }, (_, index) => `export const item${index} = ${index};`);
