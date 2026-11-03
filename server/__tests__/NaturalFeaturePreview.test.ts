@@ -5,13 +5,14 @@ import { randomUUID, createHash } from 'node:crypto';
 const model = vi.hoisted(() => {
   const root = process.cwd() + '/node_modules/.cache/natural-feature-' + Date.now();
   vi.spyOn(process, 'cwd').mockReturnValue(root);
-  return { root, replies: [] as string[], requests: [] as any[] };
+  return { root, replies: [] as Array<string | ((request: any) => string)>, requests: [] as any[] };
 });
 // Controlled model output tests routing/grounding, not live model capability.
 vi.mock('../_core/llm', () => ({
   invokeLLM: vi.fn(async (request: any) => {
     model.requests.push(request);
-    const content = model.replies.shift();
+    const reply = model.replies.shift();
+    const content = typeof reply === 'function' ? reply(request) : reply;
     if (content === undefined) throw new Error('Unexpected model invocation');
     return { choices: [{ message: { content } }] };
   }), listLLMModels: vi.fn(async () => ({ data: [] })),
@@ -148,6 +149,57 @@ describe('new feature requests without source paths through the actual PC chat r
     expect(changes[0].content).toBe(original.replace(input, input + '\n' + valid));
     expect(readFileSync(model.root + '/' + page, 'utf8')).toBe(original);
     expect(model.requests).toHaveLength(3);
+  });
+
+  it.each([
+    ['入力中の文字数', 'Array.from(input).length'],
+    ['入力の大文字', 'input.toUpperCase()'],
+  ])('generates an independent %s view and integrates it without rewriting the real composer', async (display, expression) => {
+    const actual = readFileSync(new URL('../../client/src/pages/StreamingChat.tsx', import.meta.url), 'utf8');
+    writeFileSync(model.root + '/' + page, actual);
+    try {
+      const source = 'export default function View({ input }: { input: string }) { return <output>{' + expression + '}</output>; }';
+      model.replies.push(call => JSON.stringify({ changes: [{
+        path: call.response_format.json_schema.schema.properties.changes.items.properties.path.const, content: source,
+      }] }), accepted);
+      const changes = await PoipoiCodeAgent.getInstance().generate('AIチャットの入力欄の近くに、' + display + 'を表示する機能を追加して。既存機能は残して。');
+      expect(changes).toHaveLength(2);
+      const added = changes[0];
+      const name = added.path.split('/').at(-1)!.replace('.tsx', '');
+      expect(added.content).toBe(source);
+      expect(added.baseHash).toBeNull();
+      const importText = 'import ' + name + ' from "@/components/generated/' + name + '";';
+      const mount = '<' + name + ' input={input} />';
+      expect(changes[1].path).toBe(page);
+      expect(changes[1].content.replace('\n' + importText, '').replace('\n' + mount, '')).toBe(actual);
+      expect(changes[1].content).toContain('setInput("")');
+      expect(model.requests[0].contextWindow).toBe(8192);
+      expect(JSON.stringify(model.requests[0].messages).length).toBeLessThan(6000);
+      expect(model.requests[0].messages.at(-1).content).not.toContain('Existing source:');
+      expect(model.requests[1].contextWindow).toBe(8192);
+      expect(readFileSync(model.root + '/' + page, 'utf8')).toBe(actual);
+      expect(existsSync(model.root + '/' + added.path)).toBe(false);
+      expect(model.requests).toHaveLength(2);
+    } finally { writeFileSync(model.root + '/' + page, original); }
+  });
+
+  it('corrects an invalid generated component while retaining the same host integration', async () => {
+    const actual = readFileSync(new URL('../../client/src/pages/StreamingChat.tsx', import.meta.url), 'utf8');
+    writeFileSync(model.root + '/' + page, actual);
+    try {
+      const good = 'export default function View({input}:{input:string}) { return <output>{Array.from(input).length}</output>; }';
+      const response = (content: string) => (call: any) => JSON.stringify({ changes: [{
+        path: call.response_format.json_schema.schema.properties.changes.items.properties.path.const, content,
+      }] });
+      model.replies.push(response('export default function View() { return <output>; }'), response(good), accepted);
+      const onCandidate = vi.fn();
+      const changes = await PoipoiCodeAgent.getInstance().generate('入力欄の近くに文字数表示の機能を追加して。送信後は0文字に戻る。', 'system', { onCandidate });
+      expect(onCandidate.mock.calls[0][1].length).toBeGreaterThan(0);
+      expect(onCandidate.mock.calls[1][1]).toEqual([]);
+      expect(changes[0].content).toBe(good);
+      expect(changes[1].previousContent).toBe(actual);
+      expect(readFileSync(model.root + '/' + page, 'utf8')).toBe(actual);
+    } finally { writeFileSync(model.root + '/' + page, original); }
   });
 
   it('creates a connected preview from a natural request and includes the actual UI controls beyond line 150', async () => {
