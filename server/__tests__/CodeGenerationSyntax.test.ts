@@ -69,7 +69,11 @@ describe('syntax validation before saving an AI proposal', () => {
 
   it('regenerates an incomplete replacement before requirement review without changing the source', async () => {
     model.replies.push(broken, repaired, accepted);
-    const result = await PoipoiCodeAgent.getInstance().generate(task);
+    const onCandidate = vi.fn();
+    const result = await PoipoiCodeAgent.getInstance().generate(task, 'system', { onCandidate });
+    expect(onCandidate).toHaveBeenCalledTimes(2);
+    expect(onCandidate.mock.calls[0][1].join(' ')).toContain('TS1128');
+    expect(onCandidate.mock.calls[0][0][0].content).not.toBe(original);
     expect(result).toHaveLength(1);
     expect(result[0].content).toBe(original + addition);
     expect(result[0].previousContent).toBe(original);

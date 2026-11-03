@@ -29,7 +29,7 @@ vi.mock('../core/AZWebKnowledge', () => ({
 import { streamingRouter } from '../routers.streaming';
 import { PoipoiCodeAgent } from '../core/PoipoiCodeAgent';
 import { readCodePreview } from '../core/CodePreviewStore';
-import { isCodeImplementationRequest } from '../core/AZCapabilityCatalog';
+import { isCodeImplementationRequest, implementationPrompt } from '../core/AZCapabilityCatalog';
 
 const page = 'client/src/pages/StreamingChat.tsx';
 const modulePath = 'client/src/components/CharacterCount.tsx';
@@ -60,6 +60,32 @@ beforeEach(() => { model.replies.length = 0; model.requests.length = 0; });
 afterAll(() => { vi.restoreAllMocks(); rmSync(model.root, { recursive: true, force: true }); });
 
 describe('new feature requests without source paths through the actual PC chat route', () => {
+  it('keeps the real chat composer context bounded without including auxiliary editors', async () => {
+    const actual = readFileSync(new URL('../../client/src/pages/StreamingChat.tsx', import.meta.url), 'utf8');
+    const control = actual.match(/<Input\b[\s\S]*?\/>/)![0];
+    writeFileSync(model.root + '/' + page, actual);
+    try {
+      model.replies.push(JSON.stringify({ changes: [{ path: page, edits: [{ oldText: control,
+        newText: control + '\n<output>{[...input].length}文字</output>' }] }] }), accepted);
+      const task = implementationPrompt(request, [{ role: 'assistant', content: 'Previous discussion. '.repeat(220) }] as any);
+      const changes = await PoipoiCodeAgent.getInstance().generate(task);
+      const call = model.requests[0];
+      const prompt = call.messages.at(-1).content;
+      console.log('REAL PAGE CONTEXT:', { characters: JSON.stringify(call.messages).length, contextWindow: call.contextWindow });
+      expect(JSON.stringify(call.messages).length).toBeLessThan(30000);
+      expect(call.contextWindow).toBeLessThanOrEqual(16384);
+      expect(prompt).toContain(control);
+      expect(prompt).toContain('const [input, setInput] = useState("")');
+      expect(prompt).toContain('const handleSendMessage = async');
+      expect(prompt).toContain('setInput("")');
+      expect(prompt).not.toContain('value={programRequirements}');
+      expect(prompt).not.toContain('value={memoryQuery}');
+      expect(prompt).not.toContain('Existing source: client/src/App.tsx');
+      expect(changes[0].content).toBe(actual.replace(control, control + '\n<output>{[...input].length}文字</output>'));
+      expect(readFileSync(model.root + '/' + page, 'utf8')).toBe(actual);
+    } finally { writeFileSync(model.root + '/' + page, original); }
+  });
+
   it('creates a connected preview from a natural request and includes the actual UI controls beyond line 150', async () => {
     model.replies.push(connected, accepted);
     const result = await streamingRouter.createCaller(context()).chat({ message: request, messageId: randomUUID(), conversationId: randomUUID() });

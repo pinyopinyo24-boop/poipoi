@@ -202,6 +202,7 @@ export class PoipoiCodeAgent {
 
   async generate(task: string, userId = "system", options: {
     onProgress?: (stage: string) => void | Promise<void>;
+    onCandidate?: (changes: readonly CodeChange[], syntaxErrors: readonly string[]) => void | Promise<void>;
     // Only the caller can opt into executing its own acceptance checks.
     validateGenerated?: (changes: ReadonlyArray<Readonly<CodeChange>>) => readonly string[] | Promise<readonly string[]>;
   } = {}): Promise<CodeChange[]> {
@@ -253,12 +254,13 @@ export class PoipoiCodeAgent {
     const explicitExisting = [...new Set(explicit)].filter(file => existsSync(this.safePath(file)));
     const uiFeature = /画面|入力欄|入力中|チャット欄|ボタン|メニュー|ホーム|\bUI\b/i.test(intent);
     const uiPage = /ホーム|最初の画面|トップ画面/.test(intent) ? 'client/src/pages/Home.tsx' : 'client/src/pages/StreamingChat.tsx';
+    const composerFeature = explicitExisting.length === 0 && uiPage === 'client/src/pages/StreamingChat.tsx' && /入力欄|入力中|チャット欄/.test(intent);
     const standaloneTask = /単独|スタンドアロン|\bstandalone\b|既存(?:の)?ファイル(?:は|を)?(?:変更しない|変更せず)|do not (?:modify|change) existing files/i.test(intent);
     const needsIntegration = explicit.length === 0 && !standaloneTask && (uiFeature || /ポイポイ|PoiPoi|機能(?:を)?(?:追加|実装)/i.test(intent));
     const chatFeature = /チャット|会話|ニュース|天気|交通|音楽|リマインダー|通知/.test(intent);
     const researchFeature = /ネット|ウェブ|検索|画像|イラスト|参照画像/.test(intent);
     const entryPoints = uiFeature
-      ? [uiPage, 'client/src/App.tsx', ...(/保存|データ|記録|取得|検索/.test(intent) ? ['server/routers.chat.ts', 'server/routers/unifiedTools.ts'] : [])]
+      ? [uiPage, ...(composerFeature ? [] : ['client/src/App.tsx']), ...(/保存|データ|記録|取得|検索/.test(intent) ? ['server/routers.chat.ts', 'server/routers/unifiedTools.ts'] : [])]
       : researchFeature
       ? ['server/core/AZWebKnowledge.ts', 'server/core/WebImageReferences.ts', 'server/routers.streaming.ts', 'server/_core/imageGeneration.ts', 'server/core/ChatCoreManager.ts', 'server/core/ChatImageRequests.ts']
       : chatFeature
@@ -308,7 +310,14 @@ export class PoipoiCodeAgent {
       return true;
     };
     for (const file of sourceFiles) {
-      if (candidates.includes(file)) loadSource(file);
+      if (!candidates.includes(file)) continue;
+      if (composerFeature && file === uiPage && readFileSync(this.safePath(file), 'utf8').length > 12000) {
+        const ts = requireCompiler('typescript') as typeof import('typescript');
+        const source = readFileSync(this.safePath(file), 'utf8');
+        const parsed = ts.createSourceFile(file, source, ts.ScriptTarget.Latest, true);
+        const imports = parsed.statements.filter(ts.isImportDeclaration);
+        loadSource(file, 1, imports.length ? parsed.getLineAndCharacterOfPosition(imports.at(-1)!.end).line + 1 : 1);
+      } else loadSource(file);
     }
     // Include complete JSX containers and their event handlers. Fixed line windows
     // can end before a closing tag and hide the surrounding UI from the coder.
@@ -317,6 +326,7 @@ export class PoipoiCodeAgent {
       const source = sourceContents.get(uiPage)!;
       const parsed = ts.createSourceFile(uiPage, source, ts.ScriptTarget.Latest, true);
       const handlers = new Set<string>();
+      const references = new Set<string>();
       const showNode = (node: import('typescript').Node) => {
         if (node.getText(parsed).length > 11000) return;
         loadSource(uiPage, parsed.getLineAndCharacterOfPosition(node.getStart(parsed)).line + 1,
@@ -324,12 +334,18 @@ export class PoipoiCodeAgent {
       };
       const findControls = (node: import('typescript').Node) => {
         if ((ts.isJsxSelfClosingElement(node) || ts.isJsxOpeningElement(node)) &&
-            /^(Input|Textarea|input|textarea)$/.test(node.tagName.getText(parsed))) {
+            /^(Input|Textarea|input|textarea)$/.test(node.tagName.getText(parsed)) &&
+            (!composerFeature || node.attributes.properties.some(attribute => ts.isJsxAttribute(attribute) &&
+              attribute.name.getText(parsed) === 'value' && attribute.initializer && ts.isJsxExpression(attribute.initializer) &&
+              attribute.initializer.expression?.getText(parsed) === 'input'))) {
           let container = ts.isJsxOpeningElement(node) ? node.parent.parent : node.parent;
           while (container !== parsed && !ts.isJsxElement(container)) container = container.parent;
           if (ts.isJsxElement(container)) showNode(container);
           const findHandlers = (child: import('typescript').Node) => {
-            if (ts.isIdentifier(child) && /^handle[A-Z]/.test(child.text)) handlers.add(child.text);
+            if (ts.isIdentifier(child)) {
+              references.add(child.text);
+              if (/^handle[A-Z]/.test(child.text)) handlers.add(child.text);
+            }
             ts.forEachChild(child, findHandlers);
           };
           findHandlers(ts.isJsxElement(container) ? container : node);
@@ -340,6 +356,8 @@ export class PoipoiCodeAgent {
       const findDeclarations = (node: import('typescript').Node) => {
         if ((ts.isVariableDeclaration(node) || ts.isFunctionDeclaration(node)) &&
             node.name && handlers.has(node.name.getText(parsed))) showNode(node);
+        else if (composerFeature && ts.isVariableDeclaration(node) && ts.isArrayBindingPattern(node.name) &&
+            node.name.elements.some(element => ts.isBindingElement(element) && references.has(element.name.getText(parsed)))) showNode(node);
         ts.forEachChild(node, findDeclarations);
       };
       findDeclarations(parsed);
@@ -389,6 +407,7 @@ export class PoipoiCodeAgent {
         if (remaining < 1000) throw new Error('自己進化の全体制限時間に達しました。変更は適用していません。');
         console.log("[AZ CODE GENERATION]", {
           stage, contextWindow: request.contextWindow, maxTokens: request.max_tokens,
+          inputCharacters: JSON.stringify(request.messages).length,
           timeoutMs: stageTimeoutMs, remainingMs: remaining, totalTimeoutMs,
         });
         await options.onProgress?.(stage);
@@ -615,6 +634,7 @@ export class PoipoiCodeAgent {
         // Parse the reconstructed file, not edit fragments. This executes no
         // generated code and catches incomplete replacement ranges before review.
         const syntaxErrors = this.syntaxErrors(generated);
+        await options.onCandidate?.(generated, syntaxErrors);
         if (syntaxErrors.length) {
           if (syntaxRetryUsed) throw new Error("生成コードの構文エラーが残っています。変更は適用していません: " + syntaxErrors.slice(0, 10).join("; ").slice(0, 2000));
           syntaxRetryUsed = true;

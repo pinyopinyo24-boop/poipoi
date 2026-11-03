@@ -1,6 +1,7 @@
 import { spawn } from 'node:child_process';
 import { randomUUID, createHash } from 'node:crypto';
 import { openSync, closeSync } from 'node:fs';
+import { writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { PoipoiCodeAgent } from './PoipoiCodeAgent';
 import { lockProject } from './CodeApprovalWorker';
@@ -55,6 +56,11 @@ export async function runCodeGenerationWorker(userId: string, id: string, jobId:
     release = lockProject(process.cwd(), jobId, 'generation');
     preview.changes = await PoipoiCodeAgent.getInstance().generate(preview.generation.sourceTask, userId, {
       onProgress: async phase => { preview.generation!.phase = phase; await saveCodePreview(preview); },
+      onCandidate: async (changes, errors) => {
+        const directory = path.join(process.cwd(), 'data', 'code-previews', createHash('sha256').update(userId).digest('hex'));
+        await writeFile(path.join(directory, id + '.generation-candidate.json'),
+          JSON.stringify({ jobId, createdAt: Date.now(), errors, changes }), { mode: 0o600 });
+      },
     }) as CodePreview['changes'];
     if (!preview.changes.length) throw new Error('No changes generated');
     preview.status = 'pending';

@@ -2,7 +2,7 @@ import { beforeAll, afterAll, beforeEach, describe, expect, it, vi } from 'vites
 import { createServer } from 'node:http';
 import { mkdirSync, writeFileSync, readFileSync, existsSync, symlinkSync, rmSync } from 'node:fs';
 import { spawn } from 'node:child_process';
-import { randomUUID } from 'node:crypto';
+import { randomUUID, createHash } from 'node:crypto';
 
 const fixture = vi.hoisted(() => {
   const source = process.cwd();
@@ -73,6 +73,10 @@ describe('detached generation with a controlled local HTTP model', () => {
     const preview = await waitFor(id, p => p.status !== 'generating');
     expect(preview.status).toBe('pending');
     expect(preview.changes[0].path).toBe(target);
+    const diagnostic = JSON.parse(readFileSync(fixture.root + '/data/code-previews/' +
+      createHash('sha256').update(userId).digest('hex') + '/' + id + '.generation-candidate.json', 'utf8'));
+    expect(diagnostic.changes).toEqual(preview.changes);
+    expect(diagnostic.errors).toEqual([]);
     expect(existsSync(fixture.root + '/' + target)).toBe(false);
     await unifiedToolsRouter.createCaller(context).listCodePreviews({ accountId: userId, includeHistory: true });
     await unifiedToolsRouter.createCaller(context).listCodePreviews({ accountId: userId, includeHistory: true });
