@@ -1,0 +1,115 @@
+import { beforeAll, beforeEach, afterAll, describe, expect, it, vi } from 'vitest';
+import { mkdirSync, writeFileSync, readFileSync, existsSync, rmSync } from 'node:fs';
+import { randomUUID } from 'node:crypto';
+
+const model = vi.hoisted(() => {
+  const root = process.cwd() + '/node_modules/.cache/natural-feature-' + Date.now();
+  vi.spyOn(process, 'cwd').mockReturnValue(root);
+  return { root, replies: [] as string[], requests: [] as any[] };
+});
+// Controlled model output tests routing/grounding, not live model capability.
+vi.mock('../_core/llm', () => ({
+  invokeLLM: vi.fn(async (request: any) => {
+    model.requests.push(request);
+    const content = model.replies.shift();
+    if (content === undefined) throw new Error('Unexpected model invocation');
+    return { choices: [{ message: { content } }] };
+  }), listLLMModels: vi.fn(async () => ({ data: [] })),
+}));
+vi.mock('../core/AZWebKnowledge', () => ({
+  webResearchQuery: () => '', researchForAZ: vi.fn(), webResearchContext: () => '',
+}));
+import { streamingRouter } from '../routers.streaming';
+import { PoipoiCodeAgent } from '../core/PoipoiCodeAgent';
+import { readCodePreview } from '../core/CodePreviewStore';
+import { isCodeImplementationRequest } from '../core/AZCapabilityCatalog';
+
+const page = 'client/src/pages/StreamingChat.tsx';
+const modulePath = 'client/src/components/CharacterCount.tsx';
+const imports = 'import { useState } from "react";\nimport { Input } from "@/components/ui/input";';
+const input = '<Input value={input} onChange={event => setInput(event.target.value)} />';
+const original = imports + '\n' + '// Existing unrelated code and comments remain intact.\n'.repeat(260) +
+  '\nexport default function StreamingChat() {\nconst [input, setInput] = useState("");\nreturn (\n<div>\n' + input + '\n</div>\n);\n}\n';
+const component = 'export function CharacterCount({ text }: { text: string }) { return <output>{[...text].length}文字</output>; }';
+const unconnected = JSON.stringify({ changes: [{ path: modulePath, content: component }] });
+const connected = JSON.stringify({ changes: [
+  { path: page, edits: [
+    { oldText: imports, newText: imports + '\nimport { CharacterCount } from "../components/CharacterCount";' },
+    { oldText: input, newText: input + '\n<CharacterCount text={input} />' },
+  ] }, { path: modulePath, content: component },
+] });
+const accepted = JSON.stringify({ accepted: true, issues: [] });
+const request = 'AIチャットの入力欄に文字数カウント機能を追加して。入力した文字数を表示して。';
+const context = (role = 'admin') => ({ user: { id: 771, role, name: 'Feature fixture' }, req: { headers: {} }, res: {} }) as any;
+
+beforeAll(() => {
+  for (const dir of ['client/src/pages', 'client/src/components', 'server/core'])
+    mkdirSync(model.root + '/' + dir, { recursive: true });
+  writeFileSync(model.root + '/package.json', '{"dependencies":{"react":"19"}}');
+  writeFileSync(model.root + '/' + page, original);
+  writeFileSync(model.root + '/client/src/App.tsx', 'import StreamingChat from "./pages/StreamingChat";\nexport default function App() { return <StreamingChat />; }');
+});
+beforeEach(() => { model.replies.length = 0; model.requests.length = 0; });
+afterAll(() => { vi.restoreAllMocks(); rmSync(model.root, { recursive: true, force: true }); });
+
+describe('new feature requests without source paths through the actual PC chat route', () => {
+  it('creates a connected preview from a natural request and includes the actual UI controls beyond line 150', async () => {
+    model.replies.push(connected, accepted);
+    const result = await streamingRouter.createCaller(context()).chat({ message: request, messageId: randomUUID(), conversationId: randomUUID() });
+    expect(result.fullText).toContain('まだ適用していません');
+    const preview = await readCodePreview('771', (result.metadata as any).codePreview.previewId);
+    expect(preview.status).toBe('pending');
+    expect(preview.changes.map(change => change.path)).toEqual([page, modulePath]);
+    expect(preview.changes[0].content).toContain('<CharacterCount text={input} />');
+    expect(preview.changes[0].previousContent).toBe(original);
+    const prompt = JSON.stringify(model.requests[0].messages);
+    expect(prompt).toContain('Existing source: ' + page);
+    expect(prompt).toContain(input.replaceAll('"', '\\"'));
+    expect(prompt).not.toContain('Existing source: server/core/AZLiveInformation.ts');
+    expect(readFileSync(model.root + '/' + page, 'utf8')).toBe(original);
+    expect(existsSync(model.root + '/' + modulePath)).toBe(false);
+    expect(model.requests).toHaveLength(2);
+  });
+
+  it('requests one correction when a feature proposal only creates disconnected files', async () => {
+    model.replies.push(unconnected, connected, accepted);
+    const changes = await PoipoiCodeAgent.getInstance().generate(request);
+    expect(changes.map(change => change.path)).toEqual([page, modulePath]);
+    expect(JSON.stringify(model.requests[1].messages)).toContain('feature is not connected');
+    expect(model.requests).toHaveLength(3);
+    expect(existsSync(model.root + '/' + modulePath)).toBe(false);
+  });
+
+  it('does not save or apply a disconnected feature after the bounded correction also fails', async () => {
+    model.replies.push(unconnected, unconnected);
+    const result = await streamingRouter.createCaller(context()).chat({ message: request, messageId: randomUUID(), conversationId: randomUUID() });
+    expect(result.fullText).toContain('組み込まれていません');
+    expect((result.metadata as any).codePreview.previewId).toBeUndefined();
+    expect(readFileSync(model.root + '/' + page, 'utf8')).toBe(original);
+    expect(existsSync(model.root + '/' + modulePath)).toBe(false);
+  });
+
+  it('still allows explicitly requested standalone new modules', async () => {
+    model.replies.push(unconnected, accepted);
+    const changes = await PoipoiCodeAgent.getInstance().generate('Create a standalone file ' + modulePath + '. Reference client/src/App.tsx only.');
+    expect(changes).toHaveLength(1);
+    expect(changes[0].baseHash).toBeNull();
+  });
+
+  it('respects a path-free standalone request that forbids existing-file changes', async () => {
+    model.replies.push(unconnected, accepted);
+    const changes = await PoipoiCodeAgent.getInstance().generate('文字数を数える機能の単独モジュールを新規作成して。既存ファイルは変更しない。');
+    expect(changes).toHaveLength(1);
+    expect(changes[0].baseHash).toBeNull();
+    expect(readFileSync(model.root + '/' + page, 'utf8')).toBe(original);
+  });
+
+  it('rejects a non-admin feature request before asking the coder', async () => {
+    await expect(streamingRouter.createCaller(context('user')).chat({ message: request, conversationId: randomUUID() })).rejects.toThrow('管理者');
+    expect(model.requests).toHaveLength(0);
+  });
+
+  it.each(['文字数カウント機能は追加できますか？', '機能追加しないで。説明だけして。'])('does not classify a question/prohibition as implementation: %s', value => {
+    expect(isCodeImplementationRequest(value)).toBe(false);
+  });
+});
