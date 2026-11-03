@@ -61,6 +61,26 @@ beforeEach(() => { model.replies.length = 0; model.requests.length = 0; });
 afterAll(() => { vi.restoreAllMocks(); rmSync(model.root, { recursive: true, force: true }); });
 
 describe('new feature requests without source paths through the actual PC chat route', () => {
+  it('grounds a different natural UI feature in the existing page without a character-count shortcut', async () => {
+    const actual = readFileSync(new URL('../../client/src/pages/StreamingChat.tsx', import.meta.url), 'utf8');
+    writeFileSync(model.root + '/' + page, actual);
+    const anchor = '<span>チャット履歴</span>';
+    const id = 'a' + createHash('sha256').update(page + '\n' + anchor).digest('hex').slice(0, 12);
+    const addition = '<span>履歴の表示件数</span>';
+    try {
+      model.replies.push(JSON.stringify({ changes: [{ path: page, edits: [
+        { anchorId: id, operation: 'insertAfter', newText: addition },
+      ] }] }), accepted);
+      const changes = await PoipoiCodeAgent.getInstance().generate('チャット画面の履歴の横に表示件数を追加して。既存機能は残して。');
+      expect(changes).toHaveLength(1);
+      expect(changes[0].content).toBe(actual.replace(anchor, anchor + '\n' + addition));
+      const proposal = model.requests[0];
+      expect(proposal.messages.at(-1).content).toContain(anchor);
+      expect(proposal.response_format.json_schema.schema.properties.changes.items.oneOf[0]
+        .properties.edits.items.oneOf.some((item: any) => item.properties.anchorId.enum.includes(id))).toBe(true);
+      expect(readFileSync(model.root + '/' + page, 'utf8')).toBe(actual);
+    } finally { writeFileSync(model.root + '/' + page, original); }
+  });
   it('keeps the real chat composer context bounded without including auxiliary editors', async () => {
     const actual = readFileSync(new URL('../../client/src/pages/StreamingChat.tsx', import.meta.url), 'utf8');
     const control = actual.match(/<Input\b[\s\S]*?\/>/)![0];
