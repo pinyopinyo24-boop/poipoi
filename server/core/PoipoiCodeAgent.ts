@@ -310,16 +310,42 @@ export class PoipoiCodeAgent {
     for (const file of sourceFiles) {
       if (candidates.includes(file)) loadSource(file);
     }
-    // UI components often render well after the imports/state in a large page.
-    // Supply bounded control/render excerpts as real source, retaining exact hashes.
+    // Include complete JSX containers and their event handlers. Fixed line windows
+    // can end before a closing tag and hide the surrounding UI from the coder.
     if (uiFeature && sourceContents.has(uiPage) && !completeSources.has(uiPage)) {
-      const lines = sourceContents.get(uiPage)!.split(/\r?\n/);
-      const anchors = [
-        ...( /入力欄|入力中|チャット欄/.test(intent) ? [/<(?:Input|Textarea)\b/] : [] ),
-        /^\s*return\s*\(\s*$/,
-      ];
-      for (const anchor of anchors) {
-        const index = lines.findIndex(line => anchor.test(line));
+      const ts = requireCompiler('typescript') as typeof import('typescript');
+      const source = sourceContents.get(uiPage)!;
+      const parsed = ts.createSourceFile(uiPage, source, ts.ScriptTarget.Latest, true);
+      const handlers = new Set<string>();
+      const showNode = (node: import('typescript').Node) => {
+        if (node.getText(parsed).length > 11000) return;
+        loadSource(uiPage, parsed.getLineAndCharacterOfPosition(node.getStart(parsed)).line + 1,
+          parsed.getLineAndCharacterOfPosition(node.end).line + 1);
+      };
+      const findControls = (node: import('typescript').Node) => {
+        if ((ts.isJsxSelfClosingElement(node) || ts.isJsxOpeningElement(node)) &&
+            /^(Input|Textarea|input|textarea)$/.test(node.tagName.getText(parsed))) {
+          let container = ts.isJsxOpeningElement(node) ? node.parent.parent : node.parent;
+          while (container !== parsed && !ts.isJsxElement(container)) container = container.parent;
+          if (ts.isJsxElement(container)) showNode(container);
+          const findHandlers = (child: import('typescript').Node) => {
+            if (ts.isIdentifier(child) && /^handle[A-Z]/.test(child.text)) handlers.add(child.text);
+            ts.forEachChild(child, findHandlers);
+          };
+          findHandlers(ts.isJsxElement(container) ? container : node);
+        }
+        ts.forEachChild(node, findControls);
+      };
+      findControls(parsed);
+      const findDeclarations = (node: import('typescript').Node) => {
+        if ((ts.isVariableDeclaration(node) || ts.isFunctionDeclaration(node)) &&
+            node.name && handlers.has(node.name.getText(parsed))) showNode(node);
+        ts.forEachChild(node, findDeclarations);
+      };
+      findDeclarations(parsed);
+      if (!/入力欄|入力中|チャット欄/.test(intent)) {
+        const lines = source.split(/\r?\n/);
+        const index = lines.findIndex(line => /^\s*return\s*\(\s*$/.test(line));
         if (index >= 150) loadSource(uiPage, Math.max(1, index - 18), Math.min(lines.length, index + 25));
       }
     }
@@ -385,6 +411,7 @@ export class PoipoiCodeAgent {
       "Small existing files eligible for complete content:",
       JSON.stringify([...completeSources].filter(file => (sourceContents.get(file)?.length ?? Infinity) <= 12000)),
       "Edits are literal replacements. When adding a function, anchor after a COMPLETE existing declaration, including its body and closing brace. Never replace only a function's opening line with whole functions: the original body would remain after them. Preserve the existing declaration exactly when requested.",
+      "For JSX additions, keep existing elements, props, event handlers and every closing tag. Prefer inserting a small sibling after a uniquely anchored COMPLETE element; do not rebuild the page or replace an opening tag with a whole container. Derive displays from existing state when suitable, preserving its current update/reset behavior.",
       "For new files only, return complete content. Never return both edits and content for one path. Do not omit requested functionality or return placeholder implementations.",
       "Requested paths that do not exist (CREATE with content, never edits):",
       JSON.stringify([...new Set(explicit)].filter(file => !existsSync(this.safePath(file)))),
@@ -591,8 +618,25 @@ export class PoipoiCodeAgent {
         if (syntaxErrors.length) {
           if (syntaxRetryUsed) throw new Error("生成コードの構文エラーが残っています。変更は適用していません: " + syntaxErrors.slice(0, 10).join("; ").slice(0, 2000));
           syntaxRetryUsed = true;
-          syntaxFeedback = "The TypeScript compiler found syntax errors in the RECONSTRUCTED resulting files. No code was executed or applied. Correct the exact replacement ranges and regenerate the COMPLETE change set. Preserve existing bodies and closing braces; never leave the old function body after a newly inserted declaration. " +
-            JSON.stringify({ errors: syntaxErrors.slice(0, 10), previousChanges: proposals });
+          const affectedSource = generated.map(change => {
+            const before = change.previousContent ?? '';
+            const after = change.content;
+            let first = 0;
+            while (first < before.length && first < after.length && before[first] === after[first]) first++;
+            let tail = 0;
+            while (tail < before.length - first && tail < after.length - first &&
+                before[before.length - 1 - tail] === after[after.length - 1 - tail]) tail++;
+            const excerpt = (text: string, position: number) => {
+              const line = text.slice(0, position).split('\n').length;
+              const lines = text.split('\n');
+              return { startLine: Math.max(1, line - 15), source: lines.slice(Math.max(0, line - 16), line + 45).join('\n').slice(0, 3000) };
+            };
+            return { path: change.path,
+              original: [excerpt(before, first), excerpt(before, before.length - tail)],
+              reconstructed: [excerpt(after, first), excerpt(after, after.length - tail)] };
+          });
+          syntaxFeedback = "The TypeScript compiler found syntax errors in the RECONSTRUCTED resulting files. No code was executed or applied. Discard malformed replacements and regenerate the COMPLETE change set from the ORIGINAL source. Preserve existing bodies and closing braces/tags. Prefer minimal insertions after complete elements, leaving existing JSX intact. " +
+            JSON.stringify({ errors: syntaxErrors.slice(0, 10), previousChanges: proposals, affectedSource });
           proposals = [];
           continue;
         }

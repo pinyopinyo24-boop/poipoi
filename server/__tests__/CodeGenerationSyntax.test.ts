@@ -102,4 +102,37 @@ describe('syntax validation before saving an AI proposal', () => {
     expect(result[0].baseHash).toBeNull();
     expect(existsSync(model.root + '/' + file)).toBe(false);
   });
+
+  it('supplies a complete large-page composer and send handler, then repairs malformed JSX from original source', async () => {
+    const file = 'client/src/pages/StreamingChat.tsx';
+    mkdirSync(model.root + '/client/src/pages', { recursive: true });
+    const input = '<Input value={input} onChange={event => setInput(event.target.value)} />';
+    const handler = 'const handleSendMessage = () => {\n  setInput("");\n};';
+    const composer = '<div data-composer="original">\n' +
+      '{/* kept composer context */}\n'.repeat(30) +
+      input + '\n<button onClick={handleSendMessage}>Send</button>\n</div>';
+    const source = 'export default function StreamingChat() {\nconst [input, setInput] = useState("");\n' +
+      '// Keep unrelated behavior and all existing source.\n'.repeat(300) + handler + '\n' +
+      '// More existing page behavior.\n'.repeat(160) + 'return (\n<main>\n' + composer + '\n</main>\n);\n}';
+    writeFileSync(model.root + '/' + file, source);
+    const malformed = JSON.stringify({ changes: [{ path: file, edits: [{
+      oldText: '<div data-composer="original">', newText: '<div data-composer="original"><div>',
+    }] }] });
+    const repaired = JSON.stringify({ changes: [{ path: file, edits: [{
+      oldText: input, newText: input + '\n<output>{[...input].length}文字</output>',
+    }] }] });
+    model.replies.push(malformed, repaired, accepted);
+    const result = await PoipoiCodeAgent.getInstance().generate('AIチャットの入力欄の近くに文字数を表示する機能を追加して。送信後は0文字に戻す。');
+    const prompt = model.requests[0].messages.at(-1).content;
+    expect(prompt).toContain(composer);
+    expect(prompt).toContain(handler);
+    const correction = model.requests[1].messages.at(-1).content;
+    expect(correction).toContain('TS17008');
+    expect(correction).toContain('affectedSource');
+    expect(correction).toContain('reconstructed');
+    expect(correction).toContain('original');
+    expect(result[0].content).toBe(source.replace(input, input + '\n<output>{[...input].length}文字</output>'));
+    expect(readFileSync(model.root + '/' + file, 'utf8')).toBe(source);
+    expect(model.requests).toHaveLength(3);
+  });
 });
