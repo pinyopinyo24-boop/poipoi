@@ -202,6 +202,63 @@ describe('new feature requests without source paths through the actual PC chat r
     } finally { writeFileSync(model.root + '/' + page, original); }
   });
 
+  it.each(['wrong expected value', 'host import allegation', 'passing example allegation'])(
+    'rechecks the same component without regenerating it for a %s', async kind => {
+    const actual = readFileSync(new URL('../../client/src/pages/StreamingChat.tsx', import.meta.url), 'utf8');
+    writeFileSync(model.root + '/' + page, actual);
+    const task = 'AIチャットの入力欄の近くに文字数表示を追加して。空欄は0文字、「あいう」は3文字、「😀」は1文字。送信後は0文字に戻す。';
+    const checks = [{ exampleIndex: 0, expected: 0, actual: 0 }, { exampleIndex: 1, expected: 3, actual: 3 }, { exampleIndex: 2, expected: 1, actual: 1 }];
+    try {
+      model.replies.push(call => JSON.stringify({ changes: [{
+        path: call.response_format.json_schema.schema.properties.changes.items.properties.path.const,
+        content: 'export default function View({input}:{input:string}) { return <output>{Array.from(input).length}文字</output>; }',
+      }] }), call => {
+        const path = JSON.parse(call.messages.at(-1).content.split('\nReview only')[0]).files[0].path;
+        const exampleChecks = checks.map(item => ({ ...item }));
+        if (kind === 'wrong expected value') exampleChecks[1].expected = 1;
+        return JSON.stringify({ accepted: false, exampleChecks, issues: [{
+          path: kind === 'host import allegation' ? page : path,
+          exampleIndex: 1, requirement: '「あいう」は3文字',
+          problem: "あいうは3文字ですが1文字であるべきです。", evidence: 'Array.from(input).length',
+        }] });
+      }, JSON.stringify({ accepted: true, issues: [], exampleChecks: checks }));
+      const changes = await PoipoiCodeAgent.getInstance().generate(task);
+      expect(changes).toHaveLength(2);
+      expect(model.requests).toHaveLength(3);
+      expect(model.requests[1].response_format.json_schema.schema.properties.issues.items.properties.path.enum).toEqual([changes[0].path]);
+      expect(model.requests[1].messages.at(-1).content).not.toContain('"path":"' + page + '"');
+      expect(model.requests[2].messages.at(-1).content).toContain('SAME candidate');
+      expect(readFileSync(model.root + '/' + page, 'utf8')).toBe(actual);
+    } finally { writeFileSync(model.root + '/' + page, original); }
+  });
+
+  it.each(['literal replacements', 'UTF-16 length'])('corrects %s while retaining requirement checks and approval', async kind => {
+    const actual = readFileSync(new URL('../../client/src/pages/StreamingChat.tsx', import.meta.url), 'utf8');
+    writeFileSync(model.root + '/' + page, actual);
+    const task = 'AIチャットの入力欄の近くに文字数表示を追加して。空欄は0文字、「あいう」は3文字、「😀」は1文字。送信後は0文字に戻す。';
+    const checks = [{ exampleIndex: 0, expected: 0, actual: 0 }, { exampleIndex: 1, expected: 3, actual: 3 }, { exampleIndex: 2, expected: 1, actual: 1 }];
+    const response = (expression: string) => (call: any) => JSON.stringify({ changes: [{
+      path: call.response_format.json_schema.schema.properties.changes.items.properties.path.const,
+      content: 'export default function View({input}:{input:string}) { return <output>{' + expression + '}文字</output>; }',
+    }] });
+    try {
+      model.replies.push(response(kind === 'literal replacements' ? "input.replace(/あいう/g,'a').replace(/😀/g,'a').length" : 'input.length'));
+      if (kind === 'UTF-16 length') model.replies.push(call => {
+        const path = JSON.parse(call.messages.at(-1).content.split('\nReview only')[0]).files[0].path;
+        return JSON.stringify({ accepted: false, exampleChecks: checks.map(item => item.exampleIndex === 2 ? { ...item, actual: 2 } : item),
+          issues: [{ path, exampleIndex: 2, requirement: '「😀」は1文字', problem: 'UTF-16 length counts two units.', evidence: 'input.length' }] });
+      });
+      model.replies.push(response('Array.from(input).length'), JSON.stringify({ accepted: true, issues: [], exampleChecks: checks }));
+      const onCandidate = vi.fn();
+      const changes = await PoipoiCodeAgent.getInstance().generate(task, 'system', { onCandidate });
+      expect(changes[0].content).toContain('Array.from(input).length');
+      if (kind === 'literal replacements') expect(onCandidate.mock.calls[0][1].join(' ')).toContain('special-case request examples');
+      expect(model.requests).toHaveLength(kind === 'literal replacements' ? 3 : 4);
+      expect(readFileSync(model.root + '/' + page, 'utf8')).toBe(actual);
+      expect(existsSync(model.root + '/' + changes[0].path)).toBe(false);
+    } finally { writeFileSync(model.root + '/' + page, original); }
+  });
+
   it('creates a connected preview from a natural request and includes the actual UI controls beyond line 150', async () => {
     model.replies.push(connected, accepted);
     const result = await streamingRouter.createCaller(context()).chat({ message: request, messageId: randomUUID(), conversationId: randomUUID() });
