@@ -16,6 +16,13 @@ vi.mock('../_core/llm', () => ({
     return { choices: [{ message: { content } }] };
   }), listLLMModels: vi.fn(async () => ({ data: [] })),
 }));
+// This suite controls the generation runner to check routing/context. Detached
+// execution and persistence are covered by CodeGenerationWorker.integration.test.
+vi.mock('../core/CodeGenerationWorker', () => ({ queueCodeGeneration: async (userId: string, task: string, sessionId: string) => {
+  const { PoipoiCodeAgent } = await import('../core/PoipoiCodeAgent');
+  const { createCodePreview } = await import('../core/CodePreviewStore');
+  return createCodePreview(userId, await PoipoiCodeAgent.getInstance().generate(task, userId), sessionId);
+} }));
 vi.mock('../core/AZWebKnowledge', () => ({
   webResearchQuery: () => '', researchForAZ: vi.fn(), webResearchContext: () => '',
 }));

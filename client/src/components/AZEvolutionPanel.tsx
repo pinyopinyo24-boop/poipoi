@@ -20,7 +20,7 @@ export default function AZEvolutionPanel({ reviewOnly = false }: { reviewOnly?: 
   const apply = trpc.unifiedTools.applyCodePreview.useMutation();
   const reject = trpc.unifiedTools.rejectCodePreview.useMutation();
   const busy = generate.isPending || apply.isPending || reject.isPending;
-  const statusLabels = { pending: '承認待ち', applying: '作業中・完了未確認', applied: '適用・Gitコミット済み', failed: '適用失敗', rejected: '却下済み' } as const;
+  const statusLabels = { generating: '変更案を作成中', pending: '承認待ち', applying: '作業中・完了未確認', applied: '適用・Gitコミット済み', failed: '適用失敗', rejected: '却下済み' } as const;
   const phaseLabels: Record<string, string> = {
     preparing: '適用準備中', 'checking-source': '変更対象を確認中',
     'loading-compiler': '構文確認の準備中',
@@ -81,8 +81,10 @@ export default function AZEvolutionPanel({ reviewOnly = false }: { reviewOnly?: 
       {pending.error && <p role="alert">{pending.error.message}</p>}
       {result && <p role="status" className="whitespace-pre-wrap">{result}</p>}
       {pending.data?.map(preview => <section key={preview.previewId} className="space-y-3 rounded border p-3">
-        <p role="status">{preview.interrupted ? '処理中断・完了未確認' : statusLabels[preview.status]}・{preview.changes.length}ファイル
+        <p role="status">{preview.interrupted ? '処理中断・完了未確認' : statusLabels[preview.status]}{preview.status !== 'generating' && <>・{preview.changes.length}ファイル</>}
           {preview.status === 'pending' && <>。有効期限まで約{Math.ceil(preview.expiresInSeconds / 60)}分</>}</p>
+        {preview.generation && <p className="text-sm">{preview.generation.phase}</p>}
+        {preview.generation?.error && <p role="alert" className="text-sm text-red-700">{preview.generation.error}</p>}
         {preview.application && <p className="text-sm">{phaseLabels[preview.application.phase] ?? '処理状況を確認中'}</p>}
         {preview.status === 'applying' && !preview.interrupted && <p className="text-sm">作業中（完了未確認）です。再承認せずお待ちください。完了・失敗の結果はチャットに表示します。</p>}
         {preview.interrupted && <p role="alert" className="text-sm text-red-700">承認処理が中断しています。作業中ではありません。ファイルとGitの完了状態は未確認です。</p>}

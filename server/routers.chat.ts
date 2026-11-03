@@ -1,3 +1,4 @@
+import { queueCodeGeneration } from './core/CodeGenerationWorker';
 import { understandConversationTurn } from './core/AZConversationUnderstanding';
 import { capabilityReply, resolveImplementationRequest, implementationPrompt, isUserNameQuestion, nameAnswerToPreviousQuestion, recoverExplicitUserName } from './core/AZCapabilityCatalog';
 import { router, publicProcedure, protectedProcedure } from './_core/trpc';
@@ -160,15 +161,15 @@ export const chatRouter = router({
           const resolvedRequest = resolveImplementationRequest(understanding.resolvedRequest, recentDialogue);
           const request = implementationPrompt(resolvedRequest, recentDialogue);
           const askedAt = Date.now();
-          await dialogueRepository.saveMessage({ id: input.messageId ?? uuidv4(), userId: dialogueUserId,
+          const requestMessageId = input.messageId ?? uuidv4();
+          await dialogueRepository.saveMessage({ id: requestMessageId, userId: dialogueUserId,
             role: 'user', content: input.message.trim(), timestamp: askedAt }, input.sessionId);
-          const { unifiedToolsRouter } = await import('./routers/unifiedTools');
           let content: string;
           let previewId: string | undefined;
           try {
-            const preview = await unifiedToolsRouter.createCaller(ctx).codePreview({ request, sessionId: input.sessionId });
-            previewId = preview.previewId;
-            content = '機能の追加・修正の変更案を作成しました。変更案の確認・承認欄で内容を確認してください。まだ適用していません。';
+            const preview = await queueCodeGeneration(dialogueUserId, request, input.sessionId, resolvedRequest, requestMessageId);
+            previewId = preview.id;
+            content = '変更案の作成を受け付けました。作成中の状況は入力欄の左から確認できます。完了するとこのチャットに表示します。まだ適用していません。';
           } catch (error) {
             content = '変更案を作成できませんでした。実装は完了していません。理由: ' + (error instanceof Error ? error.message : String(error));
           }

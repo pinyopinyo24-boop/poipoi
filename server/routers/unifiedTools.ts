@@ -407,6 +407,23 @@ export const unifiedToolsRouter = router({
     if (input && input.accountId !== String(ctx.user.id)) throw new Error('Account mismatch');
     if (ctx.user.role !== 'admin') return [];
     const previews = await listCodePreviews(String(ctx.user.id), { includeHistory: input?.includeHistory === true });
+    for (const preview of previews) {
+      if (!preview.sessionId || !preview.generation?.finishedAt) continue;
+      try {
+        const repository = (await import('../repositories/ChatRepository')).getSharedChatRepository();
+        if ((await repository.getSession(preview.sessionId))?.userId !== String(ctx.user.id)) continue;
+        const success = !preview.generation.error && preview.changes.length > 0;
+        await repository.saveMessage({
+          id: 'code-generation-' + preview.id, userId: String(ctx.user.id), role: 'assistant',
+          content: success
+            ? '機能の追加・修正の変更案を作成しました。変更案の確認・承認欄で内容を確認してください。まだ適用していません。'
+            : '変更案を作成できませんでした。変更は適用していません。理由: ' + preview.generation.error,
+          timestamp: preview.generation.finishedAt,
+          metadata: { replyTo: preview.generation.replyTo,
+            codePreview: { previewId: success ? preview.id : undefined, applied: false, request: preview.generation.request } },
+        }, preview.sessionId);
+      } catch (error) { console.warn('[PoiPoi] Generation report unavailable:', error); }
+    }
     // A committed application can outlive its request/server process. Restore a
     // missing completion message in the live server repository; saveMessage
     // deduplicates by preview ID, including concurrent polling requests.

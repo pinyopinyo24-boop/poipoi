@@ -201,6 +201,7 @@ export class PoipoiCodeAgent {
   }
 
   async generate(task: string, userId = "system", options: {
+    onProgress?: (stage: string) => void | Promise<void>;
     // Only the caller can opt into executing its own acceptance checks.
     validateGenerated?: (changes: ReadonlyArray<Readonly<CodeChange>>) => readonly string[] | Promise<readonly string[]>;
   } = {}): Promise<CodeChange[]> {
@@ -364,6 +365,7 @@ export class PoipoiCodeAgent {
           stage, contextWindow: request.contextWindow, maxTokens: request.max_tokens,
           timeoutMs: stageTimeoutMs, remainingMs: remaining, totalTimeoutMs,
         });
+        await options.onProgress?.(stage);
         return await invokeLLM({ ...request, timeoutMs: stageTimeoutMs });
       } catch (error) {
         const detail = error instanceof Error ? error.message : String(error);

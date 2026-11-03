@@ -7,8 +7,14 @@ import type { CodeChange } from './PoipoiCodeAgent';
 const root = path.resolve(process.cwd(), 'data', 'code-previews');
 const schema = z.object({
   id: z.string().uuid(), userId: z.string(), expires: z.number(), sessionId: z.string().optional(),
-  status: z.enum(['pending', 'applying', 'applied', 'failed', 'rejected']),
+  status: z.enum(['generating', 'pending', 'applying', 'applied', 'failed', 'rejected']),
   updatedAt: z.number().optional(),
+  generation: z.object({
+    jobId: z.string().uuid(), startedAt: z.number(), finishedAt: z.number().optional(),
+    workerPid: z.number().int().positive().optional(), phase: z.string().max(100),
+    sourceTask: z.string().min(1).max(4000), request: z.string().min(1).max(4000),
+    replyTo: z.string().max(200).optional(), error: z.string().max(4000).optional(),
+  }).optional(),
   application: z.object({
     startedAt: z.number(), finishedAt: z.number().optional(),
     phase: z.string().max(100),
@@ -20,7 +26,12 @@ const schema = z.object({
   changes: z.array(z.object({
     path: z.string(), content: z.string(), baseHash: z.string().nullable(),
     previousContent: z.string().optional(),
-  })).min(1).max(5),
+  })).max(5),
+}).superRefine((preview, ctx) => {
+  if (!['generating', 'failed'].includes(preview.status) && !preview.changes.length)
+    ctx.addIssue({ code: 'custom', path: ['changes'], message: 'A completed proposal requires source changes' });
+  if (preview.status === 'generating' && !preview.generation)
+    ctx.addIssue({ code: 'custom', path: ['generation'], message: 'Generation job is required' });
 });
 export type CodePreview = z.infer<typeof schema>;
 function directory(userId: string) {
@@ -57,17 +68,33 @@ export async function listCodePreviews(userId: string, options: { includeHistory
   });
   const previews: CodePreview[] = [];
   for (const name of names.filter(name => /^[0-9a-f-]{36}\.json$/.test(name))) {
-    const preview = await readCodePreview(userId, name.slice(0, -5));
+    let preview = await readCodePreview(userId, name.slice(0, -5));
+    if (preview.status === 'generating' && preview.generation) {
+      const generation = preview.generation;
+      let gone = false;
+      if (generation.workerPid) {
+        try { process.kill(generation.workerPid, 0); }
+        catch (error) { gone = (error as NodeJS.ErrnoException).code !== 'EPERM'; }
+      } else gone = generation.startedAt < Date.now() - process.uptime() * 1000 && Date.now() - generation.startedAt > 30000;
+      if (gone) {
+        preview = await readCodePreview(userId, preview.id);
+        if (preview.status === 'generating' && preview.generation?.jobId === generation.jobId) {
+          preview.status = 'failed';
+          preview.generation = { ...preview.generation, phase: '中断', finishedAt: Date.now(), error: '変更案の生成プロセスが終了しました。変更は適用していません。自動再送はしていません。' };
+          await saveCodePreview(preview);
+        }
+      }
+    }
     if ((preview.status === 'pending' && preview.expires > Date.now()) ||
-        (options.includeHistory && (preview.status === 'applying' ||
+        (options.includeHistory && (preview.status === 'applying' || preview.status === 'generating' ||
           (preview.status !== 'pending' && (preview.updatedAt ?? preview.expires) > Date.now() - 24 * 3600000)))) {
       previews.push(preview);
     }
   }
   if (!options.includeHistory) return previews;
   previews.sort((a, b) => (b.updatedAt ?? b.expires) - (a.updatedAt ?? a.expires));
-  const active = previews.filter(preview => preview.status === 'pending' || preview.status === 'applying');
-  const history = previews.filter(preview => preview.status !== 'pending' && preview.status !== 'applying').slice(0, 20);
+  const active = previews.filter(preview => preview.status === 'pending' || preview.status === 'applying' || preview.status === 'generating');
+  const history = previews.filter(preview => preview.status !== 'pending' && preview.status !== 'applying' && preview.status !== 'generating').slice(0, 20);
   return [...active, ...history];
 }
 export function isCodeApprovalInterrupted(preview: CodePreview) {
@@ -87,6 +114,8 @@ export function describeCodePreview(preview: CodePreview) {
     previewId: preview.id, expiresInSeconds: Math.max(0, Math.floor((preview.expires - Date.now()) / 1000)),
     status: preview.status, applied: preview.status === 'applied', tested: false,
     updatedAt: preview.updatedAt, application: preview.application,
+    generation: preview.generation ? { startedAt: preview.generation.startedAt, finishedAt: preview.generation.finishedAt,
+      phase: preview.generation.phase, request: preview.generation.request, error: preview.generation.error } : undefined,
     interrupted: isCodeApprovalInterrupted(preview), canResume: canResumeCodeApproval(preview),
     changes: preview.changes.map(change => ({ ...change,
       operation: change.baseHash === null ? 'create' as const : 'modify' as const,

@@ -12,10 +12,10 @@ const alive = (pid: number) => {
 };
 
 // Across server restarts, only one process may write and commit project source.
-function lockProject(root: string, jobId: string) {
+export function lockProject(root: string, jobId: string, kind: 'application' | 'generation' = 'application') {
   const directory = path.join(root, 'data', 'code-previews');
   mkdirSync(directory, { recursive: true });
-  const file = path.join(directory, '.application.lock');
+  const file = path.join(directory, '.' + kind + '.lock');
   for (let attempt = 0; attempt < 2; attempt++) {
     try {
       const handle = openSync(file, 'wx', 0o600);
@@ -33,7 +33,7 @@ function lockProject(root: string, jobId: string) {
       } catch { break; }
     }
   }
-  throw new Error('別の承認処理が実行中、またはロックの確認が必要です。再実行していません。');
+  throw new Error((kind === 'generation' ? '別の変更案の生成' : '別の承認処理') + 'が実行中、またはロックの確認が必要です。再実行していません。');
 }
 
 export async function runCodeApprovalWorker(userId: string, id: string, jobId: string) {

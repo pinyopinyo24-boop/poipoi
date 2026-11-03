@@ -22,6 +22,8 @@ export default function AZApprovalNotice() {
   const workingCount = previews.data?.filter(preview =>
     preview.status === 'applying' && !preview.interrupted).length ?? 0;
 
+  const generatingCount = previews.data?.filter(preview => preview.status === 'generating').length ?? 0;
+
   const interruptedCount = previews.data?.filter(preview => preview.interrupted).length ?? 0;
 
   if (user?.role !== 'admin') return null;
@@ -49,6 +51,12 @@ export default function AZApprovalNotice() {
       aria-label={"中断" + interruptedCount + "件。処理状況を確認"}
       aria-haspopup="dialog" onClick={() => setOpen(true)}>
       中断 {interruptedCount}
+    </Button>}
+    {generatingCount > 0 && <Button type="button" variant="outline"
+      className="h-10 shrink-0 border-cyan-400 bg-cyan-50 text-cyan-900"
+      aria-label={"変更案作成中" + generatingCount + "件。処理状況を確認"}
+      aria-haspopup="dialog" onClick={() => setOpen(true)}>
+      <span role="status">作成中 {generatingCount}</span>
     </Button>}
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogContent className="max-h-[85vh] max-w-3xl overflow-y-auto">
