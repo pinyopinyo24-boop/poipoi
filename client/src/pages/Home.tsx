@@ -1,4 +1,5 @@
 import { Button } from "@/components/ui/button";
+import HomeAISettings from "@/components/HomeAISettings";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Code2, Loader2, Zap } from "lucide-react";
 import { useLocation } from "wouter";
@@ -36,6 +37,7 @@ export default function Home() {
               次世代生産管理 & AIクリエイティブプラットフォーム
             </p>
           </div>
+          <HomeAISettings />
         </div>
       </header>
 
