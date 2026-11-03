@@ -4,6 +4,14 @@ import { useAuth } from '@/_core/hooks/useAuth';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 
+function previewDate(value: number | undefined) {
+  if (value === undefined || !Number.isFinite(value)) return '日時不明';
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? '日時不明' : date.toLocaleString('ja-JP', {
+    year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false,
+  });
+}
+
 export default function AZEvolutionPanel({ reviewOnly = false }: { reviewOnly?: boolean }) {
   const { user } = useAuth();
   const [request, setRequest] = useState('');
@@ -66,22 +74,21 @@ export default function AZEvolutionPanel({ reviewOnly = false }: { reviewOnly?: 
       approvalLock.current = false;
     }
   };
-  if (!user) return <p className="text-sm"><a href="/login" className="text-blue-700 underline">ログイン</a>すると、記憶・実務操作・自己進化をアカウントに保存できます。</p>;
-  if (reviewOnly && user.role !== 'admin') return null;
-  if (user.role !== 'admin') return <p className="text-sm">コード変更の生成・適用には管理者権限が必要です。</p>;
-  if (reviewOnly && !pending.data?.length && !pending.error && !result) return null;
-  return <details className="rounded-lg border bg-white p-3" open={(pending.data?.length ?? 0) > 0 || Boolean(result) || Boolean(pending.error)}>
-    <summary className="cursor-pointer font-semibold">変更案の確認・承認（承認待ち{pending.data?.filter(preview => preview.status === 'pending').length ?? 0}件）</summary>
-    <div className="mt-3 space-y-3">
-      {!reviewOnly && <>
-      <Textarea value={request} onChange={event => setRequest(event.target.value)}
-        placeholder="追加・修正したい機能と条件を入力。対象ソースはAZが探します。" />
-      <Button onClick={create} disabled={busy || !request.trim()}>変更案を生成（適用しない）</Button>
-      </>}
-      {pending.error && <p role="alert">{pending.error.message}</p>}
-      {result && <p role="status" className="whitespace-pre-wrap">{result}</p>}
-      {pending.data?.map(preview => <section key={preview.previewId} className="space-y-3 rounded border p-3">
-        <p role="status">{preview.interrupted ? '処理中断・完了未確認' : statusLabels[preview.status]}{preview.status !== 'generating' && <>・{preview.changes.length}ファイル</>}
+  const orderedPreviews = [...(pending.data ?? [])].sort((a, b) => {
+    const activityTime = (preview: typeof a) => Math.max(preview.application?.startedAt ?? 0,
+      preview.generation?.startedAt ?? 0) || preview.updatedAt || 0;
+    return activityTime(b) - activityTime(a);
+  });
+  const [currentPreview, ...history] = orderedPreviews;
+  const renderPreview = (preview: NonNullable<typeof pending.data>[number]) => <section key={preview.previewId} className="space-y-3 rounded border p-3">
+        <p className="text-xs text-gray-600">
+          最終更新: {previewDate(preview.updatedAt)} ・ ID: <span title={preview.previewId}>{preview.previewId.slice(0, 8)}</span>
+        </p>
+        {(preview.application?.startedAt ?? preview.generation?.startedAt) !== undefined &&
+          <p className="text-xs text-gray-600">{preview.application ? '適用開始' : '生成開始'}: {previewDate(preview.application?.startedAt ?? preview.generation?.startedAt)}</p>}
+        {preview.generation && <p className="line-clamp-2 break-words text-sm text-gray-600" title={preview.generation.request}>依頼: {preview.generation.request}</p>}
+        <p role="status">{preview.interrupted ? '処理中断・完了未確認' : preview.status === 'failed' && preview.generation?.error && !preview.application
+          ? '生成失敗・未適用' : statusLabels[preview.status]}{preview.status !== 'generating' && preview.changes.length > 0 && <>・{preview.changes.length}ファイル</>}
           {preview.status === 'pending' && <>。有効期限まで約{Math.ceil(preview.expiresInSeconds / 60)}分</>}</p>
         {preview.generation && <p className="text-sm">{preview.generation.phase}</p>}
         {preview.generation?.error && <p role="alert" className="text-sm text-red-700">{preview.generation.error}</p>}
@@ -110,7 +117,32 @@ export default function AZEvolutionPanel({ reviewOnly = false }: { reviewOnly?: 
           }}>却下</Button>}
         </div>
         </>}
-      </section>)}
+      </section>;
+  if (!user) return <p className="text-sm"><a href="/login" className="text-blue-700 underline">ログイン</a>すると、記憶・実務操作・自己進化をアカウントに保存できます。</p>;
+  if (reviewOnly && user.role !== 'admin') return null;
+  if (user.role !== 'admin') return <p className="text-sm">コード変更の生成・適用には管理者権限が必要です。</p>;
+  if (reviewOnly && !pending.data?.length && !pending.error && !result) return null;
+  return <details className="rounded-lg border bg-white p-3" open={(pending.data?.length ?? 0) > 0 || Boolean(result) || Boolean(pending.error)}>
+    <summary className="cursor-pointer font-semibold">変更案の確認・承認（承認待ち{pending.data?.filter(preview => preview.status === 'pending').length ?? 0}件）</summary>
+    <div className="mt-3 space-y-3">
+      {!reviewOnly && <>
+      <Textarea value={request} onChange={event => setRequest(event.target.value)}
+        placeholder="追加・修正したい機能と条件を入力。対象ソースはAZが探します。" />
+      <Button onClick={create} disabled={busy || !request.trim()}>変更案を生成（適用しない）</Button>
+      </>}
+      {pending.error && <p role="alert">{pending.error.message}</p>}
+      {result && <p role="status" className="whitespace-pre-wrap">{result}</p>}
+      {currentPreview && <div className="space-y-2">
+        <h3 className="text-sm font-semibold">現在の処理</h3>
+        {renderPreview(currentPreview)}
+      </div>}
+      {history.length > 0 && <details className="rounded border bg-gray-50 p-3">
+        <summary className="cursor-pointer text-sm font-semibold">履歴（{history.length}件）
+          {history.some(preview => preview.status === 'pending') && <>・承認待ちあり</>}
+          {history.some(preview => preview.status === 'generating' || preview.status === 'applying') && <>・処理中あり</>}
+        </summary>
+        <div className="mt-3 space-y-3">{history.map(renderPreview)}</div>
+      </details>}
     </div>
   </details>;
 }
