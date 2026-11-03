@@ -405,7 +405,25 @@ export const unifiedToolsRouter = router({
   listCodePreviews: protectedProcedure.input(z.object({ accountId: z.string(), includeHistory: z.boolean().optional() }).optional()).query(async ({ ctx, input }) => {
     if (input && input.accountId !== String(ctx.user.id)) throw new Error('Account mismatch');
     if (ctx.user.role !== 'admin') return [];
-    return (await listCodePreviews(String(ctx.user.id), { includeHistory: input?.includeHistory === true })).map(describeCodePreview);
+    const previews = await listCodePreviews(String(ctx.user.id), { includeHistory: input?.includeHistory === true });
+    // A committed application can outlive its request/server process. Restore a
+    // missing completion message in the live server repository; saveMessage
+    // deduplicates by preview ID, including concurrent polling requests.
+    for (const preview of previews) {
+      if (preview.status !== 'applied' || preview.application?.committed !== true || !preview.sessionId) continue;
+      try {
+        const repository = (await import('../repositories/ChatRepository')).getSharedChatRepository();
+        if ((await repository.getSession(preview.sessionId))?.userId !== String(ctx.user.id)) continue;
+        await repository.saveMessage({
+          id: 'code-approval-' + preview.id, userId: String(ctx.user.id), role: 'assistant',
+          content: '承認されたコード変更を適用・Gitコミットしました。型チェック: ' + (preview.application.typeChecked ? '実行済み' : '未実行') + '。テスト・実動作確認は未実施です。',
+          timestamp: preview.application.finishedAt ?? preview.updatedAt ?? Date.now(),
+          metadata: { codeApproval: { previewId: preview.id, success: true, tested: false,
+            typeChecked: preview.application.typeChecked === true, committed: true } },
+        }, preview.sessionId);
+      } catch (error) { console.warn('[PoiPoi] Approval completion report unavailable:', error); }
+    }
+    return previews.map(describeCodePreview);
   }),
   getCodePreview: protectedProcedure.input(z.object({ previewId: z.string().uuid() }))
     .query(async ({ ctx, input }) => {
