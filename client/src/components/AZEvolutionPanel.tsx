@@ -20,7 +20,7 @@ export default function AZEvolutionPanel({ reviewOnly = false }: { reviewOnly?: 
   const apply = trpc.unifiedTools.applyCodePreview.useMutation();
   const reject = trpc.unifiedTools.rejectCodePreview.useMutation();
   const busy = generate.isPending || apply.isPending || reject.isPending;
-  const statusLabels = { pending: '承認待ち', applying: '適用中・完了未確認', applied: '適用・Gitコミット済み', failed: '適用失敗', rejected: '却下済み' } as const;
+  const statusLabels = { pending: '承認待ち', applying: '作業中・完了未確認', applied: '適用・Gitコミット済み', failed: '適用失敗', rejected: '却下済み' } as const;
   const phaseLabels: Record<string, string> = {
     preparing: '適用準備中', 'checking-source': '変更対象を確認中',
     'loading-compiler': '構文確認の準備中',
@@ -45,7 +45,7 @@ export default function AZEvolutionPanel({ reviewOnly = false }: { reviewOnly?: 
     setResult('');
     try {
       await utils.unifiedTools.listCodePreviews.cancel(approvalQuery);
-      // The user confirmed this approval. Hide its pending notice immediately;
+      // The user confirmed this approval. Switch the pending notice to working immediately;
       // "applying" does not claim that file creation or Git commit succeeded.
       utils.unifiedTools.listCodePreviews.setData(approvalQuery, current =>
         current?.map(preview => preview.previewId === previewId
@@ -84,7 +84,7 @@ export default function AZEvolutionPanel({ reviewOnly = false }: { reviewOnly?: 
         <p role="status">{statusLabels[preview.status]}・{preview.changes.length}ファイル
           {preview.status === 'pending' && <>。有効期限まで約{Math.ceil(preview.expiresInSeconds / 60)}分</>}</p>
         {preview.application && <p className="text-sm">{phaseLabels[preview.application.phase] ?? '処理状況を確認中'}</p>}
-        {preview.status === 'applying' && <p className="text-sm">まだ完了を確認できていません。処理中の可能性があるため、再承認せずお待ちください。</p>}
+        {preview.status === 'applying' && <p className="text-sm">作業中（完了未確認）です。再承認せずお待ちください。完了・失敗の結果はチャットに表示します。</p>}
         {preview.application?.error && <p role="alert" className="whitespace-pre-wrap text-red-700">{preview.application.error}</p>}
         {preview.status === 'applied' && <p className="text-sm">型チェック: {preview.application?.typeChecked ? '実行済み' : '未確認または未実行'}。テスト・実動作確認は未実施です。</p>}
         {preview.changes.map(change => <details key={change.path}>

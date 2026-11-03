@@ -19,6 +19,9 @@ export default function AZApprovalNotice() {
   const count = previews.data?.filter(preview =>
     preview.status === 'pending' && preview.expiresInSeconds > 0).length ?? 0;
 
+  const workingCount = previews.data?.filter(preview =>
+    preview.status === 'applying').length ?? 0;
+
   if (user?.role !== 'admin') return null;
   return <>
     {count > 0 && <Button type="button" variant="outline"
@@ -29,6 +32,15 @@ export default function AZApprovalNotice() {
       onClick={() => setOpen(true)}>
       <span aria-hidden="true" className="h-2 w-2 rounded-full bg-amber-500" />
       <span aria-live="polite" aria-atomic="true">承認 <span className="tabular-nums">{count}</span></span>
+    </Button>}
+    {workingCount > 0 && <Button type="button" variant="outline"
+      className="h-10 shrink-0 gap-1.5 rounded-lg border-cyan-400 bg-cyan-50 px-3 text-sm font-semibold text-cyan-900 hover:bg-cyan-100"
+      aria-label={"作業中" + workingCount + "件。処理状況を確認"}
+      aria-haspopup="dialog"
+      title="適用処理中・完了未確認。クリックして処理状況を確認"
+      onClick={() => setOpen(true)}>
+      <span aria-hidden="true" className="h-2 w-2 rounded-full bg-cyan-500 motion-safe:animate-pulse" />
+      <span role="status" aria-live="polite" aria-atomic="true">作業中 <span className="tabular-nums">{workingCount}</span></span>
     </Button>}
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogContent className="max-h-[85vh] max-w-3xl overflow-y-auto">
