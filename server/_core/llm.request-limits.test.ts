@@ -7,6 +7,15 @@ const request: LLMRequest = {
 };
 afterEach(() => { vi.unstubAllGlobals(); vi.useRealTimers(); });
 describe('local model request limits', () => {
+  it('sends code-worker instructions without unrelated chat persona or arithmetic examples', async () => {
+    const fetch = vi.fn(async () => ({ ok: true, text: async () => JSON.stringify({ message: { content: '{}' } }) }));
+    vi.stubGlobal('fetch', fetch);
+    await invokeLLM({ ...request, purpose: 'code' });
+    const body = JSON.parse(fetch.mock.calls[0][1].body);
+    expect(body.messages).toEqual(request.messages);
+    expect(body.format).toEqual(request.response_format!.json_schema.schema);
+  });
+
   it('passes a per-request context size to Ollama without changing the global default', async () => {
     const fetch = vi.fn(async () => ({ ok: true, text: async () => JSON.stringify({ message: { content: '{}' } }) }));
     vi.stubGlobal('fetch', fetch);

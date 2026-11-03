@@ -1,6 +1,6 @@
 import { beforeAll, beforeEach, afterAll, describe, expect, it, vi } from 'vitest';
 import { mkdirSync, writeFileSync, readFileSync, existsSync, rmSync } from 'node:fs';
-import { randomUUID } from 'node:crypto';
+import { randomUUID, createHash } from 'node:crypto';
 
 const model = vi.hoisted(() => {
   const root = process.cwd() + '/node_modules/.cache/natural-feature-' + Date.now();
@@ -65,8 +65,9 @@ describe('new feature requests without source paths through the actual PC chat r
     const control = actual.match(/<Input\b[\s\S]*?\/>/)![0];
     writeFileSync(model.root + '/' + page, actual);
     try {
-      model.replies.push(JSON.stringify({ changes: [{ path: page, edits: [{ oldText: control,
-        newText: control + '\n<output>{[...input].length}文字</output>' }] }] }), accepted);
+      const anchorId = 'a' + createHash('sha256').update(page + '\n' + control).digest('hex').slice(0, 12);
+      model.replies.push(JSON.stringify({ changes: [{ path: page, edits: [{ anchorId, operation: 'insertAfter',
+        newText: '<output>{[...input].length}文字</output>' }] }] }), accepted);
       const task = implementationPrompt(request, [{ role: 'assistant', content: 'Previous discussion. '.repeat(220) }] as any);
       const changes = await PoipoiCodeAgent.getInstance().generate(task);
       const call = model.requests[0];
@@ -74,6 +75,10 @@ describe('new feature requests without source paths through the actual PC chat r
       console.log('REAL PAGE CONTEXT:', { characters: JSON.stringify(call.messages).length, contextWindow: call.contextWindow });
       expect(JSON.stringify(call.messages).length).toBeLessThan(30000);
       expect(call.contextWindow).toBeLessThanOrEqual(16384);
+      const grammar = call.response_format.json_schema.schema.properties.changes.items.oneOf[0];
+      expect(grammar.properties.edits.items.properties.anchorId.enum).toContain(anchorId);
+      expect(grammar.properties.edits.items.required).toEqual(['anchorId', 'operation', 'newText']);
+      expect(grammar.properties.content).toBeUndefined();
       expect(prompt).toContain(control);
       expect(prompt).toContain('const [input, setInput] = useState("")');
       expect(prompt).toContain('const handleSendMessage = async');
@@ -82,7 +87,36 @@ describe('new feature requests without source paths through the actual PC chat r
       expect(prompt).not.toContain('value={memoryQuery}');
       expect(prompt).not.toContain('Existing source: client/src/App.tsx');
       expect(changes[0].content).toBe(actual.replace(control, control + '\n<output>{[...input].length}文字</output>'));
+      const review = JSON.parse(model.requests[1].messages.at(-1).content);
+      expect(review.files[0].exactEdits[0].oldText).toBe(control);
+      expect(review.files[0].exactEdits[0].newText).toContain(control);
       expect(readFileSync(model.root + '/' + page, 'utf8')).toBe(actual);
+    } finally { writeFileSync(model.root + '/' + page, original); }
+  });
+
+  it('rejects an invented source anchor before saving or modifying the page', async () => {
+    model.replies.push(JSON.stringify({ changes: [{ path: page, edits: [{ anchorId: 'invented',
+      operation: 'insertAfter', newText: '<output>unused</output>' }] }] }));
+    await expect(PoipoiCodeAgent.getInstance().generate(request)).rejects.toThrow('Invalid source anchor');
+    expect(readFileSync(model.root + '/' + page, 'utf8')).toBe(original);
+    expect(model.requests).toHaveLength(1);
+  });
+
+  it('makes additionally requested source units available as anchors', async () => {
+    const helper = 'export function helper() { return 1; }';
+    const source = original + '\n' + helper;
+    writeFileSync(model.root + '/' + page, source);
+    try {
+      const line = source.slice(0, source.indexOf(helper)).split('\n').length;
+      const anchorId = 'a' + createHash('sha256').update(page + '\n' + helper).digest('hex').slice(0, 12);
+      model.replies.push(JSON.stringify({ changes: [], readFiles: [{ path: page, startLine: line, endLine: line }] }),
+        JSON.stringify({ changes: [{ path: page, edits: [{ anchorId, operation: 'replace',
+          newText: 'export function helper() { return 2; }' }] }] }), accepted);
+      const changes = await PoipoiCodeAgent.getInstance().generate(request);
+      const grammar = model.requests[1].response_format.json_schema.schema.properties.changes.items.oneOf[0];
+      expect(grammar.properties.edits.items.properties.anchorId.enum).toContain(anchorId);
+      expect(changes[0].content).toBe(source.replace('return 1;', 'return 2;'));
+      expect(readFileSync(model.root + '/' + page, 'utf8')).toBe(source);
     } finally { writeFileSync(model.root + '/' + page, original); }
   });
 
