@@ -500,6 +500,32 @@ export class PoipoiCodeAgent {
         throw new Error(stage + "に失敗しました: " + detail + budget);
       }
     };
+    // Keep the model's source context within a bounded budget regardless of
+    // repository size. Source not shown remains available through readFiles;
+    // never shorten the user's request or silently treat omitted source as read.
+    const promptSources = () => {
+      const budget = 10000;
+      const chosen: string[] = [];
+      const omitted: string[] = [];
+      let used = 0;
+      for (const excerpt of [...context].reverse()) {
+        if (used + excerpt.length > budget) {
+          const label = excerpt.split('\n', 2).join(' ');
+          if (!chosen.length && budget - used > 500) {
+            const boundary = excerpt.lastIndexOf('\n', budget - used);
+            if (boundary > 100) {
+              chosen.unshift(excerpt.slice(0, boundary)); used += boundary;
+              omitted.push(label + ' (remaining lines omitted; request them by readFiles)');
+              continue;
+            }
+          }
+          omitted.push(label);
+          continue;
+        }
+        chosen.unshift(excerpt); used += excerpt.length;
+      }
+      return { shown: chosen.join('\n\n'), omitted };
+    };
     const buildPrompt = (followUp = '') => isolatedDisplay ? [
       "You are Poipoi's code implementation agent. Implement the user's requested display as one NEW standalone React TSX component. Return the implementation, not a plan or placeholder.",
       "Create exactly: " + displayPath,
@@ -517,8 +543,9 @@ export class PoipoiCodeAgent {
       "Anchor context is mandatory: jsxChildren accepts ONLY JSX elements/fragments or JSX expressions, never const declarations, functions, hooks or handler statements. Put component declarations/hooks at componentBody anchors, and imports/module declarations at module anchors. Keep each inserted declaration or JSX element COMPLETE in one edit. Edits are applied in array order. For a display derived from existing state, prefer using that state directly in JSX; do not add duplicate handlers, independent reset state or arbitrary limits unless requested.",
       "For OTHER reviewed existing files, use exact oldText/newText edits. For NEW source files only, return path and complete content. Connect them to the reviewed page. No placeholders, new dependencies, config edits, execution or application. If more source is needed, return changes:[] and readFiles:[{path,startLine,endLine}].",
       "Available anchors (line ranges refer to the exact reviewed source):",
-      JSON.stringify([...anchors].map(([id, unit]) => ({ id, path: unit.path, context: unit.context, startLine: unit.startLine, endLine: unit.endLine, begins: unit.source.split('\n')[0].slice(0, 180) }))),
-      "Reviewed source:", context.join('\n\n'),
+      JSON.stringify([...anchors].filter(([, unit]) => promptSources().shown.includes(unit.source)).map(([id, unit]) => ({ id, path: unit.path, context: unit.context, startLine: unit.startLine, endLine: unit.endLine, begins: unit.source.split('\n')[0].slice(0, 180) }))),
+      "Reviewed source:", promptSources().shown,
+      "Omitted source ranges are NOT reviewed. Request them by readFiles before editing:", promptSources().omitted.join('\n'),
       "Additional source inventory (request before editing):", inventory.slice(0, 30).join('\n'),
       "Existing dependencies:", Object.keys(JSON.parse(readFileSync(resolve(this.root, 'package.json'), 'utf8')).dependencies ?? {}).join(', '),
       "Return JSON only: {\"changes\":[{\"path\":" + JSON.stringify(uiPage) + ",\"edits\":[{\"anchorId\":\"an actual listed id\",\"operation\":\"insertAfter\",\"newText\":\"only the added code\"}]}]}",
@@ -551,7 +578,8 @@ export class PoipoiCodeAgent {
       "Existing dependency names:",
       Object.keys(JSON.parse(readFileSync(resolve(this.root, 'package.json'), 'utf8')).dependencies ?? {}).join(', '),
       "Existing project files:",
-      context.join("\n\n") || "(none)",
+      promptSources().shown || "(none)",
+      "Omitted source ranges are NOT reviewed. Request them by readFiles before editing:", promptSources().omitted.join('\n'),
       "Return JSON only.",
       "",
       "Required format:",
@@ -582,7 +610,7 @@ export class PoipoiCodeAgent {
         throw new Error('Invalid exact-text edit: ' + file);
       return { oldText: edit.oldText, newText: edit.newText };
     };
-    const materializeChanges = (proposals: GeneratedCodeChange[]): CodeChange[] => {
+    const materializeChanges = (proposals: GeneratedCodeChange[], visibleSource: string): CodeChange[] => {
       if (!proposals.length) throw new Error("AIが有効な変更案を生成できませんでした。変更は適用していません。");
       const generated: CodeChange[] = [];
       if (proposals.length > 5) throw new Error("Generated changes exceed the five-file safety limit");
@@ -606,6 +634,10 @@ export class PoipoiCodeAgent {
           const after = new Map<string, string>();
           for (const edit of proposal.edits) {
             if (!edit) throw new Error('Invalid exact-text edit: ' + normalizedPath);
+            if (edit.anchorId && !anchors.has(edit.anchorId)) throw new Error('Invalid source anchor: ' + normalizedPath);
+            const reviewed = edit.anchorId ? anchors.get(edit.anchorId)?.source : edit.oldText;
+            if (!isolatedDisplay && (!reviewed || !visibleSource.includes(reviewed.replace(/\r\n/g, '\n'))))
+              throw new Error('Edit targets source omitted from this model request: ' + normalizedPath);
             const resolved = resolveEdit(edit, normalizedPath, after);
             const oldText = resolved.oldText.replace(/\r\n/g, "\n");
             const newText = resolved.newText.replace(/\r\n/g, "\n");
@@ -617,7 +649,8 @@ export class PoipoiCodeAgent {
           }
         } else {
           if (typeof proposal.content !== "string") throw new Error("Missing generated source: " + normalizedPath);
-          if (sourceContents.has(normalizedPath) && !completeSources.has(normalizedPath)) {
+          if (sourceContents.has(normalizedPath) && (!completeSources.has(normalizedPath) ||
+              !visibleSource.includes(sourceContents.get(normalizedPath)!.replace(/\r\n/g, '\n')))) {
             throw new Error('一部のみ確認した既存ファイルの全文置換を拒否しました: ' + normalizedPath);
           }
           nextContent = proposal.content;
@@ -638,7 +671,7 @@ export class PoipoiCodeAgent {
 
     let proposals: GeneratedCodeChange[] = [];
     let followUp = '';
-    let sourceReadUsed = false;
+    let sourceReadCount = 0;
     let formatRetryUsed = false;
     let requirementRetryUsed = false;
     let requirementFeedback = '';
@@ -649,10 +682,11 @@ export class PoipoiCodeAgent {
     // Each correction category is bounded to one retry under the same deadline.
     for (let attempt = 0; attempt < 6; attempt++) {
       const prompt = buildPrompt([followUp, syntaxFeedback, requirementFeedback, validationFeedback].filter(Boolean).join("\n"));
+      const visibleSource = promptSources().shown;
       // Constrain the model's JSON grammar too: small, fully reviewed files do
       // not need fragile edit anchors. Larger/excerpted files still use edits.
       const contentOnly = [...sourceContents].every(([file, source]) =>
-        completeSources.has(file) && source.length <= 12000);
+        completeSources.has(file) && source.length <= 12000 && visibleSource.includes(source.replace(/\r\n/g, '\n')));
       const anchorEdits = uiFeature && anchors.size > 0;
       const response = await callCoder(attempt ? "追加確認後のコード再生成" : "コード生成", { userId, timeoutMs,
       // prompt already contains the source context; do not count it twice.
@@ -675,7 +709,7 @@ export class PoipoiCodeAgent {
                     required: ['path', 'content'], additionalProperties: false } : anchorEdits ? { oneOf: [
                     { type: 'object', properties: { path: { const: uiPage }, edits: {
                       type: 'array', minItems: 1, maxItems: 12, items: { oneOf: [true, false].flatMap(jsx => {
-                        const ids = [...anchors].filter(([, unit]) => (unit.context === 'jsxChildren') === jsx).map(([id]) => id);
+                        const ids = [...anchors].filter(([, unit]) => (unit.context === 'jsxChildren') === jsx && visibleSource.includes(unit.source)).map(([id]) => id);
                         return ids.length ? [{ type: 'object', properties: {
                         anchorId: { type: 'string', enum: ids },
                         operation: { type: 'string', enum: ['insertBefore', 'insertAfter', 'replace'] }, newText: { type: 'string' },
@@ -797,7 +831,7 @@ export class PoipoiCodeAgent {
           continue;
         }
         if (proposals.length > 5) throw new Error("Generated changes exceed the five-file safety limit");
-        const generated = materializeChanges(proposals);
+        const generated = materializeChanges(proposals, visibleSource);
         // Parse the reconstructed file, not edit fragments. This executes no
         // generated code and catches incomplete replacement ranges before review.
         const placementErrors = proposals.flatMap(proposal => (proposal.edits ?? []).flatMap(edit =>
@@ -1014,8 +1048,8 @@ export class PoipoiCodeAgent {
         }
         return generated;
       }
-      if (sourceReadUsed) throw new Error('AIが有効な変更案を生成できませんでした。' + (typeof proposal.reason === 'string' ? proposal.reason.slice(0, 500) : '未実装のままです。'));
-      sourceReadUsed = true;
+      if (sourceReadCount >= 3) throw new Error('AIが有効な変更案を生成できませんでした。' + (typeof proposal.reason === 'string' ? proposal.reason.slice(0, 500) : '未実装のままです。'));
+      sourceReadCount++;
       const requests: NonNullable<GeneratedCodeProposal['readFiles']> = proposal.readFiles?.length ? proposal.readFiles : inventory
         .filter(file => !sourceContents.has(file)).slice(0, 2).map(path => ({ path }));
       if (!Array.isArray(requests) || requests.length > 3) throw new Error('追加ソースの要求件数が不正です。');

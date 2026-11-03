@@ -61,6 +61,26 @@ beforeEach(() => { model.replies.length = 0; model.requests.length = 0; });
 afterAll(() => { vi.restoreAllMocks(); rmSync(model.root, { recursive: true, force: true }); });
 
 describe('new feature requests without source paths through the actual PC chat route', () => {
+  it('keeps a large reviewed source bounded and lets the coder request more ranges without losing the full file for reconstruction', async () => {
+    const file = 'server/core/LargeFeature.ts';
+    const lines = Array.from({ length: 650 }, (_, index) => `export const item${index} = ${index};`);
+    const originalLarge = lines.join('\n') + '\n';
+    writeFileSync(model.root + '/' + file, originalLarge);
+    try {
+      model.replies.push(
+        JSON.stringify({ changes: [], readFiles: [{ path: file, startLine: 500, endLine: 505 }] }),
+        JSON.stringify({ changes: [], readFiles: [{ path: file, startLine: 600, endLine: 605 }] }),
+        JSON.stringify({ changes: [{ path: file, edits: [{ oldText: 'export const item600 = 600;', newText: 'export const item600 = 601;' }] }] }),
+        accepted,
+      );
+      const changes = await PoipoiCodeAgent.getInstance().generate(`Modify ${file} after reviewing item600. Preserve all other exports.`);
+      expect(changes[0].content).toBe(originalLarge.replace('export const item600 = 600;', 'export const item600 = 601;'));
+      expect(model.requests[0].messages.at(-1).content).toContain('Omitted source ranges');
+      expect(model.requests[2].messages.at(-1).content).toContain('export const item600 = 600;');
+      expect(model.requests.slice(0, 3).every(call => JSON.stringify(call.messages).length < 20000)).toBe(true);
+      expect(readFileSync(model.root + '/' + file, 'utf8')).toBe(originalLarge);
+    } finally { rmSync(model.root + '/' + file, { force: true }); }
+  });
   it('grounds a different natural UI feature in the existing page without a character-count shortcut', async () => {
     const actual = readFileSync(new URL('../../client/src/pages/StreamingChat.tsx', import.meta.url), 'utf8');
     writeFileSync(model.root + '/' + page, actual);
