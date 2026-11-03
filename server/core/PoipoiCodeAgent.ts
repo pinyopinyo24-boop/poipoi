@@ -250,9 +250,15 @@ export class PoipoiCodeAgent {
     // A concrete reference/target is already grounded context. Do not inflate a
     // one-file request with unrelated source, inventories or entry points.
     const explicitExisting = [...new Set(explicit)].filter(file => existsSync(this.safePath(file)));
+    const uiFeature = /画面|入力欄|入力中|チャット欄|ボタン|メニュー|ホーム|\bUI\b/i.test(intent);
+    const uiPage = /ホーム|最初の画面|トップ画面/.test(intent) ? 'client/src/pages/Home.tsx' : 'client/src/pages/StreamingChat.tsx';
+    const standaloneTask = /単独|スタンドアロン|\bstandalone\b|既存(?:の)?ファイル(?:は|を)?(?:変更しない|変更せず)|do not (?:modify|change) existing files/i.test(intent);
+    const needsIntegration = explicit.length === 0 && !standaloneTask && (uiFeature || /ポイポイ|PoiPoi|機能(?:を)?(?:追加|実装)/i.test(intent));
     const chatFeature = /チャット|会話|ニュース|天気|交通|音楽|リマインダー|通知/.test(intent);
     const researchFeature = /ネット|ウェブ|検索|画像|イラスト|参照画像/.test(intent);
-    const entryPoints = researchFeature
+    const entryPoints = uiFeature
+      ? [uiPage, 'client/src/App.tsx', ...(/保存|データ|記録|取得|検索/.test(intent) ? ['server/routers.chat.ts', 'server/routers/unifiedTools.ts'] : [])]
+      : researchFeature
       ? ['server/core/AZWebKnowledge.ts', 'server/core/WebImageReferences.ts', 'server/routers.streaming.ts', 'server/_core/imageGeneration.ts', 'server/core/ChatCoreManager.ts', 'server/core/ChatImageRequests.ts']
       : chatFeature
       ? ['server/core/AZEverydayAssistant.ts', 'server/core/AZLiveInformation.ts', 'server/routers.chat.ts', 'server/core/AZCapabilityCatalog.ts', 'server/core/AZTaskRunner.ts', 'server/routers/unifiedTools.ts']
@@ -260,6 +266,7 @@ export class PoipoiCodeAgent {
     const inventory = [...new Set([...explicitExisting, ...entryPoints, ...ranked.map(item => item.file), ...candidates])];
     const sourceFiles = explicitExisting.length
       ? explicitExisting.slice(0, 5)
+      : uiFeature ? entryPoints.filter(file => candidates.includes(file)).slice(0, 4)
       : [...new Set([...((chatFeature || researchFeature) ? entryPoints.filter(file => candidates.includes(file)) : ranked.map(item => item.file)), ...entryPoints.filter(file => candidates.includes(file)), ...ranked.map(item => item.file)])].slice(0, 5);
     const context: string[] = [];
     const sourceHashes = new Map<string, string>();
@@ -301,6 +308,19 @@ export class PoipoiCodeAgent {
     };
     for (const file of sourceFiles) {
       if (candidates.includes(file)) loadSource(file);
+    }
+    // UI components often render well after the imports/state in a large page.
+    // Supply bounded control/render excerpts as real source, retaining exact hashes.
+    if (uiFeature && sourceContents.has(uiPage) && !completeSources.has(uiPage)) {
+      const lines = sourceContents.get(uiPage)!.split(/\r?\n/);
+      const anchors = [
+        ...( /入力欄|入力中|チャット欄/.test(intent) ? [/<(?:Input|Textarea)\b/] : [] ),
+        /^\s*return\s*\(\s*$/,
+      ];
+      for (const anchor of anchors) {
+        const index = lines.findIndex(line => anchor.test(line));
+        if (index >= 150) loadSource(uiPage, Math.max(1, index - 18), Math.min(lines.length, index + 25));
+      }
     }
     if (!context.length) throw new Error('関連する既存ソースを特定できません。対象機能またはソースパスを指定してください。');
     const configuredTimeout = Number(process.env.LOCAL_CODER_TIMEOUT_MS);
@@ -357,6 +377,7 @@ export class PoipoiCodeAgent {
       "Modify the existing TypeScript project according to the user's request.",
       "Preserve existing functionality.",
       "Make the minimum necessary file changes.",
+      ...(needsIntegration ? ["This is a PoiPoi FEATURE request, not an isolated source example. Implement a usable feature through the reviewed existing UI/chat entry points. New modules must be wired into those entry points; creating disconnected helper files or only changing capability descriptions is not completion."] : []),
       "Implement every explicit requirement, including input validation and boundary cases. Check each constrained field independently. Finite and positive are separate requirements: a finite check accepts negative numbers, while positive comparisons alone fail to reject NaN. Apply all requested constraints to every specified field.",
       "For the small existing files listed below, return their COMPLETE updated content, preserving all unchanged code. Their complete source has been supplied. For OTHER existing files, return compact exact-text edits instead of copying the entire file. Each oldText must occur exactly once in that supplied file. Apply edits in array order. Include sufficient unchanged text in oldText to identify a unique location.",
       "Small existing files eligible for complete content:",
@@ -570,6 +591,14 @@ export class PoipoiCodeAgent {
           syntaxRetryUsed = true;
           syntaxFeedback = "The TypeScript compiler found syntax errors in the RECONSTRUCTED resulting files. No code was executed or applied. Correct the exact replacement ranges and regenerate the COMPLETE change set. Preserve existing bodies and closing braces; never leave the old function body after a newly inserted declaration. " +
             JSON.stringify({ errors: syntaxErrors.slice(0, 10), previousChanges: proposals });
+          proposals = [];
+          continue;
+        }
+        if (needsIntegration && generated.every(change => change.baseHash === null)) {
+          if (requirementRetryUsed) throw new Error('新機能がPoiPoiの既存画面・実行経路へ組み込まれていません。変更は適用していません。');
+          requirementRetryUsed = true;
+          requirementFeedback = 'The requested PoiPoi feature is not connected: this proposal only creates new files. Regenerate the COMPLETE change set with the actual reviewed existing UI/chat entry point wired to the new functionality. Preserve existing behavior. Do not substitute a help-text change or an unused import for implementation. ' +
+            JSON.stringify({ previousChanges: proposals });
           proposals = [];
           continue;
         }
