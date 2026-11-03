@@ -243,17 +243,55 @@ describe('new feature requests without source paths through the actual PC chat r
     }] });
     try {
       model.replies.push(response(kind === 'literal replacements' ? "input.replace(/あいう/g,'a').replace(/😀/g,'a').length" : 'input.length'));
-      if (kind === 'UTF-16 length') model.replies.push(call => {
-        const path = JSON.parse(call.messages.at(-1).content.split('\nReview only')[0]).files[0].path;
-        return JSON.stringify({ accepted: false, exampleChecks: checks.map(item => item.exampleIndex === 2 ? { ...item, actual: 2 } : item),
-          issues: [{ path, exampleIndex: 2, requirement: '「😀」は1文字', problem: 'UTF-16 length counts two units.', evidence: 'input.length' }] });
-      });
       model.replies.push(response('Array.from(input).length'), JSON.stringify({ accepted: true, issues: [], exampleChecks: checks }));
       const onCandidate = vi.fn();
       const changes = await PoipoiCodeAgent.getInstance().generate(task, 'system', { onCandidate });
       expect(changes[0].content).toContain('Array.from(input).length');
       if (kind === 'literal replacements') expect(onCandidate.mock.calls[0][1].join(' ')).toContain('special-case request examples');
-      expect(model.requests).toHaveLength(kind === 'literal replacements' ? 3 : 4);
+      if (kind === 'UTF-16 length') {
+        expect(onCandidate.mock.calls[0][1].join(' ')).toContain('input.length counts UTF-16 code units');
+        expect(model.requests[1].messages.at(-1).content).toContain('Count Unicode code points');
+      }
+      expect(model.requests).toHaveLength(3);
+      expect(readFileSync(model.root + '/' + page, 'utf8')).toBe(actual);
+      expect(existsSync(model.root + '/' + changes[0].path)).toBe(false);
+    } finally { writeFileSync(model.root + '/' + page, original); }
+  });
+
+  it('does not send the observed wrong emoji count to the AI reviewer or approval when correction repeats it', async () => {
+    const actual = readFileSync(new URL('../../client/src/pages/StreamingChat.tsx', import.meta.url), 'utf8');
+    writeFileSync(model.root + '/' + page, actual);
+    const wrong = (call: any) => JSON.stringify({ changes: [{
+      path: call.response_format.json_schema.schema.properties.changes.items.properties.path.const,
+      content: 'export default function View({input}:{input:string}) { const charCount = input.length; return <div>{charCount}文字</div>; }',
+    }] });
+    try {
+      model.replies.push(wrong, wrong);
+      await expect(PoipoiCodeAgent.getInstance().generate(
+        'AIチャットの入力欄の近くに文字数表示を追加して。空欄は0文字、「あいう」は3文字、「😀」は1文字。送信後は0文字に戻す。',
+      )).rejects.toThrow('input.length counts UTF-16 code units');
+      expect(model.requests).toHaveLength(2);
+      expect(readFileSync(model.root + '/' + page, 'utf8')).toBe(actual);
+    } finally { writeFileSync(model.root + '/' + page, original); }
+  });
+
+  it('keeps a valid preview for explicit human review when the AI reviewer twice invents unsupported defects', async () => {
+    const actual = readFileSync(new URL('../../client/src/pages/StreamingChat.tsx', import.meta.url), 'utf8');
+    writeFileSync(model.root + '/' + page, actual);
+    const warning = vi.fn();
+    try {
+      model.replies.push(call => JSON.stringify({ changes: [{
+        path: call.response_format.json_schema.schema.properties.changes.items.properties.path.const,
+        content: 'export default function View({input}:{input:string}) { return <output>{Array.from(input).length}文字</output>; }',
+      }] }), JSON.stringify({ accepted: false, issues: [{ path: page, requirement: 'missing', problem: 'invented', evidence: 'invented' }] }),
+      JSON.stringify({ accepted: false, issues: [{ path: page, requirement: 'missing', problem: 'invented', evidence: 'invented' }] }));
+      const changes = await PoipoiCodeAgent.getInstance().generate(
+        'AIチャットの入力欄の近くに文字数表示を追加して。空欄は0文字、「あいう」は3文字、「😀」は1文字。送信後は0文字に戻す。',
+        'system', { onReviewWarning: warning });
+      expect(changes).toHaveLength(2);
+      expect(warning).toHaveBeenCalledOnce();
+      expect(warning.mock.calls[0][0]).toContain('機能の正しさは未確認');
+      expect(model.requests).toHaveLength(3);
       expect(readFileSync(model.root + '/' + page, 'utf8')).toBe(actual);
       expect(existsSync(model.root + '/' + changes[0].path)).toBe(false);
     } finally { writeFileSync(model.root + '/' + page, original); }

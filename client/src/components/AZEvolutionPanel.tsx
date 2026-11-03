@@ -92,6 +92,7 @@ export default function AZEvolutionPanel({ reviewOnly = false }: { reviewOnly?: 
           {preview.status === 'pending' && <>。有効期限まで約{Math.ceil(preview.expiresInSeconds / 60)}分</>}</p>
         {preview.generation && <p className="text-sm">{preview.generation.phase}</p>}
         {preview.generation?.error && <p role="alert" className="text-sm text-red-700">{preview.generation.error}</p>}
+        {preview.generation?.reviewWarning && <p role="alert" className="text-sm text-amber-800">{preview.generation.reviewWarning}</p>}
         {preview.application && <p className="text-sm">{phaseLabels[preview.application.phase] ?? '処理状況を確認中'}</p>}
         {preview.status === 'applying' && !preview.interrupted && <p className="text-sm">作業中（完了未確認）です。再承認せずお待ちください。完了・失敗の結果はチャットに表示します。</p>}
         {preview.interrupted && <p role="alert" className="text-sm text-red-700">承認処理が中断しています。作業中ではありません。ファイルとGitの完了状態は未確認です。</p>}

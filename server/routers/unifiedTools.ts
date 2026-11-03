@@ -416,7 +416,8 @@ export const unifiedToolsRouter = router({
         await repository.saveMessage({
           id: 'code-generation-' + preview.id, userId: String(ctx.user.id), role: 'assistant',
           content: success
-            ? '機能の追加・修正の変更案を作成しました。変更案の確認・承認欄で内容を確認してください。まだ適用していません。'
+            ? '機能の追加・修正の変更案を作成しました。変更案の確認・承認欄で内容を確認してください。まだ適用していません。' +
+              (preview.generation.reviewWarning ? ' 要件照合は未確認です。内容を確認してから承認してください。' : '')
             : '変更案を作成できませんでした。変更は適用していません。理由: ' + preview.generation.error,
           timestamp: preview.generation.finishedAt,
           metadata: { replyTo: preview.generation.replyTo,

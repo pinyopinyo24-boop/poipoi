@@ -203,6 +203,9 @@ export class PoipoiCodeAgent {
   async generate(task: string, userId = "system", options: {
     onProgress?: (stage: string) => void | Promise<void>;
     onCandidate?: (changes: readonly CodeChange[], syntaxErrors: readonly string[]) => void | Promise<void>;
+    // The approval workflow may keep a syntactically safe proposal for human
+    // review when the separate AI reviewer cannot provide a supported verdict.
+    onReviewWarning?: (warning: string) => void | Promise<void>;
     // Only the caller can opt into executing its own acceptance checks.
     validateGenerated?: (changes: ReadonlyArray<Readonly<CodeChange>>) => readonly string[] | Promise<readonly string[]>;
   } = {}): Promise<CodeChange[]> {
@@ -776,11 +779,17 @@ export class PoipoiCodeAgent {
           const ts = requireCompiler('typescript') as typeof import('typescript');
           const source = generated.find(change => change.path === displayPath)!.content;
           const parsed = ts.createSourceFile(displayPath, source, ts.ScriptTarget.Latest, true);
+          const needsUnicodeCount = displayExamples.some(example =>
+            example.input.length !== Array.from(example.input).length &&
+            example.expected === Array.from(example.input).length);
           const visit = (node: import('typescript').Node) => {
             if ((ts.isRegularExpressionLiteral(node) || ts.isStringLiteral(node) &&
                 (ts.isCallExpression(node.parent) || ts.isBinaryExpression(node.parent) || ts.isCaseClause(node.parent))) &&
                 displayExamples.some(example => example.input && node.text.includes(example.input)))
               sampleErrors.push(displayPath + ': Do not special-case request examples in regexes, comparisons or call arguments: ' + node.getText(parsed));
+            if (needsUnicodeCount && ts.isPropertyAccessExpression(node) && node.name.text === 'length' &&
+                ts.isIdentifier(node.expression) && node.expression.text === 'input')
+              sampleErrors.push(displayPath + ': input.length counts UTF-16 code units: the requested emoji is two units, but must count as one character. Count Unicode code points for arbitrary input, for example Array.from(input).length or [...input].length. Keep the same input prop and all other requirements.');
             ts.forEachChild(node, visit);
           };
           visit(parsed);
@@ -788,7 +797,7 @@ export class PoipoiCodeAgent {
         const syntaxErrors = [...sampleErrors, ...placementErrors, ...this.syntaxErrors(generated)];
         await options.onCandidate?.(generated, syntaxErrors);
         if (syntaxErrors.length) {
-          if (syntaxRetryUsed) throw new Error((sampleErrors.length ? '生成コードが依頼例を特別扱いしています。' : '生成コードの構文エラーが残っています。') + "変更は適用していません: " + syntaxErrors.slice(0, 10).join("; ").slice(0, 2000));
+          if (syntaxRetryUsed) throw new Error((sampleErrors.length ? '生成コードが依頼された文字数の数え方を満たしていません。' : '生成コードの構文エラーが残っています。') + "変更は適用していません: " + syntaxErrors.slice(0, 10).join("; ").slice(0, 2000));
           syntaxRetryUsed = true;
           const affectedSource = generated.map(change => {
             const before = change.previousContent ?? '';
@@ -807,7 +816,9 @@ export class PoipoiCodeAgent {
               original: [excerpt(before, first), excerpt(before, before.length - tail)],
               reconstructed: [excerpt(after, first), excerpt(after, after.length - tail)] };
           });
-          syntaxFeedback = "The TypeScript compiler found syntax errors in the RECONSTRUCTED resulting files. No code was executed or applied. Discard malformed replacements and regenerate the COMPLETE change set from the ORIGINAL source. Preserve existing bodies and closing braces/tags. Prefer minimal insertions after complete elements, leaving existing JSX intact. " +
+          syntaxFeedback = (sampleErrors.length
+            ? "The generated component fails a static check of the CURRENT request. Correct the reported character counting issue using a general rule for arbitrary input; keep the component and its default export. No code was executed or applied. "
+            : "The TypeScript compiler found syntax errors in the RECONSTRUCTED resulting files. No code was executed or applied. Discard malformed replacements and regenerate the COMPLETE change set from the ORIGINAL source. Preserve existing bodies and closing braces/tags. Prefer minimal insertions after complete elements, leaving existing JSX intact. ") +
             JSON.stringify({ errors: syntaxErrors.slice(0, 10), previousChanges: proposals, affectedSource });
           proposals = [];
           continue;
@@ -937,7 +948,12 @@ export class PoipoiCodeAgent {
             review = parsed;
             break;
           } catch {
-            if (reviewAttempt === 1) throw new Error("要件照合AIの判定に具体的な根拠がなく、生成コードの不足を確認できませんでした。変更は適用していません。");
+            if (reviewAttempt === 1) {
+              if (!options.onReviewWarning) throw new Error("要件照合AIの判定に具体的な根拠がなく、生成コードの不足を確認できませんでした。変更は適用していません。");
+              await options.onReviewWarning('要件照合AIが根拠のある判定を返せませんでした。構文・配置と既知の誤カウントを検査しましたが、機能の正しさは未確認です。変更内容を確認してから承認してください。');
+              review = { accepted: true, issues: [] };
+              break;
+            }
             reviewFeedback = "\nThe previous review could not be validated. Re-evaluate the SAME candidate, without regenerating code. Every issue must cite an exact current-request quote and an exact source quote from a proposed file. Unapplied previews are expected. Do not invent evidence; return accepted:true with issues:[] when there is no concrete code violation.";
           }
         }

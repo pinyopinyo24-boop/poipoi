@@ -61,6 +61,10 @@ export async function runCodeGenerationWorker(userId: string, id: string, jobId:
         await writeFile(path.join(directory, id + '.generation-candidate.json'),
           JSON.stringify({ jobId, createdAt: Date.now(), errors, changes }), { mode: 0o600 });
       },
+      onReviewWarning: async warning => {
+        preview.generation!.reviewWarning = warning;
+        await saveCodePreview(preview);
+      },
     }) as CodePreview['changes'];
     if (!preview.changes.length) throw new Error('No changes generated');
     preview.status = 'pending';

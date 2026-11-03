@@ -16,7 +16,7 @@ import { streamingRouter } from '../routers.streaming';
 import { unifiedToolsRouter } from '../routers/unifiedTools';
 import { getSharedChatRepository } from '../repositories/ChatRepository';
 
-let target = '', failModel = false;
+let target = '', failModel = false, invalidReview = false;
 let release = () => {};
 let gate: Promise<void>;
 const userId = '881';
@@ -30,7 +30,8 @@ const server = createServer(async (req, res) => {
   res.setHeader('content-type', 'application/json');
   if (failModel) { res.writeHead(500); res.end('{"error":"controlled model failure"}'); return; }
   const content = body.format?.properties?.accepted
-    ? JSON.stringify({ accepted: true, issues: [] })
+    ? JSON.stringify(invalidReview ? { accepted: false, issues: [{ path: 'server/core/Missing.ts',
+      requirement: 'missing', problem: 'unsupported', evidence: 'missing' }] } : { accepted: true, issues: [] })
     : JSON.stringify({ changes: [{ path: target, content: 'export const generated = true;\n' }] });
   res.end(JSON.stringify({ message: { role: 'assistant', content }, done: true }));
 });
@@ -47,6 +48,7 @@ beforeAll(async () => {
 });
 beforeEach(() => {
   failModel = false;
+  invalidReview = false;
   gate = new Promise<void>(resolve => { release = resolve; });
   target = 'server/core/Generated_' + randomUUID().replaceAll('-', '') + '.ts';
 });
@@ -112,6 +114,24 @@ describe('detached generation with a controlled local HTTP model', () => {
     expect(failed.generation?.error).toBeTruthy();
     expect(failed.changes).toHaveLength(0);
     expect(existsSync(fixture.root + '/' + target)).toBe(false);
+  });
+
+  it('persists an inconclusive reviewer warning in a human-approval-only preview and chat', async () => {
+    invalidReview = true;
+    const sessionId = randomUUID();
+    const message = target + 'を新規作成する変更案を生成して。参考はserver/core/Reference.tsだけ。';
+    const response = await streamingRouter.createCaller(context).chat({ message,
+      messageId: randomUUID(), conversationId: sessionId });
+    const id = (response.metadata as any).codePreview.previewId;
+    release();
+    const preview = await waitFor(id, p => p.status !== 'generating');
+    expect(preview.status).toBe('pending');
+    expect(preview.generation?.reviewWarning).toContain('機能の正しさは未確認');
+    expect(existsSync(fixture.root + '/' + target)).toBe(false);
+    const summaries = await unifiedToolsRouter.createCaller(context).listCodePreviews({ accountId: userId, includeHistory: true });
+    expect(summaries.find(p => p.previewId === id)?.generation?.reviewWarning).toBe(preview.generation?.reviewWarning);
+    const messages = await getSharedChatRepository().getMessages(sessionId, 100);
+    expect(messages.find(m => m.id === 'code-generation-' + id)?.content).toContain('要件照合は未確認');
   });
 
   it('detects a dead generation worker instead of displaying it as running forever', async () => {
