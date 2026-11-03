@@ -76,8 +76,10 @@ describe('new feature requests without source paths through the actual PC chat r
       expect(JSON.stringify(call.messages).length).toBeLessThan(30000);
       expect(call.contextWindow).toBeLessThanOrEqual(16384);
       const grammar = call.response_format.json_schema.schema.properties.changes.items.oneOf[0];
-      expect(grammar.properties.edits.items.properties.anchorId.enum).toContain(anchorId);
-      expect(grammar.properties.edits.items.required).toEqual(['anchorId', 'operation', 'newText']);
+      const jsx = grammar.properties.edits.items.oneOf.find((item: any) => item.properties.anchorId.enum.includes(anchorId));
+      expect(jsx.required).toEqual(['anchorId', 'operation', 'newText']);
+      expect(new RegExp(jsx.properties.newText.pattern).test('const handler = () => {};')).toBe(false);
+      expect(new RegExp(jsx.properties.newText.pattern).test('<output>{input}</output>')).toBe(true);
       expect(grammar.properties.content).toBeUndefined();
       expect(prompt).toContain(control);
       expect(prompt).toContain('const [input, setInput] = useState("")');
@@ -114,10 +116,38 @@ describe('new feature requests without source paths through the actual PC chat r
           newText: 'export function helper() { return 2; }' }] }] }), accepted);
       const changes = await PoipoiCodeAgent.getInstance().generate(request);
       const grammar = model.requests[1].response_format.json_schema.schema.properties.changes.items.oneOf[0];
-      expect(grammar.properties.edits.items.properties.anchorId.enum).toContain(anchorId);
+      expect(grammar.properties.edits.items.oneOf.some((item: any) => item.properties.anchorId.enum.includes(anchorId))).toBe(true);
       expect(changes[0].content).toBe(source.replace('return 1;', 'return 2;'));
       expect(readFileSync(model.root + '/' + page, 'utf8')).toBe(source);
     } finally { writeFileSync(model.root + '/' + page, original); }
+  });
+
+  it.each(['insertAfter', 'insertBefore'] as const)('preserves array order for repeated %s edits at the same source unit', async operation => {
+    const anchorId = 'a' + createHash('sha256').update(page + '\n' + input).digest('hex').slice(0, 12);
+    const inserted = ['<span>first</span>', '<span>second</span>', '<span>third</span>'];
+    model.replies.push(JSON.stringify({ changes: [{ path: page,
+      edits: inserted.map(newText => ({ anchorId, operation, newText })) }] }), accepted);
+    const changes = await PoipoiCodeAgent.getInstance().generate(request);
+    const replacement = operation === 'insertAfter' ? [input, ...inserted].join('\n') : [...inserted, input].join('\n');
+    expect(changes[0].content).toBe(original.replace(input, replacement));
+    expect(readFileSync(model.root + '/' + page, 'utf8')).toBe(original);
+    expect(model.requests).toHaveLength(2);
+  });
+
+  it('rejects the observed function-in-JSX shape and repairs it before approval', async () => {
+    const anchorId = 'a' + createHash('sha256').update(page + '\n' + input).digest('hex').slice(0, 12);
+    const invalid = 'const handleInputChange = (event: React.ChangeEvent<HTMLTextAreaElement>) => {\nsetInput(event.target.value);\n};';
+    const valid = '<output>{[...input].length}文字</output>';
+    model.replies.push(JSON.stringify({ changes: [{ path: page, edits: [{ anchorId, operation: 'insertAfter', newText: invalid }] }] }),
+      JSON.stringify({ changes: [{ path: page, edits: [{ anchorId, operation: 'insertAfter', newText: valid }] }] }), accepted);
+    const onCandidate = vi.fn();
+    const changes = await PoipoiCodeAgent.getInstance().generate(request, 'system', { onCandidate });
+    expect(onCandidate.mock.calls[0][1].join(' ')).toContain('JSX anchors accept only JSX');
+    expect(onCandidate.mock.calls[1][1]).toEqual([]);
+    expect(model.requests[1].messages.at(-1).content).toContain('componentBody');
+    expect(changes[0].content).toBe(original.replace(input, input + '\n' + valid));
+    expect(readFileSync(model.root + '/' + page, 'utf8')).toBe(original);
+    expect(model.requests).toHaveLength(3);
   });
 
   it('creates a connected preview from a natural request and includes the actual UI controls beyond line 150', async () => {
