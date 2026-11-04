@@ -31,6 +31,7 @@ import { streamingRouter } from '../routers.streaming';
 import { PoipoiCodeAgent } from '../core/PoipoiCodeAgent';
 import { readCodePreview } from '../core/CodePreviewStore';
 import { isCodeImplementationRequest, implementationPrompt } from '../core/AZCapabilityCatalog';
+import { understandConversationTurn } from '../core/AZConversationUnderstanding';
 
 const page = 'client/src/pages/StreamingChat.tsx';
 const modulePath = 'client/src/components/CharacterCount.tsx';
@@ -61,6 +62,21 @@ beforeEach(() => { model.replies.length = 0; model.requests.length = 0; });
 afterAll(() => { vi.restoreAllMocks(); rmSync(model.root, { recursive: true, force: true }); });
 
 describe('new feature requests without source paths through the actual PC chat route', () => {
+  it('passes a long natural-language code request to the existing segmented generator', async () => {
+    const request = '新しい機能を追加して。' + '詳しい動作と制約。'.repeat(450) + '機能を追加して。';
+    const result = await understandConversationTurn('771', 'long-request', request, []);
+    expect(result).toMatchObject({ domain: 'code', act: 'request', execute: true, needsClarification: false });
+    expect(result.resolvedRequest).toBe(request);
+    expect(implementationPrompt(result.resolvedRequest, [])).toContain(request);
+    expect(model.requests).toHaveLength(0);
+  });
+  it('reports the real storage limit before starting a code job', async () => {
+    const request = '新しい機能を追加して。' + '仕様'.repeat(30000) + '機能を追加して。';
+    const result = await understandConversationTurn('771', 'oversized-request', request, []);
+    expect(result.needsClarification).toBe(true);
+    expect(result.question).toContain('60000文字');
+    expect(model.requests).toHaveLength(0);
+  });
   it('stores a long feature request and sends verified smaller requirement segments before code generation', async () => {
     const target = 'server/core/LongFeature.ts';
     const leading = `Create exactly one NEW standalone file ${target}. Reference client/src/App.tsx only.`;

@@ -14,7 +14,7 @@ const act = z.enum(['chat', 'question', 'request', 'correction', 'retry', 'const
 const schema = z.object({
   domain, act, newTask: z.boolean(), goal: z.string().max(1000), targetDescription: z.string().max(500),
   targetMessageIds: z.array(z.string().max(200)).max(6),
-  resolvedRequest: z.string().min(1).max(4000), constraints: z.array(z.string().max(500)).max(12),
+  resolvedRequest: z.string().min(1).max(60000), constraints: z.array(z.string().max(500)).max(12),
   execute: z.boolean(), readOnly: z.boolean(), needsClarification: z.boolean(),
   question: z.string().max(600), confidence: z.number().min(0).max(1),
 });
@@ -68,7 +68,12 @@ async function interpret(userId: string, original: string, turns: ChatMessage[],
   // Deterministic service requests do not require a second model to restate them.
   if (hints.images?.length && /説明|解析|分析|読み取|写って|何が/u.test(original) && !/生成|編集|ムキムキ|加工/u.test(original)) return simple('image', 'question');
   if (isCodeImplementationRequest(original)) {
-    try { const task = resolveImplementationRequest(original, turns); return task.length > 3000 ? clarification(original, '追加・修正したい機能を3000文字以内で指定してください。') : simple('code', 'request', task, true); }
+    try {
+      const task = resolveImplementationRequest(original, turns);
+      return task.length > 60000
+        ? clarification(original, '依頼が保存上限の60000文字を超えています。対象を分けて指定してください。')
+        : simple('code', 'request', task, true);
+    }
     catch (error) { return clarification(original, error instanceof Error ? error.message : '追加・修正したい機能を教えてください。'); }
   }
   if (isSourceCodeRequest(original)) return simple('code', 'question');
