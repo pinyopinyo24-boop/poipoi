@@ -53,7 +53,10 @@ it('assigns every CD copy requirement once without asking the model to plan', as
   const root = mkdtempSync(join(tmpdir(), 'poipoi-stage-cd-test-'));
   const file = 'server/core/Feature.ts';
   mkdirSync(join(root, 'server/core'), { recursive: true });
+  mkdirSync(join(root, 'client/src/pages'), { recursive: true });
   writeFileSync(join(root, file), 'export const value = 0;\n');
+  writeFileSync(join(root, 'server/routers.streaming.ts'), 'export const streaming = true;\n');
+  writeFileSync(join(root, 'client/src/pages/StreamingChat.tsx'), 'export default function Chat() { return <div />; }\n');
   writeFileSync(join(root, 'package.json'), '{"dependencies":{}}');
   const agent = new (PoipoiCodeAgent as any)(root) as PoipoiCodeAgent;
   const clauses = [
@@ -75,6 +78,8 @@ it('assigns every CD copy requirement once without asking the model to plan', as
     expect(stageTasks).toHaveLength(2);
     expect(stageTasks[0]).toContain(clauses[1]);
     expect(stageTasks[1]).toContain(clauses[2]);
+    expect(stageTasks[0].split('\n直前の参考会話')[0]).toContain('server/routers.streaming.ts');
+    expect(stageTasks[1].split('\n直前の参考会話')[0]).toContain('client/src/pages/StreamingChat.tsx');
     for (const clause of clauses) {
       expect(stageTasks.filter(task => task.includes(clause))).toHaveLength(1);
     }

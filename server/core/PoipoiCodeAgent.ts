@@ -121,9 +121,22 @@ export class PoipoiCodeAgent {
       }
       writeFileSync(resolve(temporary, 'package.json'), readFileSync(resolve(this.root, 'package.json')));
       const stagedAgent = new PoipoiCodeAgent(temporary);
+      const opticalCopy = /(?:\bCD\b|ディスク)/i.test(intent) && /コピー/.test(intent);
       for (const [index, step] of steps.entries()) {
         await options.onProgress?.(`機能を段階生成 ${index + 1}/${steps.length}`);
-        const stageTask = [
+        const stageSources = index === 0
+          ? ['server/routers.streaming.ts']
+          : ['client/src/pages/StreamingChat.tsx', 'server/routers.streaming.ts'];
+        const stageTask = opticalCopy ? [
+          '現在のユーザー依頼:',
+          step.clauses.map(clause => clauses[clause]).join(' '),
+          '参照する既存の接続箇所: ' + stageSources.filter(file => existsSync(stagedAgent.safePath(file))).join(', '),
+          '直前の参考会話（実装条件）:',
+          'Implement this coherent part of a larger PoiPoi feature. ' + step.focus + '.',
+          'This is a DRAFT in a disposable source copy. Do not apply or commit. Preserve existing behavior.',
+          'The other stages will be combined into one approval proposal. Current draft files are available as source.',
+          'Never return placeholders or pretend a hardware operation is implemented.',
+        ].join('\n') : [
           'Implement the following coherent part of a larger PoiPoi feature in the existing TypeScript project.',
           'This is a DRAFT in a disposable source copy. Do not apply or commit. Preserve existing behavior.',
           'Stage focus: ' + step.focus,
@@ -404,7 +417,8 @@ export class PoipoiCodeAgent {
       : chatFeature
       ? ['server/core/AZEverydayAssistant.ts', 'server/core/AZLiveInformation.ts', 'server/routers.chat.ts', 'server/core/AZCapabilityCatalog.ts', 'server/core/AZTaskRunner.ts', 'server/routers/unifiedTools.ts']
       : ['client/src/App.tsx', 'server/routers.ts', 'server/routers/unifiedTools.ts'];
-    const inventory = [...new Set([...explicitExisting, ...entryPoints, ...ranked.map(item => item.file), ...candidates])];
+    const inventory = [...new Set([...explicitExisting, ...entryPoints, ...ranked.map(item => item.file),
+      ...(explicitExisting.length ? [] : candidates)])];
     const sourceFiles = explicitExisting.length
       ? explicitExisting.slice(0, 5)
       : uiFeature || newScreen ? entryPoints.filter(file => candidates.includes(file)).slice(0, 4)
