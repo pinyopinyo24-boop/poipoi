@@ -6,6 +6,7 @@ import { z } from 'zod';
 import { TRPCError } from '@trpc/server';
 import { ChatCoreManager } from './core/ChatCoreManager';
 import { ChatQualityService } from './managers/ChatQualityService';
+import { parseUnitCostVarianceRequest, formatUnitCostVariance } from './core/CostVarianceRequest';
 import { getDb } from './db';
 import { feedback } from '../drizzle/schema';
 import { v4 as uuidv4 } from 'uuid';
@@ -111,6 +112,20 @@ export const chatRouter = router({
         const dialogueSession = await dialogueRepository.getSession(input.sessionId);
         if (!dialogueSession || dialogueSession.userId !== dialogueUserId) {
           throw new TRPCError({ code: 'NOT_FOUND', message: 'チャットセッションが見つかりません' });
+        }
+        const costInput = ctx.user ? parseUnitCostVarianceRequest(input.message) : null;
+        if (costInput) {
+          const { unifiedToolsRouter } = await import('./routers/unifiedTools');
+          const calculated = await unifiedToolsRouter.createCaller(ctx).analyzeManufacturing(costInput);
+          const askedAt = Date.now();
+          await dialogueRepository.saveMessage({ id: input.messageId ?? uuidv4(), userId: dialogueUserId,
+            role: 'user', content: input.message, timestamp: askedAt }, input.sessionId);
+          const message = { id: uuidv4(), userId: dialogueUserId, role: 'assistant' as const,
+            content: formatUnitCostVariance(costInput, calculated.variancePerUnit, calculated.totalVariance),
+            timestamp: Math.max(Date.now(), askedAt + 1), metadata: { replyTo: input.messageId } };
+          await dialogueRepository.saveMessage(message, input.sessionId);
+          return { message, session: (await dialogueRepository.getSession(input.sessionId))!,
+            relatedMemories: [], reasoning: 'Calculated from user supplied figures' };
         }
         const recentDialogue = await dialogueRepository.getMessages(input.sessionId, 100);
         const understanding = await understandConversationTurn(dialogueUserId, input.sessionId, input.message, recentDialogue, input.messageId);
