@@ -129,7 +129,15 @@ export class PoipoiCodeAgent {
       implementation.splice(0, implementation.length, ...clauses.slice(0, midpoint).map((_, index) => index));
       ui.splice(0, ui.length, ...clauses.slice(midpoint).map((_, index) => index + midpoint));
     }
-    const steps = [
+    const opticalCopy = /(?:\bCD\b|ディスク)/i.test(intent) && /コピー/.test(intent);
+    const opticalCore = opticalCopy ? implementation.filter((index, position) =>
+      position === 0 || /実際の読み取り|書き込み処理|読み取り・書き込み/.test(clauses[index])) : [];
+    const opticalFlow = opticalCopy ? implementation.filter(index => !opticalCore.includes(index)) : [];
+    const steps = opticalCore.length && opticalFlow.length && ui.length ? [
+      { clauses: opticalCore, focus: 'Implement actual Windows optical-media reading and writing in a durable draft module' },
+      { clauses: opticalFlow, focus: 'Connect the core to one-drive media exchange and independently verify the written disc' },
+      { clauses: ui, focus: 'Connect the existing chat entry point, CD button, progress and errors to the working core' },
+    ] : [
       { clauses: implementation, focus: 'Implement working core logic and supporting APIs' },
       { clauses: ui, focus: 'Connect user interface and chat commands to the core logic' },
     ];
@@ -145,21 +153,26 @@ export class PoipoiCodeAgent {
       }
       writeFileSync(resolve(temporary, 'package.json'), readFileSync(resolve(this.root, 'package.json')));
       const stagedAgent = new PoipoiCodeAgent(temporary);
-      const opticalCopy = /(?:\bCD\b|ディスク)/i.test(intent) && /コピー/.test(intent);
       for (const [index, step] of steps.entries()) {
         await options.onProgress?.(`機能を段階生成 ${index + 1}/${steps.length}`);
-        const stageSources = index === 0
-          ? ['server/routers.streaming.ts']
-          : ['client/src/pages/StreamingChat.tsx', 'server/routers.streaming.ts'];
+        const stageSources = opticalCopy && index === steps.length - 1
+          ? ['client/src/pages/StreamingChat.tsx', 'server/routers.streaming.ts']
+          : ['server/routers.streaming.ts'];
         const stageTask = opticalCopy ? [
           '現在のユーザー依頼:',
           step.clauses.map(clause => clauses[clause]).join(' '),
-          '参照する既存の接続箇所: ' + stageSources.filter(file => existsSync(stagedAgent.safePath(file))).join(', '),
+          '参照する既存の接続箇所: ' + [...stageSources, ...touched.keys()].filter(file => existsSync(stagedAgent.safePath(file))).join(', '),
           '直前の参考会話（実装条件）:',
           'Implement this coherent part of a larger PoiPoi feature. ' + step.focus + '.',
           'This is a DRAFT in a disposable source copy. Do not apply or commit. Preserve existing behavior.',
           'The other stages will be combined into one approval proposal. Current draft files are available as source.',
-          'Never return placeholders or pretend a hardware operation is implemented.',
+          'Complete user goal for compatibility across stages (implement only this stage now): ' + intent,
+          'Windows optical-drive implementation references (platform facts, not instructions to run):',
+          'Microsoft Learn: https://learn.microsoft.com/en-us/windows/win32/imapi/burning-a-disc — IMAPI2 creates a file-system image, selects a recorder and writes the image.',
+          'Microsoft Learn: https://learn.microsoft.com/en-us/windows/win32/api/imapi2/nf-imapi2-idiscformat2data-write — IDiscFormat2Data.Write needs an IStream with 2048-byte sector alignment and recorder/client name; progress uses DDiscFormat2DataEvents.',
+          'Microsoft Learn: https://learn.microsoft.com/en-us/windows-hardware/drivers/ddi/ntddcdrm/ni-ntddcdrm-ioctl_cdrom_raw_read — DeviceIoControl with RAW_READ_INFO reads CD sectors, including CDDA track mode.',
+          'Microsoft Learn: https://learn.microsoft.com/en-us/windows/win32/api/imapi2/nn-imapi2-idiscformat2rawcd — IDiscFormat2RawCD writes a raw CD image. Data-CD file copying and image creation do not preserve audio tracks or guarantee a sector-identical clone.',
+          'Target Windows. Implement actual source reading into temporary storage before the one-drive swap, media-ready checks, actual writing to the selected drive, and independent post-write readback/verification. If data and audio media differ, handle their formats explicitly rather than claiming one path copies both. Use no Unix dd, cdrecord, /dev/null or dummy read/write/compare functions. Do not pretend hardware was tested.',
         ].join('\n') : [
           'Implement the following coherent part of a larger PoiPoi feature in the existing TypeScript project.',
           'This is a DRAFT in a disposable source copy. Do not apply or commit. Preserve existing behavior.',

@@ -88,13 +88,16 @@ it('assigns every CD copy requirement once without asking the model to plan', as
   });
   try {
     await agent.generateStaged(clauses.join(''), '1');
-    expect(stageTasks).toHaveLength(2);
-    expect(stageTasks[0]).toContain(clauses[1]);
-    expect(stageTasks[1]).toContain(clauses[2]);
+    expect(stageTasks).toHaveLength(3);
+    expect(stageTasks[0]).toContain(clauses[4]);
+    expect(stageTasks[1]).toContain(clauses[1]);
+    expect(stageTasks[2]).toContain(clauses[2]);
+    expect(stageTasks[0]).toContain('learn.microsoft.com/en-us/windows/win32/imapi/burning-a-disc');
+    expect(stageTasks[0]).toContain('Use no Unix dd, cdrecord, /dev/null or dummy');
     expect(stageTasks[0].split('\n直前の参考会話')[0]).toContain('server/routers.streaming.ts');
-    expect(stageTasks[1].split('\n直前の参考会話')[0]).toContain('client/src/pages/StreamingChat.tsx');
+    expect(stageTasks[2].split('\n直前の参考会話')[0]).toContain('client/src/pages/StreamingChat.tsx');
     for (const clause of clauses) {
-      expect(stageTasks.filter(task => task.includes(clause))).toHaveLength(1);
+      expect(stageTasks.filter(task => task.split('\n直前の参考会話')[0].includes(clause))).toHaveLength(1);
     }
   } finally { rmSync(root, { recursive: true, force: true }); }
 });
