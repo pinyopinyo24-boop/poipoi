@@ -688,6 +688,42 @@ export class PoipoiCodeAgent {
             const resolved = resolveEdit(edit, normalizedPath, after);
             const oldText = resolved.oldText.replace(/\r\n/g, "\n");
             const newText = resolved.newText.replace(/\r\n/g, "\n");
+            // JSX markup may be changed only at a complete AST node boundary.
+            // Reject partial closing tags, expressions and import/JSX mixtures.
+            if (normalizedPath.endsWith('.tsx') && !edit.anchorId &&
+                /<\/?[A-Za-z][\w:.-]*\b|<\/>|\/>/.test(oldText + '\n' + newText)) {
+              const ts = requireCompiler('typescript') as typeof import('typescript');
+              const parsed = ts.createSourceFile(
+                normalizedPath, nextContent, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX
+              );
+              let completeNode = false;
+              const visit = (node: import('typescript').Node): void => {
+                if (completeNode) return;
+                const allowed =
+                  ts.isJsxElement(node) ||
+                  ts.isJsxSelfClosingElement(node) ||
+                  ts.isJsxFragment(node) ||
+                  ts.isJsxExpression(node) ||
+                  ts.isJsxAttribute(node) ||
+                  ts.isJsxText(node) ||
+                  ts.isReturnStatement(node) ||
+                  ts.isFunctionDeclaration(node) ||
+                  ts.isVariableStatement(node);
+                if (allowed &&
+                    node.getText(parsed).replace(/\r\n/g, '\n') === oldText.trim()) {
+                  completeNode = true;
+                  return;
+                }
+                ts.forEachChild(node, visit);
+              };
+              visit(parsed);
+              if (!completeNode) {
+                throw new Error(
+                  'JSX編集が完全な構文単位ではありません: ' + normalizedPath +
+                  '。既存のタグや式の途中を編集せず、完全なJSX要素または宣言を指定してください。'
+                );
+              }
+            }
             const position = nextContent.indexOf(oldText);
             if (position < 0 || nextContent.indexOf(oldText, position + 1) >= 0) {
               throw new Error("Edit does not match exactly one source location: " + normalizedPath);
@@ -724,6 +760,7 @@ export class PoipoiCodeAgent {
     let requirementFeedback = '';
     let validationRetryUsed = false;
     let validationFeedback = '';
+    let materializeRetryUsed = false;
     let syntaxRetryUsed = false;
     let syntaxFeedback = '';
     // Each correction category is bounded to one retry under the same deadline.
@@ -878,7 +915,22 @@ export class PoipoiCodeAgent {
           continue;
         }
         if (proposals.length > 5) throw new Error("Generated changes exceed the five-file safety limit");
-        const generated = materializeChanges(proposals, visibleSource);
+        let generated: CodeChange[];
+        try {
+          generated = materializeChanges(proposals, visibleSource);
+        } catch (error) {
+          if (materializeRetryUsed) throw error;
+          materializeRetryUsed = true;
+          followUp =
+            'The previous change could not be reconstructed safely: ' +
+            String(error instanceof Error ? error.message : error).slice(0, 1200) +
+            '. Regenerate the COMPLETE requested change set from the ORIGINAL reviewed source. ' +
+            'For JSX, use complete AST boundaries or valid reviewed anchors. ' +
+            'Never edit part of a closing tag, JSX expression or import declaration. ' +
+            'Do not remove existing functionality.';
+          proposals = [];
+          continue;
+        }
         // Parse the reconstructed file, not edit fragments. This executes no
         // generated code and catches incomplete replacement ranges before review.
         const ts = requireCompiler('typescript') as typeof import('typescript');
