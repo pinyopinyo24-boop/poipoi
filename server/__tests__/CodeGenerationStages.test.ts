@@ -3,6 +3,7 @@ import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'nod
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createHash } from 'node:crypto';
+import * as ts from 'typescript';
 
 const responses = vi.hoisted(() => [] as string[]);
 vi.mock('../_core/llm', () => ({ invokeLLM: vi.fn(async () => ({
@@ -10,10 +11,22 @@ vi.mock('../_core/llm', () => ({ invokeLLM: vi.fn(async () => ({
 })) }));
 vi.mock('../_core/ai/ConversationModel', () => ({ conversationModel: async () => 'review-model' }));
 
-import { PoipoiCodeAgent } from '../core/PoipoiCodeAgent';
+import { PoipoiCodeAgent, relocateStreamingRouterImports } from '../core/PoipoiCodeAgent';
 import { needsStagedGeneration } from '../core/CodeGenerationWorker';
 
 afterEach(() => { responses.length = 0; vi.restoreAllMocks(); });
+
+it('repairs the actual misplaced CD import while preserving the router body', () => {
+  const original = readFileSync(join(process.cwd(), 'server/routers.streaming.ts'), 'utf8');
+  const marker = '  // STEP53_CACHE_STATUS_API';
+  const broken = original.replace(marker, marker + "\nimport { copyCD } from './core/CDOperations';");
+  const repaired = relocateStreamingRouterImports(original, broken);
+  expect(repaired.indexOf("import { copyCD } from './core/CDOperations';"))
+    .toBeLessThan(repaired.indexOf('export const streamingRouter = router({'));
+  expect(repaired.replace("import { copyCD } from './core/CDOperations';\n", '')).toBe(original);
+  expect(ts.transpileModule(repaired, { fileName: 'server/routers.streaming.ts', reportDiagnostics: true })
+    .diagnostics?.filter(d => d.category === ts.DiagnosticCategory.Error)).toEqual([]);
+});
 
 it('routes a multi-part UI and device request to staged generation', () => {
   const request = 'Windows PC版にCDから別のCDへコピーする機能を新規作成して。CDドライブが1台なら、元CDを読み取った後に空CDへの入れ替えを案内し、書き込み後に照合する。' +

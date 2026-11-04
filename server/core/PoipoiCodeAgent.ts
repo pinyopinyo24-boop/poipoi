@@ -21,6 +21,30 @@ import { conversationModel } from "../_core/ai/ConversationModel";
 // ESM-loader wait while an approved application has already been reserved.
 const requireCompiler = createRequire(import.meta.url);
 
+// A code model can anchor a new static import to the first router property,
+// placing it inside router({ ... }). Move only such complete import lines to
+// the existing import section; all other generated syntax is still checked.
+export function relocateStreamingRouterImports(original: string, generated: string): string {
+  const marker = 'export const streamingRouter = router({';
+  const importLine = /^import\s+.+\s+from\s+['"][^'"\r\n]+['"];?\s*$/;
+  const before = original.split(/\r?\n/);
+  const originalRouter = before.findIndex(line => line.includes(marker));
+  if (originalRouter < 0 || before.some((line, index) => index > originalRouter && importLine.test(line)))
+    return generated;
+
+  const lines = generated.split(/\r?\n/);
+  const router = lines.findIndex(line => line.includes(marker));
+  if (router < 0) return generated;
+  const misplaced = lines.flatMap((line, index) => index > router && importLine.test(line) ? [index] : []);
+  if (!misplaced.length) return generated;
+  const lastHeaderImport = lines.findLastIndex((line, index) => index < router && importLine.test(line));
+  if (lastHeaderImport < 0) return generated;
+  const moved = misplaced.map(index => lines[index]);
+  const without = lines.filter((_, index) => !misplaced.includes(index));
+  without.splice(lastHeaderImport + 1, 0, ...moved);
+  return without.join(generated.includes('\r\n') ? '\r\n' : '\n');
+}
+
 export interface CodeChange {
   path: string;
   content: string;
@@ -884,6 +908,8 @@ export class PoipoiCodeAgent {
           }
           nextContent = proposal.content;
         }
+        if (normalizedPath === 'server/routers.streaming.ts' && sourceContents.has(normalizedPath))
+          nextContent = relocateStreamingRouterImports(sourceContents.get(normalizedPath)!, nextContent);
         if (sourceContents.get(normalizedPath)?.includes('\r\n')) nextContent = nextContent.replace(/\r?\n/g, '\r\n');
         if (!nextContent.trim()) throw new Error("Empty generated source: " + normalizedPath);
         if (nextContent === sourceContents.get(normalizedPath)) throw new Error("Generated proposal contains no change: " + normalizedPath);
