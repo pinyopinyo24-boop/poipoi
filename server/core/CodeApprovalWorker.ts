@@ -15,7 +15,9 @@ const alive = (pid: number) => {
 export function lockProject(root: string, jobId: string, kind: 'application' | 'generation' = 'application') {
   const directory = path.join(root, 'data', 'code-previews');
   mkdirSync(directory, { recursive: true });
-  const file = path.join(directory, '.' + kind + '.lock');
+  const file = path.join(directory, '.application.lock');
+  // Code generation and code application must not overlap.
+  // Both operations share the same exclusive project lock.
   for (let attempt = 0; attempt < 2; attempt++) {
     try {
       const handle = openSync(file, 'wx', 0o600);
