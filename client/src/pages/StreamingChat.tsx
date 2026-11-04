@@ -514,7 +514,8 @@ export default function StreamingChat() {
         <button type="button" aria-expanded={historyOpen} aria-controls="az-conversation-history"
           onClick={() => setHistoryOpen(current => !current)}
           className={`flex items-center justify-between rounded-lg px-3 py-2 text-left text-sm font-semibold ${historyOpen ? "bg-cyan-100 text-cyan-900" : "hover:bg-gray-100"}`}>
-          <span>チャット履歴</span><span aria-hidden="true">{historyOpen ? "▾" : "▸"}</span>
+          <span>チャット履歴</span>
+<span>({conversations.length})</span><span aria-hidden="true">{historyOpen ? "▾" : "▸"}</span>
         </button>
         {historyOpen && <section id="az-conversation-history" aria-label="チャット履歴" className="flex-1 min-h-0 overflow-y-auto space-y-2">
           {conversations.length === 0 && <p className="px-3 text-sm text-gray-500">{serverSessions.isLoading ? "履歴を読み込んでいます..." : "まだ会話の履歴はありません。"}</p>}
