@@ -937,10 +937,39 @@ export class PoipoiCodeAgent {
         const placementErrors = proposals.flatMap(proposal => (proposal.edits ?? []).flatMap(edit => {
           const unit = edit.anchorId ? anchors.get(edit.anchorId) : undefined;
           if (!unit) return [];
+          // Validate the inserted JSX independently before reconstructing the page.
+          // A fragment wrapper allows multiple adjacent JSX children.
+          if (unit.context === 'jsxChildren') {
+            const fragment = ts.createSourceFile(
+              'jsx-insertion.tsx',
+              'const __poipoi = <>' + edit.newText + '</>;',
+              ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX
+            );
+            if ((ts.transpileModule(
+              'const __poipoi = <>' + edit.newText + '</>;',
+              {
+                fileName: 'jsx-insertion.tsx',
+                reportDiagnostics: true,
+                compilerOptions: { jsx: ts.JsxEmit.ReactJSX },
+              }
+            ).diagnostics ?? []).some(d => d.category === ts.DiagnosticCategory.Error)) {
+              return [proposal.path + ': 挿入するJSX自体に構文エラーがあります。完全なJSX要素または式を生成してください。'];
+            }
+          }
           if (unit.context === 'jsxChildren' && !/^\s*(<|\{)/.test(edit.newText))
             return [proposal.path + ': JSX anchors accept only JSX elements or expressions. Move complete functions, hooks and statements to a componentBody or module anchor.'];
           if (unit.context === 'module') {
             const fragment = ts.createSourceFile('module-anchor.tsx', edit.newText, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
+            const topLevelHook = fragment.statements.some(statement =>
+              ts.isVariableStatement(statement) &&
+              statement.declarationList.declarations.some(declaration => {
+                const initializer = declaration.initializer;
+                return !!initializer && ts.isCallExpression(initializer) &&
+                  ts.isIdentifier(initializer.expression) &&
+                  /^use[A-Z]/.test(initializer.expression.text);
+              }));
+            if (topLevelHook)
+              return [proposal.path + ': Reactフックはモジュール直下では呼び出せません。コンポーネント内部に配置してください。'];
             if (!fragment.statements.length || fragment.statements.some(statement =>
               ts.isExpressionStatement(statement) || ts.isReturnStatement(statement)))
               return [proposal.path + ': module anchors accept imports or declarations, not JSX. Insert visible controls at a jsxChildren anchor beside an existing button.'];
