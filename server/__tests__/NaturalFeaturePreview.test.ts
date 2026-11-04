@@ -78,6 +78,14 @@ describe('new feature requests without source paths through the actual PC chat r
     expect(result).toMatchObject({ domain: 'code', execute: true, resolvedRequest: request });
     expect(model.requests).toHaveLength(1);
   });
+  it('treats a local negative rule as a requirement rather than canceling the entire creation request', async () => {
+    model.replies.push(JSON.stringify({ domain: 'code', act: 'request', newTask: true, target: -1,
+      goal: '部品登録画面を作る', conditions: ['同じ品番は重複登録しない'], replaceConditions: [], question: '', confidence: 0.95 }));
+    const request = '新しい部品登録画面を作って。品番と名前を入力して保存し、同じ品番は重複登録しない。';
+    const result = await understandConversationTurn('771', 'new-form', request, []);
+    expect(result).toMatchObject({ domain: 'code', execute: true, readOnly: false, resolvedRequest: request });
+    expect(model.requests).toHaveLength(1);
+  });
   it('resolves a follow-up code change against the earlier task and preserves its constraints', async () => {
     const earlier = 'チャットの検索機能を追加して。';
     const turns = [

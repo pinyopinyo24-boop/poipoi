@@ -23,7 +23,9 @@ const pending = new Map<string, { at: number; promise: Promise<ConversationUnder
 export function conversationInstruction(message: string) {
   return message.split(/\n\n(?:添付写真から読み取った参考データ|対象資料)/u)[0].split(/\n添付写真:/u)[0].normalize('NFKC').trim();
 }
-const readonlyRequest = (text: string) => /(?:確認|調査|分析|説明|閲覧)(?:だけ|のみ)|(?:変更|保存|登録|作成)(?:しない|するな|禁止)|コード変更.*(?:しない|禁止)/u.test(text);
+const readonlyRequest = (text: string) => /(?:確認|調査|分析|説明|閲覧)(?:だけ|のみ)/u.test(text)
+  || /(?:^|[。！？!\n])\s*(?:変更|保存|登録|作成)(?:しない|するな|禁止)/u.test(text)
+  || /(?:コード|ファイル|データ|予定|タスク)[^。！？!\n]{0,20}(?:は|を)(?:変更|保存|登録|作成)(?:しない|するな|禁止)/u.test(text);
 function clarification(original: string, question: string): ConversationUnderstanding {
   return { domain: 'conversation', act: 'question', newTask: true, goal: original.slice(0, 1000), targetDescription: '',
     targetMessageIds: [], resolvedRequest: original || '確認', constraints: [], execute: false, readOnly: true,
