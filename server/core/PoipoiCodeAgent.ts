@@ -256,14 +256,21 @@ export class PoipoiCodeAgent {
     // A concrete reference/target is already grounded context. Do not inflate a
     // one-file request with unrelated source, inventories or entry points.
     const explicitExisting = [...new Set(explicit)].filter(file => existsSync(this.safePath(file)));
-    const uiFeature = /画面|入力欄|入力中|チャット欄|ボタン|メニュー|ホーム|\bUI\b/i.test(intent);
+    // A request to create a new screen needs a route and an entry point. It
+    // must not be treated as an edit to the existing chat screen's JSX.
+    const newScreen = (/(?:新しい|新規).{0,24}(?:画面|ページ|アプリ|ソフト|ゲーム)/.test(intent) ||
+      /(?:画面|ページ|アプリ|ソフト|ゲーム)を(?:作って|作成して|開発して|実装して)/.test(intent)) &&
+      /作って|作成して|追加して|開発して|実装して/.test(intent);
+    const uiFeature = !newScreen && /画面|入力欄|入力中|チャット欄|ボタン|メニュー|ホーム|\bUI\b/i.test(intent);
     const uiPage = /ホーム|最初の画面|トップ画面/.test(intent) ? 'client/src/pages/Home.tsx' : 'client/src/pages/StreamingChat.tsx';
     const composerFeature = explicitExisting.length === 0 && uiPage === 'client/src/pages/StreamingChat.tsx' && /入力欄|入力中|チャット欄/.test(intent);
     const standaloneTask = /単独|スタンドアロン|\bstandalone\b|既存(?:の)?ファイル(?:は|を)?(?:変更しない|変更せず)|do not (?:modify|change) existing files/i.test(intent);
-    const needsIntegration = explicit.length === 0 && !standaloneTask && (uiFeature || /ポイポイ|PoiPoi|機能(?:を)?(?:追加|実装)/i.test(intent));
+    const needsIntegration = explicit.length === 0 && !standaloneTask && (uiFeature || newScreen || /ポイポイ|PoiPoi|機能(?:を)?(?:追加|実装)/i.test(intent));
     const chatFeature = /チャット|会話|ニュース|天気|交通|音楽|リマインダー|通知/.test(intent);
     const researchFeature = /ネット|ウェブ|検索|画像|イラスト|参照画像/.test(intent);
-    const entryPoints = uiFeature
+    const entryPoints = newScreen
+      ? [...(/保存|データ|記録|取得|検索/.test(intent) ? ['server/routers.ts', 'server/db.ts'] : []), 'client/src/pages/Home.tsx', 'client/src/App.tsx']
+      : uiFeature
       ? [uiPage, ...(composerFeature ? [] : ['client/src/App.tsx']), ...(/保存|データ|記録|取得|検索/.test(intent) ? ['server/routers.chat.ts', 'server/routers/unifiedTools.ts'] : [])]
       : researchFeature
       ? ['server/core/AZWebKnowledge.ts', 'server/core/WebImageReferences.ts', 'server/routers.streaming.ts', 'server/_core/imageGeneration.ts', 'server/core/ChatCoreManager.ts', 'server/core/ChatImageRequests.ts']
@@ -273,7 +280,7 @@ export class PoipoiCodeAgent {
     const inventory = [...new Set([...explicitExisting, ...entryPoints, ...ranked.map(item => item.file), ...candidates])];
     const sourceFiles = explicitExisting.length
       ? explicitExisting.slice(0, 5)
-      : uiFeature ? entryPoints.filter(file => candidates.includes(file)).slice(0, 4)
+      : uiFeature || newScreen ? entryPoints.filter(file => candidates.includes(file)).slice(0, 4)
       : [...new Set([...((chatFeature || researchFeature) ? entryPoints.filter(file => candidates.includes(file)) : ranked.map(item => item.file)), ...entryPoints.filter(file => candidates.includes(file)), ...ranked.map(item => item.file)])].slice(0, 5);
     const context: string[] = [];
     const sourceHashes = new Map<string, string>();
@@ -543,7 +550,7 @@ export class PoipoiCodeAgent {
     // repository size. Source not shown remains available through readFiles;
     // never shorten the user's request or silently treat omitted source as read.
     const promptSources = () => {
-      const budget = 10000;
+      const budget = newScreen ? 14000 : 10000;
       const chosen: string[] = [];
       const omitted: string[] = [];
       let used = 0;
@@ -594,6 +601,7 @@ export class PoipoiCodeAgent {
       "Modify the existing TypeScript project according to the user's request.",
       "Preserve existing functionality.",
       "Make the minimum necessary file changes.",
+      ...(newScreen ? ["This request CREATES a new screen or app. Register a usable route in client/src/App.tsx and connect an entry point in client/src/pages/Home.tsx when appropriate. Do not insert the new screen's JSX into the existing chat page. If the request includes saving records, implement the actual storage path after reviewing the necessary server source; do not replace persistence with an in-memory demo. Request missing source with readFiles before editing."] : []),
       ...(needsIntegration ? ["This is a PoiPoi FEATURE request, not an isolated source example. Implement a usable feature through the reviewed existing UI/chat entry points. New modules must be wired into those entry points; creating disconnected helper files or only changing capability descriptions is not completion."] : []),
       "Implement every explicit requirement, including input validation and boundary cases. Check each constrained field independently. Finite and positive are separate requirements: a finite check accepts negative numbers, while positive comparisons alone fail to reject NaN. Apply all requested constraints to every specified field.",
       "For the small existing files listed below, return their COMPLETE updated content, preserving all unchanged code. Their complete source has been supplied. For OTHER existing files, return compact exact-text edits instead of copying the entire file. Each oldText must occur exactly once in that supplied file. Apply edits in array order. Include sufficient unchanged text in oldText to identify a unique location.",
@@ -724,7 +732,7 @@ export class PoipoiCodeAgent {
       const visibleSource = promptSources().shown;
       // Constrain the model's JSON grammar too: small, fully reviewed files do
       // not need fragile edit anchors. Larger/excerpted files still use edits.
-      const contentOnly = [...sourceContents].every(([file, source]) =>
+      const contentOnly = !newScreen && [...sourceContents].every(([file, source]) =>
         completeSources.has(file) && source.length <= 12000 && visibleSource.includes(source.replace(/\r\n/g, '\n')));
       const anchorEdits = uiFeature && anchors.size > 0;
       const response = await callCoder(attempt ? "追加確認後のコード再生成" : "コード生成", { userId, timeoutMs,
@@ -938,10 +946,11 @@ export class PoipoiCodeAgent {
           proposals = [];
           continue;
         }
-        if (needsIntegration && generated.every(change => change.baseHash === null)) {
+        if ((newScreen && !generated.some(change => change.path === 'client/src/App.tsx')) ||
+            (needsIntegration && generated.every(change => change.baseHash === null))) {
           if (requirementRetryUsed) throw new Error('新機能がPoiPoiの既存画面・実行経路へ組み込まれていません。変更は適用していません。');
           requirementRetryUsed = true;
-          requirementFeedback = 'The requested PoiPoi feature is not connected: this proposal only creates new files. Regenerate the COMPLETE change set with the actual reviewed existing UI/chat entry point wired to the new functionality. Preserve existing behavior. Do not substitute a help-text change or an unused import for implementation. ' +
+          requirementFeedback = 'The requested PoiPoi feature is not connected. For a NEW screen, register its route in the reviewed client/src/App.tsx and connect it to the user interface. Regenerate the COMPLETE change set with the actual reviewed entry point wired to the new functionality. Preserve existing behavior. Do not substitute a help-text change or an unused import for implementation. ' +
             JSON.stringify({ previousChanges: proposals });
           proposals = [];
           continue;

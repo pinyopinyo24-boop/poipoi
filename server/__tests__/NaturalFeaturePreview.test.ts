@@ -58,11 +58,25 @@ beforeAll(() => {
   writeFileSync(model.root + '/package.json', '{"dependencies":{"react":"19"}}');
   writeFileSync(model.root + '/' + page, original);
   writeFileSync(model.root + '/client/src/App.tsx', 'import StreamingChat from "./pages/StreamingChat";\nexport default function App() { return <StreamingChat />; }');
+  writeFileSync(model.root + '/client/src/pages/Home.tsx', 'export default function Home() { return <main>Home</main>; }');
 });
 beforeEach(() => { model.replies.length = 0; model.requests.length = 0; });
 afterAll(() => { vi.restoreAllMocks(); rmSync(model.root, { recursive: true, force: true }); });
 
 describe('new feature requests without source paths through the actual PC chat route', () => {
+  it('grounds a new screen in the application route and home instead of the chat page', async () => {
+    const newScreenRequest = '新しい部品登録画面を作って。品番と名前を入力して保存し、同じ品番は重複登録しない。';
+    model.replies.push(unconnected, unconnected);
+    await expect(PoipoiCodeAgent.getInstance().generate(newScreenRequest))
+      .rejects.toThrow('組み込まれていません');
+    const first = JSON.stringify(model.requests[0].messages);
+    expect(first).toContain('Existing source: client/src/App.tsx');
+    expect(first).toContain('Existing source: client/src/pages/Home.tsx');
+    expect(first).not.toContain('Existing source: client/src/pages/StreamingChat.tsx');
+    expect(first).toContain('implement the actual storage path');
+    expect(JSON.stringify(model.requests[1].messages)).toContain('register its route');
+    expect(model.requests).toHaveLength(2);
+  });
   it('routes an explicit application creation request to a code preview without waiting for intent classification', async () => {
     const result = await understandConversationTurn('771', 'new-app', '新しいアプリを作って。', []);
     expect(result).toMatchObject({ domain: 'code', execute: true, resolvedRequest: '新しいアプリを作って。' });
