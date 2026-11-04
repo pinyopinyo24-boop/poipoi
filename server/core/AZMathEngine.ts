@@ -46,7 +46,10 @@ export async function calculateMath(input: MathRequest): Promise<{ operation: Ma
     };
     const timer = setTimeout(() => finish(Error('計算が制限時間を超えました。')), 5000);
     worker.once('message', (message: { result?: string; error?: string }) => {
-      finish(message.error ? Error(message.error) : null, message.result);
+      const value = message?.result;
+      finish(message?.error ? Error(message.error) :
+        typeof value !== 'string' || !value.trim() || value === 'undefined' || value === 'NaN'
+          ? Error('計算結果を確定できませんでした。') : null, value);
     });
     worker.once('error', error => finish(error));
     worker.once('exit', code => { if (code !== 0) finish(Error('計算処理を完了できませんでした。')); });

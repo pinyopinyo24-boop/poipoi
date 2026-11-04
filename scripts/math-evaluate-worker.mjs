@@ -63,6 +63,30 @@ function polynomial(node) {
   return result;
 }
 
+function basicArithmetic(node) {
+  if (node.isParenthesisNode) return basicArithmetic(node.content);
+  if (node.isConstantNode) {
+    const value = Number(node.value);
+    return Number.isFinite(value) ? value : null;
+  }
+  if (!node.isOperatorNode) return null;
+  const values = node.args.map(basicArithmetic);
+  if (values.some(value => value === null)) return null;
+  const [a, b] = values;
+  let value;
+  switch (node.op) {
+    case '+': value = values.length === 1 ? a : a + b; break;
+    case '-': value = values.length === 1 ? -a : a - b; break;
+    case '*': value = a * b; break;
+    case '/': if (b === 0) throw Error('0で割ることはできません。'); value = a / b; break;
+    case '^': value = a ** b; break;
+    case '%': value = a / 100; break;
+    default: return null;
+  }
+  if (!Number.isFinite(value)) throw Error('計算結果が有限の数ではありません。');
+  return value;
+}
+
 function run() {
   const { operation, expression } = workerData;
   if (operation === 'solve') {
@@ -81,9 +105,14 @@ function run() {
   if (operation === 'differentiate') return math.derivative(node, 'x').toString();
   if (operation === 'simplify') return math.simplify(node).toString();
   if (operation === 'calculate') {
+    const basic = basicArithmetic(node);
+    if (basic !== null) return String(basic);
     const value = node.evaluate();
-    if (typeof value === 'number' && !Number.isFinite(value)) throw Error('計算結果が有限の数ではありません。');
-    return math.format(value, { precision: 14 });
+    if (value === undefined || value === null || typeof value === 'number' && !Number.isFinite(value))
+      throw Error('計算結果を確定できませんでした。');
+    const formatted = math.format(value, { precision: 14 });
+    if (!formatted || formatted === 'undefined') throw Error('計算結果を確定できませんでした。');
+    return formatted;
   }
   if (operation === 'integrate') {
     const { lower, upper } = workerData;
