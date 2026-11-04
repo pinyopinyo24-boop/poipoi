@@ -27,7 +27,7 @@ const schema = z.object({
   changes: z.array(z.object({
     path: z.string(), content: z.string(), baseHash: z.string().nullable(),
     previousContent: z.string().optional(),
-  })).max(5),
+  })).max(10),
 }).superRefine((preview, ctx) => {
   if (!['generating', 'failed'].includes(preview.status) && !preview.changes.length)
     ctx.addIssue({ code: 'custom', path: ['changes'], message: 'A completed proposal requires source changes' });

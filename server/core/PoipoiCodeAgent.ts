@@ -6,11 +6,14 @@ import {
   unlinkSync,
   lstatSync,
   readdirSync,
+  mkdtempSync,
+  rmSync,
 } from "fs";
-import { dirname, resolve, relative } from "path";
+import { dirname, resolve, relative, join } from "path";
 import { execFile, execFileSync } from "child_process";
 import { createHash, randomUUID } from "node:crypto";
 import { createRequire } from "node:module";
+import { tmpdir } from "node:os";
 import { invokeLLM } from "../_core/llm";
 import { conversationModel } from "../_core/ai/ConversationModel";
 
@@ -61,6 +64,137 @@ export class PoipoiCodeAgent {
       PoipoiCodeAgent.instance = new PoipoiCodeAgent();
     }
     return PoipoiCodeAgent.instance;
+  }
+
+  // Large, cross-cutting requests are drafted in a disposable copy of the
+  // source tree. Only the final combined proposal is exposed for approval;
+  // no intermediate file is written to the real project.
+  async generateStaged(task: string, userId: string, options: {
+    onProgress?: (stage: string) => void | Promise<void>;
+    onCandidate?: (changes: readonly CodeChange[], errors: readonly string[]) => void | Promise<void>;
+    onReviewWarning?: (warning: string) => void | Promise<void>;
+  } = {}): Promise<CodeChange[]> {
+    const intent = task.split("\n現在のユーザー依頼:\n")[1]?.split("\n直前の参考会話")[0] ?? task;
+    const clauses = intent.split(/(?<=。)/u).map(value => value.trim()).filter(Boolean);
+    if (clauses.length < 3) return this.generate(task, userId, options);
+    const sourcePaths: string[] = [];
+    const walk = (directory: string, prefix: string) => {
+      if (!existsSync(directory)) return;
+      for (const entry of readdirSync(directory, { withFileTypes: true })) {
+        if (entry.isSymbolicLink() || entry.isDirectory() && /^(node_modules|dist|build|android|ios|core_backup.*)$/.test(entry.name)) continue;
+        const file = join(directory, entry.name);
+        const name = prefix + '/' + entry.name;
+        if (entry.isDirectory()) walk(file, name);
+        else if (/\.[cm]?[jt]sx?$/.test(entry.name) && !/\.test\.|\.bak/.test(entry.name)) sourcePaths.push(name);
+      }
+    };
+    for (const directory of ['server', 'client/src', 'shared', 'src', 'mobile/src'])
+      walk(resolve(this.root, directory), directory);
+    await options.onProgress?.('機能全体の実装順を整理');
+    const planResponse = await invokeLLM({
+      purpose: 'code', userId, model: process.env.LOCAL_CODER_MODEL || 'qwen2.5-coder:7b',
+      temperature: 0, timeoutMs: 120000, contextWindow: 8192, max_tokens: 600,
+      response_format: { type: 'json_schema', json_schema: { name: 'poipoi_staged_code_plan',
+        schema: { type: 'object', properties: { steps: { type: 'array', minItems: 2, maxItems: 4,
+          items: { type: 'object', properties: { clauses: { type: 'array', minItems: 1, items: { type: 'integer' } },
+            focus: { type: 'string' } }, required: ['clauses', 'focus'], additionalProperties: false } } },
+          required: ['steps'], additionalProperties: false } } },
+      messages: [
+        { role: 'system', content: 'Plan implementation in 2-4 coherent stages by dependency order. Assign each numbered clause to exactly one stage. Each stage must produce real source changes, with backend before UI wiring when needed. Do not omit requirements. Return JSON only.' },
+        { role: 'user', content: JSON.stringify({ clauses: clauses.map((text, index) => ({ index, text })),
+          relevantFiles: sourcePaths.filter(file => /(?:StreamingChat|routers\.streaming|routers\.chat|routers\.ts|Home|App|CodeAgent)/i.test(file)).slice(0, 24) }) },
+      ],
+    });
+    const planText = planResponse.choices?.[0]?.message?.content;
+    if (typeof planText !== 'string') throw Error('実装順を作成できませんでした。変更は適用していません。');
+    let plan: { steps?: Array<{ clauses: number[]; focus: string }> };
+    try { plan = JSON.parse(planText); } catch { throw Error('実装順の形式が不正です。変更は適用していません。'); }
+    const steps = plan.steps;
+    const assigned = steps?.flatMap(step => step.clauses) ?? [];
+    if (!steps || steps.length < 2 || steps.length > 4 ||
+        steps.some(step => !step.focus?.trim() || !Array.isArray(step.clauses) || !step.clauses.length) ||
+        assigned.length !== clauses.length || new Set(assigned).size !== clauses.length ||
+        assigned.some(index => !Number.isInteger(index) || index < 0 || index >= clauses.length))
+      throw Error('依頼の全要件を含む実装順を作成できませんでした。変更は適用していません。');
+
+    const temporary = mkdtempSync(join(tmpdir(), 'poipoi-code-stage-'));
+    const touched = new Map<string, string | null>();
+    try {
+      // Copy source only. Never copy credentials, user data, node_modules or Git.
+      for (const file of sourcePaths) {
+        const target = resolve(temporary, file);
+        mkdirSync(dirname(target), { recursive: true });
+        writeFileSync(target, readFileSync(this.safePath(file)));
+      }
+      writeFileSync(resolve(temporary, 'package.json'), readFileSync(resolve(this.root, 'package.json')));
+      const stagedAgent = new PoipoiCodeAgent(temporary);
+      for (const [index, step] of steps.entries()) {
+        await options.onProgress?.(`機能を段階生成 ${index + 1}/${steps.length}`);
+        const stageTask = [
+          'Implement the following coherent part of a larger PoiPoi feature in the existing TypeScript project.',
+          'This is a DRAFT in a disposable source copy. Do not apply or commit. Preserve existing behavior.',
+          'Stage focus: ' + step.focus,
+          'Requirements for this stage (verbatim): ' + step.clauses.map(clause => clauses[clause]).join(' '),
+          'The other stages will be combined into one approval proposal. Current draft files are available as source.',
+          'Never return placeholders or pretend a hardware operation is implemented.',
+        ].join('\n');
+        const changes = await stagedAgent.generate(stageTask, userId, {
+          onReviewWarning: options.onReviewWarning,
+        });
+        if (!changes.length) throw Error('実装段階に変更がありません。変更は適用していません。');
+        for (const change of changes) {
+          const file = change.path.replace(/\\/g, '/');
+          if (!touched.has(file)) {
+            const original = this.safePath(file);
+            touched.set(file, existsSync(original) ? readFileSync(original, 'utf8') : null);
+          }
+          const target = stagedAgent.safePath(file);
+          mkdirSync(dirname(target), { recursive: true });
+          writeFileSync(target, change.content, 'utf8');
+        }
+        if (touched.size > 10) throw Error('機能全体が10ファイルの承認上限を超えました。変更は適用していません。');
+      }
+      const combined = [...touched].map(([file, original]) => ({
+        path: file, content: readFileSync(stagedAgent.safePath(file), 'utf8'),
+        baseHash: original === null ? null : createHash('sha256').update(original).digest('hex'),
+        previousContent: original ?? '',
+      })).filter(change => change.content !== change.previousContent);
+      if (!combined.length) throw Error('機能全体の変更案を作成できませんでした。変更は適用していません。');
+      const errors = this.syntaxErrors(combined);
+      await options.onCandidate?.(combined, errors);
+      if (errors.length) throw Error('統合したコードに構文エラーがあります。変更は適用していません: ' + errors.slice(0, 5).join('; '));
+      await options.onProgress?.('全要件と統合結果を照合');
+      const excerpts = combined.map(change => {
+        const before = change.previousContent ?? '';
+        const after = change.content;
+        let start = 0;
+        while (start < before.length && start < after.length && before[start] === after[start]) start++;
+        let suffix = 0;
+        while (suffix < before.length - start && suffix < after.length - start &&
+            before[before.length - suffix - 1] === after[after.length - suffix - 1]) suffix++;
+        return { path: change.path, changedSource: after.slice(Math.max(0, start - 400),
+          Math.min(after.length, after.length - suffix + 360)).slice(0, 4500) };
+      });
+      const reviewResponse = await invokeLLM({
+        purpose: 'code', userId, model: process.env.LOCAL_REVIEW_MODEL?.trim() || await conversationModel(),
+        temperature: 0, timeoutMs: 120000, contextWindow: 16384, max_tokens: 768,
+        response_format: { type: 'json_schema', json_schema: { name: 'poipoi_staged_code_review',
+          schema: { type: 'object', properties: { complete: { type: 'boolean' },
+            missing: { type: 'array', items: { type: 'integer' } } },
+            required: ['complete', 'missing'], additionalProperties: false } } },
+        messages: [
+          { role: 'system', content: 'Review the combined, unapplied proposal against every original numbered clause. Report missing clause indices. A name, placeholder or disconnected helper is not a working feature. Do not assume tests or real hardware operation. Return JSON only.' },
+          { role: 'user', content: JSON.stringify({ clauses: clauses.map((text, index) => ({ index, text })), files: excerpts }) },
+        ],
+      });
+      let review: { complete?: boolean; missing?: number[] };
+      try { review = JSON.parse(reviewResponse.choices?.[0]?.message?.content ?? ''); }
+      catch { throw Error('統合した変更案の要件照合に失敗しました。変更は適用していません。'); }
+      if (review.complete !== true || !Array.isArray(review.missing) || review.missing.length)
+        throw Error('統合した変更案に未実装の要件があります。変更は適用していません: ' + JSON.stringify(review.missing));
+      await options.onReviewWarning?.('複数段階で生成した全ファイルを一つの承認案にまとめ、構文とAIによる要件照合を行いました。型チェック・実機動作は未確認です。全ファイルを確認してから承認してください。');
+      return combined;
+    } finally { rmSync(temporary, { recursive: true, force: true }); }
   }
 
   private syntaxErrors(changes: CodeChange[]): string[] {
@@ -1240,7 +1374,7 @@ export class PoipoiCodeAgent {
       const paths = changes.map(change => this.safePath(change.path));
       if (new Set(paths).size !== paths.length) throw new Error("Duplicate generated file paths");
       if (changes.some(change => !change.content.trim())) throw new Error("Empty generated file content");
-      if (changes.length > 5) throw new Error('Evolution batch exceeds five source files');
+      if (changes.length > 10) throw new Error('Evolution batch exceeds ten source files');
       for (const change of changes) {
         if (change.baseHash === undefined) throw new Error('Unverified source hash: ' + change.path);
         const absolute = this.safePath(change.path);

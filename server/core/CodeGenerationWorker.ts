@@ -7,6 +7,11 @@ import { PoipoiCodeAgent } from './PoipoiCodeAgent';
 import { lockProject } from './CodeApprovalWorker';
 import { saveCodePreview, readCodePreview, listCodePreviews, type CodePreview } from './CodePreviewStore';
 
+export function needsStagedGeneration(request: string): boolean {
+  return request.length >= 160 && request.split('。').length >= 4 &&
+    /画面|ボタン|\bUI\b/i.test(request) && /処理|保存|書き込み|読み取り|操作/.test(request);
+}
+
 export async function queueCodeGeneration(userId: string, sourceTask: string, sessionId: string, request: string, replyTo: string) {
   const active = await listCodePreviews(userId, { includeHistory: true });
   const existing = active.find(p => p.sessionId === sessionId && p.generation?.replyTo === replyTo);
@@ -54,7 +59,9 @@ export async function runCodeGenerationWorker(userId: string, id: string, jobId:
   let release: (() => void) | undefined;
   try {
     release = lockProject(process.cwd(), jobId, 'generation');
-    preview.changes = await PoipoiCodeAgent.getInstance().generate(preview.generation.sourceTask, userId, {
+    const staged = needsStagedGeneration(preview.generation.request);
+    const agent = PoipoiCodeAgent.getInstance();
+    preview.changes = await (staged ? agent.generateStaged.bind(agent) : agent.generate.bind(agent))(preview.generation.sourceTask, userId, {
       onProgress: async phase => { preview.generation!.phase = phase; await saveCodePreview(preview); },
       onCandidate: async (changes, errors) => {
         const directory = path.join(process.cwd(), 'data', 'code-previews', createHash('sha256').update(userId).digest('hex'));
