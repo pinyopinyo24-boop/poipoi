@@ -2,11 +2,20 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { invokeLLM, type LLMRequest } from './llm';
 const request: LLMRequest = {
   userId: 'request-limits-test',
+  model: 'qwen2.5-coder:7b',
   messages: [{ role: 'user', content: 'Return a JSON object.' }],
   response_format: { type: 'json_schema', json_schema: { name: 'limits', schema: { type: 'object' } } },
 };
 afterEach(() => { vi.unstubAllGlobals(); vi.useRealTimers(); });
 describe('local model request limits', () => {
+  it('disables hidden thinking for structured Qwen 3.5 intent responses', async () => {
+    const fetch = vi.fn(async () => ({ ok: true, text: async () => JSON.stringify({ message: { content: '{}' } }) }));
+    vi.stubGlobal('fetch', fetch);
+    await invokeLLM({ ...request, model: 'qwen3.5:9b' });
+    const body = JSON.parse(fetch.mock.calls[0][1].body);
+    expect(body.model).toBe('qwen3.5:9b');
+    expect(body.think).toBe(false);
+  });
   it('sends code-worker instructions without unrelated chat persona or arithmetic examples', async () => {
     const fetch = vi.fn(async () => ({ ok: true, text: async () => JSON.stringify({ message: { content: '{}' } }) }));
     vi.stubGlobal('fetch', fetch);

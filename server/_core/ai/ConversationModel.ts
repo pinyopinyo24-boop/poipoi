@@ -11,7 +11,8 @@ export async function conversationModel(apiUrl = process.env.LOCAL_AI_URL || 'ht
     if (!response.ok) return fallback;
     const data = await response.json() as { models?: Array<{ name?: string }> };
     const installed = new Set((data.models ?? []).map(item => item.name).filter((name): name is string => typeof name === 'string'));
-    const model = ['qwen2.5:7b', 'qwen2.5:7b-instruct', fallback].find(name => installed.has(name)) ?? fallback;
+    const model = ['qwen3.5:9b', 'qwen3:14b', 'qwen2.5:7b', 'qwen2.5:7b-instruct', fallback]
+      .find(name => installed.has(name)) ?? fallback;
     if (cache.size > 32) cache.clear();
     cache.set(base, { at: Date.now(), model }); return model;
   } catch { return fallback; }

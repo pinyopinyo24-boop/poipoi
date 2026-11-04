@@ -6,6 +6,7 @@
 import { router, protectedProcedure } from '../_core/trpc';
 import { z } from 'zod';
 import { invokeLLM } from '../_core/llm';
+import { conversationModel } from '../_core/ai/ConversationModel';
 import { evaluateLocalCapabilities } from '../core/PoiPoiCapabilityEvaluation';
 import { searchUserPoiPoiMemories, syncUserPoiPoiUnifiedState } from '../core/PoiPoiUnifiedStateStore';
 import { getAICore, initializeAICore } from '../_core/ai/AICore';
@@ -79,7 +80,7 @@ export const aiAgentsRouter = router({
       };
       if (result.status === 'completed') {
         const review = await invokeLLM({
-          model: process.env.LOCAL_CHAT_MODEL || process.env.LOCAL_CODER_MODEL || 'qwen2.5-coder:7b',
+          model: await conversationModel(),
           temperature: 0,
           response_format: {
             type: 'json_schema',
@@ -148,7 +149,7 @@ export const aiAgentsRouter = router({
         };
         if (retry.status === 'completed') {
           const retryReview = await invokeLLM({
-            model: process.env.LOCAL_CHAT_MODEL || process.env.LOCAL_CODER_MODEL || 'qwen2.5-coder:7b',
+            model: await conversationModel(),
             temperature: 0,
             response_format: {
               type: 'json_schema',

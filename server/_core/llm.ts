@@ -1,4 +1,5 @@
 import { enrichPromptWithLearning } from "../core/LearningContextIntegration";
+import { conversationModel } from './ai/ConversationModel';
 /**
  * PoiPoi local Ollama LLM integration.
  */
@@ -125,7 +126,7 @@ export async function invokeLLM(request: LLMRequest): Promise<LLMResponse> {
   );
   const model = (request.model && /^(qwen|llama|mistral|phi|deepseek|codellama|gemma)/i.test(request.model) ? request.model : undefined) || (isCodeTask
     ? process.env.LOCAL_CODER_MODEL || "qwen2.5-coder:7b"
-    : process.env.LOCAL_CHAT_MODEL || process.env.LOCAL_CODER_MODEL || "qwen2.5-coder:7b");
+    : await conversationModel(baseUrl));
 
   const { PoiPoiIdentity } = await import("../core/PoiPoiIdentity");
   const messages = request.purpose === 'code' ? [...request.messages] : [
@@ -181,6 +182,11 @@ export async function invokeLLM(request: LLMRequest): Promise<LLMResponse> {
         model,
         messages,
         stream: false,
+        // Qwen 3.5 can spend the entire local deadline on hidden reasoning.
+        // Keep replies and structured intent checks responsive by default.
+        ...(/^qwen3(?:\.5)?(?=:|$)/i.test(model)
+          ? { think: process.env.LOCAL_AI_THINKING === 'true' && !request.response_format }
+          : {}),
         options: {
           num_ctx: contextWindow,
           ...(request.temperature !== undefined ? { temperature: request.temperature } : {}),
