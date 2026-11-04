@@ -157,6 +157,41 @@ describe('new feature requests without source paths through the actual PC chat r
       expect(readFileSync(model.root + '/' + page, 'utf8')).toBe(actual);
     } finally { writeFileSync(model.root + '/' + page, original); }
   });
+  it('grounds the recycle icon even when an earlier quoted phrase is a chat command', async () => {
+    const actual = readFileSync(new URL('../../client/src/pages/StreamingChat.tsx', import.meta.url), 'utf8');
+    writeFileSync(model.root + '/' + page, actual);
+    const icon = actual.indexOf('♻️');
+    const source = actual.slice(actual.lastIndexOf('<button', icon), actual.indexOf('</button>', icon) + '</button>'.length).trim();
+    const id = 'a' + createHash('sha256').update(page + '\n' + source).digest('hex').slice(0, 12);
+    try {
+      model.replies.push(JSON.stringify({ changes: [{ path: page, edits: [
+        { anchorId: id, operation: 'insertAfter', newText: '<button type="button">CD</button>' },
+      ] }] }), accepted);
+      const request = 'チャットで「CDをコピーして」と頼んだときと、リサイクルマーク横にCDマークを追加して同じ画面を開く。';
+      const changes = await PoipoiCodeAgent.getInstance().generate(request);
+      const prompt = model.requests[0].messages.at(-1).content;
+      expect(prompt).toContain(source);
+      expect(changes[0].content).toContain(source + '\n<button type="button">CD</button>');
+      expect(readFileSync(model.root + '/' + page, 'utf8')).toBe(actual);
+    } finally { writeFileSync(model.root + '/' + page, original); }
+  });
+  it('rejects JSX placed after a module import and requests a JSX child anchor', async () => {
+    const importSource = 'import { useState } from "react";';
+    const moduleId = 'a' + createHash('sha256').update(page + '\n' + importSource).digest('hex').slice(0, 12);
+    const inputId = 'a' + createHash('sha256').update(page + '\n' + input).digest('hex').slice(0, 12);
+    const misplaced = '<button type="button">CD</button>';
+    model.replies.push(
+      JSON.stringify({ changes: [{ path: page, edits: [{ anchorId: moduleId, operation: 'insertAfter', newText: misplaced }] }] }),
+      JSON.stringify({ changes: [{ path: page, edits: [{ anchorId: inputId, operation: 'insertAfter', newText: misplaced }] }] }),
+      accepted,
+    );
+    const onCandidate = vi.fn();
+    const changes = await PoipoiCodeAgent.getInstance().generate('チャットの入力欄の横にCDボタンを追加して。', 'system', { onCandidate });
+    expect(onCandidate.mock.calls[0][1].join(' ')).toContain('module anchors accept imports or declarations, not JSX');
+    expect(model.requests[1].messages.at(-1).content).toContain('Insert visible controls at a jsxChildren anchor');
+    expect(changes[0].content).toContain(input + '\n' + misplaced);
+    expect(readFileSync(model.root + '/' + page, 'utf8')).toBe(original);
+  });
   it('keeps the real chat composer context bounded without including auxiliary editors', async () => {
     const actual = readFileSync(new URL('../../client/src/pages/StreamingChat.tsx', import.meta.url), 'utf8');
     const control = actual.match(/<Input\b[\s\S]*?\/>/)![0];
