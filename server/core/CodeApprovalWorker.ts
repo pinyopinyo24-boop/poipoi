@@ -109,6 +109,12 @@ export async function applyCodePreviewInWorker(preview: CodePreview, typeCheck: 
         typeChecked: current.application?.typeChecked === true, error: current.application?.error };
     }
     if (child.exitCode !== null || child.signalCode !== null) {
+      // Recheck the persisted result after worker exit.
+      await pause(500);
+      const settled = await readCodePreview(preview.userId, preview.id);
+      if (settled.application?.jobId !== jobId)
+        throw new Error('Approval job changed');
+      if (settled.status !== 'applying') continue;
       current.status = 'failed';
       current.application = { ...current.application!, phase: 'interrupted', finishedAt: Date.now(),
         error: '承認作業プロセスが終了しました。完了状態は未確認です。自動再実行はしていません。' };
