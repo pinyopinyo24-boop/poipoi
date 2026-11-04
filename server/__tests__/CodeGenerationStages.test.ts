@@ -85,3 +85,25 @@ it('assigns every CD copy requirement once without asking the model to plan', as
     }
   } finally { rmSync(root, { recursive: true, force: true }); }
 });
+
+it('retains a failed stage candidate for diagnosis without changing the project', async () => {
+  const root = mkdtempSync(join(tmpdir(), 'poipoi-stage-error-test-'));
+  const file = 'server/core/Feature.ts';
+  const original = 'export const value = 0;\n';
+  mkdirSync(join(root, 'server/core'), { recursive: true });
+  writeFileSync(join(root, file), original);
+  writeFileSync(join(root, 'package.json'), '{"dependencies":{}}');
+  const agent = new (PoipoiCodeAgent as any)(root) as PoipoiCodeAgent;
+  const onCandidate = vi.fn();
+  vi.spyOn(PoipoiCodeAgent.prototype, 'generate').mockImplementation(async (_task, _userId, options) => {
+    await options.onCandidate?.([{ path: file, content: 'invalid source' }], ['TS1005: syntax error']);
+    throw new Error('生成コードの構文エラー');
+  });
+  try {
+    await expect(agent.generateStaged('機能を作る。処理を追加する。画面を追加する。', '1', { onCandidate }))
+      .rejects.toThrow('生成コードの構文エラー');
+    expect(onCandidate).toHaveBeenCalledWith(
+      [{ path: file, content: 'invalid source' }], ['TS1005: syntax error']);
+    expect(readFileSync(join(root, file), 'utf8')).toBe(original);
+  } finally { rmSync(root, { recursive: true, force: true }); }
+});

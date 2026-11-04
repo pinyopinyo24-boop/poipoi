@@ -146,6 +146,11 @@ export class PoipoiCodeAgent {
         ].join('\n');
         const changes = await stagedAgent.generate(stageTask, userId, {
           onReviewWarning: options.onReviewWarning,
+          // A failed stage never reaches the final combined proposal. Preserve
+          // only its invalid candidate for diagnostics without touching source.
+          onCandidate: async (candidate, errors) => {
+            if (errors.length) await options.onCandidate?.(candidate, errors);
+          },
         });
         if (!changes.length) throw Error('実装段階に変更がありません。変更は適用していません。');
         for (const change of changes) {
