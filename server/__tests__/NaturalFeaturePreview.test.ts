@@ -64,6 +64,19 @@ beforeEach(() => { model.replies.length = 0; model.requests.length = 0; });
 afterAll(() => { vi.restoreAllMocks(); rmSync(model.root, { recursive: true, force: true }); });
 
 describe('new feature requests without source paths through the actual PC chat route', () => {
+  it('reads an existing integration file before regenerating a proposed edit to it', async () => {
+    const target = 'server/core/AZConversationUnderstanding.ts';
+    writeFileSync(model.root + '/' + target, 'export const value = 1;\n');
+    const draft = JSON.stringify({ changes: [{ path: target, edits: [{ oldText: 'export const value = 1;', newText: 'export const value = 2;' }] }] });
+    model.replies.push(draft, draft, accepted);
+    try {
+      const changes = await PoipoiCodeAgent.getInstance().generate('値を更新して', '771');
+      expect(changes).toMatchObject([{ path: target, content: 'export const value = 2;\n' }]);
+      expect(JSON.stringify(model.requests[0].messages)).not.toContain('Existing source: ' + target);
+      expect(JSON.stringify(model.requests[1].messages)).toContain('Existing source: ' + target);
+      expect(readFileSync(model.root + '/' + target, 'utf8')).toBe('export const value = 1;\n');
+    } finally { rmSync(model.root + '/' + target, { force: true }); }
+  });
   it('grounds a new screen in the application route and home instead of the chat page', async () => {
     const newScreenRequest = '新しい部品登録画面を作って。品番と名前を入力して保存し、同じ品番は重複登録しない。';
     model.replies.push(unconnected, unconnected);

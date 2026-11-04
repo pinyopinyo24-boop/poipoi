@@ -156,7 +156,7 @@ export class PoipoiCodeAgent {
       for (const [index, step] of steps.entries()) {
         await options.onProgress?.(`機能を段階生成 ${index + 1}/${steps.length}`);
         const stageSources = opticalCopy && index === steps.length - 1
-          ? ['client/src/pages/StreamingChat.tsx', 'server/routers.streaming.ts']
+          ? ['client/src/pages/StreamingChat.tsx', 'server/routers.streaming.ts', 'server/core/AZConversationUnderstanding.ts']
           : ['server/routers.streaming.ts'];
         const stageTask = opticalCopy ? [
           '現在のユーザー依頼:',
@@ -1091,6 +1091,23 @@ export class PoipoiCodeAgent {
         try {
           generated = materializeChanges(proposals, visibleSource);
         } catch (error) {
+          const message = error instanceof Error ? error.message : String(error);
+          if (message.startsWith('Invalid source anchor: ')) throw error;
+          const unreviewed = message.startsWith('Generated change targets an unreviewed file: ')
+            ? message.slice('Generated change targets an unreviewed file: '.length).replace(/\\/g, '/') : '';
+          // A model may discover a real integration point after the initial
+          // inventory was selected. Read it and regenerate; never accept the
+          // proposed edit to a file whose source the model has not seen.
+          if (unreviewed && candidates.includes(unreviewed) && !sourceContents.has(unreviewed) && sourceReadCount < 3) {
+            sourceReadCount++;
+            if (loadSource(unreviewed)) {
+              followUp = 'The previous draft targeted ' + unreviewed + ' before its source was reviewed. ' +
+                'Its source is now included. Regenerate the COMPLETE change set using the reviewed original; ' +
+                'use exact edits for existing files and preserve existing functionality.';
+              proposals = [];
+              continue;
+            }
+          }
           if (materializeRetryUsed) throw error;
           materializeRetryUsed = true;
           followUp =
@@ -1112,6 +1129,8 @@ export class PoipoiCodeAgent {
           // Validate the inserted JSX independently before reconstructing the page.
           // A fragment wrapper allows multiple adjacent JSX children.
           if (unit.context === 'jsxChildren') {
+            if (!/^\s*(<|\{)/.test(edit.newText))
+              return [proposal.path + ': JSX anchors accept only JSX elements or expressions. Move complete functions, hooks and statements to a componentBody or module anchor.'];
             if ((ts.transpileModule(
               'const __poipoi = <>' + edit.newText + '</>;',
               {
@@ -1123,8 +1142,6 @@ export class PoipoiCodeAgent {
               return [proposal.path + ': 挿入するJSX自体に構文エラーがあります。完全なJSX要素または式を生成してください。'];
             }
           }
-          if (unit.context === 'jsxChildren' && !/^\s*(<|\{)/.test(edit.newText))
-            return [proposal.path + ': JSX anchors accept only JSX elements or expressions. Move complete functions, hooks and statements to a componentBody or module anchor.'];
           if (unit.context === 'module') {
             const fragment = ts.createSourceFile('module-anchor.tsx', edit.newText, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
             const topLevelHook = fragment.statements.some(statement =>

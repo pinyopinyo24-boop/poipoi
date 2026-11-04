@@ -69,6 +69,7 @@ it('assigns every CD copy requirement once without asking the model to plan', as
   mkdirSync(join(root, 'client/src/pages'), { recursive: true });
   writeFileSync(join(root, file), 'export const value = 0;\n');
   writeFileSync(join(root, 'server/routers.streaming.ts'), 'export const streaming = true;\n');
+  writeFileSync(join(root, 'server/core/AZConversationUnderstanding.ts'), 'export const understand = true;\n');
   writeFileSync(join(root, 'client/src/pages/StreamingChat.tsx'), 'export default function Chat() { return <div />; }\n');
   writeFileSync(join(root, 'package.json'), '{"dependencies":{}}');
   const agent = new (PoipoiCodeAgent as any)(root) as PoipoiCodeAgent;
@@ -96,6 +97,7 @@ it('assigns every CD copy requirement once without asking the model to plan', as
     expect(stageTasks[0]).toContain('Use no Unix dd, cdrecord, /dev/null or dummy');
     expect(stageTasks[0].split('\n直前の参考会話')[0]).toContain('server/routers.streaming.ts');
     expect(stageTasks[2].split('\n直前の参考会話')[0]).toContain('client/src/pages/StreamingChat.tsx');
+    expect(stageTasks[2].split('\n直前の参考会話')[0]).toContain('server/core/AZConversationUnderstanding.ts');
     for (const clause of clauses) {
       expect(stageTasks.filter(task => task.split('\n直前の参考会話')[0].includes(clause))).toHaveLength(1);
     }
