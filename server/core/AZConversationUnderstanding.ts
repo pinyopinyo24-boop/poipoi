@@ -67,7 +67,11 @@ async function interpret(userId: string, original: string, turns: ChatMessage[],
   if (imagine) return simple('image', 'request', imagine[1], true);
   // Deterministic service requests do not require a second model to restate them.
   if (hints.images?.length && /説明|解析|分析|読み取|写って|何が/u.test(original) && !/生成|編集|ムキムキ|加工/u.test(original)) return simple('image', 'question');
-  if (isCodeImplementationRequest(original)) {
+  // A short instruction pointing at earlier work needs the intent model to
+  // identify its target and retained constraints. Treat only self-contained
+  // implementation requests as independent jobs here.
+  const contextualCodeRequest = /^(?:(?:それ|これ|その|この|前の|さっきの|先ほどの|続きの)(?:機能|アプリ|ソフト|コード|変更|作業|部分)?(?:に|を|も|は)?|(?:続き|つづき|もう一度))/u.test(original);
+  if (isCodeImplementationRequest(original) && !contextualCodeRequest) {
     try {
       const task = resolveImplementationRequest(original, turns);
       return task.length > 60000
@@ -76,7 +80,7 @@ async function interpret(userId: string, original: string, turns: ChatMessage[],
     }
     catch (error) { return clarification(original, error instanceof Error ? error.message : '追加・修正したい機能を教えてください。'); }
   }
-  if (isSourceCodeRequest(original)) return simple('code', 'question');
+  if (isSourceCodeRequest(original) && !isCodeImplementationRequest(original)) return simple('code', 'question');
   const priorImage = [...turns].reverse().find(turn => turn.metadata?.generated && turn.metadata?.images?.[0]?.id);
   const previousState = [...turns].reverse().find(turn => turn.role === 'assistant' && turn.metadata?.understanding)?.metadata?.understanding;
   try {
@@ -102,9 +106,10 @@ async function interpret(userId: string, original: string, turns: ChatMessage[],
   } catch (error) {
     return clarification(original, error instanceof Error ? error.message : '編集する画像を選んでください。');
   }
-  const operationalTopic = /画像|写真|イラスト|資料|Excel|PDF|PPT|製造|原価|在庫|予定|会議|ニュース|天気|交通|タスク|通知|音楽|検索|ネット|自己進化|コード|プログラム|機能|チャット欄|添付|貼り付|名前|記憶/i.test(original);
+  const operationalTopic = /画像|写真|イラスト|資料|Excel|PDF|PPT|製造|原価|在庫|予定|会議|ニュース|天気|交通|タスク|通知|音楽|検索|ネット|自己進化|コード|プログラム|機能|アプリ|ソフト|ゲーム|チャット欄|添付|貼り付|名前|記憶/i.test(original);
+  const actionRequest = /(?:作って|つくって|作成して|生成して|追加して|修正して|変更して|実装して|直して|実行して|保存して|登録して|削除して|開いて|送って|調べて|探して|まとめて)(?:ください|ほしい)?[。！!\s]*$/u.test(original);
   if (!operationalTopic && !/^(?:それ|これ|もう|まだ|なお|直|続|つづ|はい|いいえ|お願い|おねがい)/u.test(original) &&
-      (!previousState || previousState.domain === 'conversation') && !priorImage) return simple('conversation', 'chat');
+      !actionRequest && (!previousState || previousState.domain === 'conversation') && !priorImage) return simple('conversation', 'chat');
   const recent = turns.slice(-10);
   const lastState = previousState;
   const history = recent.map((turn, index) => ({ id: index, role: turn.role, text: conversationInstruction(turn.content).slice(0, 180),

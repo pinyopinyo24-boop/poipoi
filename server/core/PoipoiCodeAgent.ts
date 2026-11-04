@@ -12,6 +12,7 @@ import { execFile, execFileSync } from "child_process";
 import { createHash, randomUUID } from "node:crypto";
 import { createRequire } from "node:module";
 import { invokeLLM } from "../_core/llm";
+import { conversationModel } from "../_core/ai/ConversationModel";
 
 // TypeScript exposes a CommonJS compiler. Load it without entering an async
 // ESM-loader wait while an approved application has already been reserved.
@@ -515,7 +516,7 @@ export class PoipoiCodeAgent {
       for (let index = 0; index < parts; index++) {
         const segment = characters.slice(index * 3000, (index + 1) * 3000).join('');
         const response = await callCoder(`依頼の分割確認 ${index + 1}/${parts}`, {
-          userId, timeoutMs: Math.min(timeoutMs, 90000), model: process.env.LOCAL_CODER_MODEL || 'qwen2.5-coder:7b',
+          userId, timeoutMs: Math.min(timeoutMs, 90000), model: process.env.LOCAL_REVIEW_MODEL?.trim() || await conversationModel(),
           temperature: 0, contextWindow: 8192, max_tokens: 768,
           response_format: { type: 'json_schema', json_schema: { name: 'poipoi_request_requirements',
             schema: { type: 'object', properties: { requirements: { type: 'array', minItems: 1, maxItems: 24,
@@ -972,7 +973,7 @@ export class PoipoiCodeAgent {
         for (let reviewAttempt = 0; reviewAttempt < 2; reviewAttempt++) {
           const reviewResponse = await callCoder(reviewAttempt ? "要件照合の判定再確認" : "生成コードの要件照合", {
             userId, timeoutMs,
-            model: process.env.LOCAL_CODER_MODEL || "qwen2.5-coder:7b",
+            model: process.env.LOCAL_REVIEW_MODEL?.trim() || await conversationModel(),
             temperature: 0,
             contextWindow: contextFor(reviewPrompt.length + reviewFeedback.length + 4096),
             max_tokens: isolatedDisplay ? 768 : 1536,

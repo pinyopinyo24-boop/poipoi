@@ -27,6 +27,7 @@ vi.mock('../core/CodeGenerationWorker', () => ({ queueCodeGeneration: async (use
 vi.mock('../core/AZWebKnowledge', () => ({
   webResearchQuery: () => '', researchForAZ: vi.fn(), webResearchContext: () => '',
 }));
+vi.mock('../_core/ai/ConversationModel', () => ({ conversationModel: async () => 'qwen2.5:7b' }));
 import { streamingRouter } from '../routers.streaming';
 import { PoipoiCodeAgent } from '../core/PoipoiCodeAgent';
 import { readCodePreview } from '../core/CodePreviewStore';
@@ -62,6 +63,29 @@ beforeEach(() => { model.replies.length = 0; model.requests.length = 0; });
 afterAll(() => { vi.restoreAllMocks(); rmSync(model.root, { recursive: true, force: true }); });
 
 describe('new feature requests without source paths through the actual PC chat route', () => {
+  it('asks the intent model about an unfamiliar application request instead of treating it as casual chat', async () => {
+    model.replies.push(JSON.stringify({ domain: 'code', act: 'request', newTask: true, target: -1,
+      goal: '新しいアプリを作る', conditions: [], replaceConditions: [], question: '', confidence: 0.95 }));
+    const result = await understandConversationTurn('771', 'new-app', '新しいアプリを作って。', []);
+    expect(result).toMatchObject({ domain: 'code', execute: true, resolvedRequest: '新しいアプリを作って。' });
+    expect(model.requests).toHaveLength(1);
+  });
+  it('resolves a follow-up code change against the earlier task and preserves its constraints', async () => {
+    const earlier = 'チャットの検索機能を追加して。';
+    const turns = [
+      { id: 'u1', userId: '771', role: 'user' as const, content: earlier, timestamp: 1 },
+      { id: 'a1', userId: '771', role: 'assistant' as const, content: '変更案を作成しました。', timestamp: 2,
+        metadata: { understanding: { domain: 'code', goal: earlier, constraints: ['既存履歴は残す'] } } },
+    ];
+    model.replies.push(JSON.stringify({ domain: 'code', act: 'constraint', newTask: false, target: 1,
+      goal: earlier, conditions: ['タイトルでも検索する'], replaceConditions: [], question: '', confidence: 0.95 }));
+    const result = await understandConversationTurn('771', 'follow-up', 'その機能にタイトル検索も追加して。', turns);
+    expect(result).toMatchObject({ domain: 'code', newTask: false, execute: true, targetMessageIds: ['a1'] });
+    expect(result.resolvedRequest).toContain(earlier);
+    expect(result.resolvedRequest).toContain('既存履歴は残す');
+    expect(result.resolvedRequest).toContain('タイトルでも検索する');
+    expect(model.requests).toHaveLength(1);
+  });
   it('passes a long natural-language code request to the existing segmented generator', async () => {
     const request = '新しい機能を追加して。' + '詳しい動作と制約。'.repeat(450) + '機能を追加して。';
     const result = await understandConversationTurn('771', 'long-request', request, []);
@@ -93,6 +117,9 @@ describe('new feature requests without source paths through the actual PC chat r
     expect(changes).toHaveLength(1);
     expect(changes[0].path).toBe(target);
     expect(model.requests).toHaveLength(4);
+    expect(model.requests.map(call => call.model)).toEqual([
+      'qwen2.5:7b', 'qwen2.5:7b', 'qwen2.5-coder:7b', 'qwen2.5:7b',
+    ]);
     expect(model.requests[0].messages.at(-1).content).toContain(leading);
     expect(model.requests[1].messages.at(-1).content).toContain(trailing);
     expect(model.requests[2].messages.at(-1).content).toContain(trailing);
