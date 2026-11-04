@@ -27,6 +27,43 @@ export function parseMathRequest(text: string): MathRequest | null {
   return { operation, expression: match[2].replace(/[。?？]\s*$/u, '').trim() };
 }
 
+export function parseProductionAverageRequest(text: string): string | null {
+  const normalized = text.normalize('NFKC');
+  if (!/平均|1個当たり|一個当たり/u.test(normalized)) return null;
+
+  const pattern = /(\d+)\s*個\s*を\s*(?:(\d+)\s*時間)?\s*(?:(\d+)\s*分)?/gu;
+  const groups = [...normalized.matchAll(pattern)]
+    .filter(match => match[2] !== undefined || match[3] !== undefined)
+    .map(match => ({
+      count: Number(match[1]),
+      minutes: Number(match[2] ?? 0) * 60 + Number(match[3] ?? 0),
+    }));
+
+  if (groups.length < 2 || groups.some(g =>
+    !Number.isSafeInteger(g.count) || g.count <= 0 ||
+    !Number.isSafeInteger(g.minutes) || g.minutes < 0
+  )) return null;
+
+  const totalCount = groups.reduce((sum, g) => sum + g.count, 0);
+  const totalMinutes = groups.reduce((sum, g) => sum + g.minutes, 0);
+
+  const declared = normalized.match(/合計\s*(\d+)\s*個/u);
+  if (declared && Number(declared[1]) !== totalCount) {
+    return `明細の合計は${totalCount}個ですが、指定された合計は${declared[1]}個です。数値を確認してください。`;
+  }
+
+  const average = totalMinutes / totalCount;
+  const seconds = Math.round(average * 60);
+  const formula = groups.map(g => g.minutes).join(' + ');
+  const quantities = groups.map(g => g.count).join(' + ');
+
+  return [
+    `合計時間：${formula} = ${totalMinutes}分`,
+    `合計個数：${quantities} = ${totalCount}個`,
+    `平均製造時間：${totalMinutes} ÷ ${totalCount} = ${average.toFixed(2)}分/個`,
+    `約${Math.floor(seconds / 60)}分${String(seconds % 60).padStart(2, '0')}秒/個`,
+  ].join('\n');
+}
 export async function calculateMath(input: MathRequest): Promise<{ operation: MathOperation; expression: string; result: string }> {
   if (!['calculate', 'simplify', 'differentiate', 'solve', 'integrate'].includes(input.operation) ||
       typeof input.expression !== 'string' || input.expression.length > 500 ||
@@ -45,7 +82,10 @@ export async function calculateMath(input: MathRequest): Promise<{ operation: Ma
       if (error) reject(error); else resolve(value!);
     };
     const timer = setTimeout(() => finish(Error('計算が制限時間を超えました。')), 5000);
-    worker.once('message', (message: { result?: string; error?: string }) => {
+    worker.on('message', (message: { result?: string; error?: string; "watch:import"?: string[] }) => {
+      // Node.js watch通知は計算結果ではないため無視する。
+      if (!message || (typeof message.result !== 'string' && typeof message.error !== 'string')) return;
+
       const value = message?.result;
       finish(message?.error ? Error(message.error) :
         typeof value !== 'string' || !value.trim() || value === 'undefined' || value === 'NaN'

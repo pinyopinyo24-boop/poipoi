@@ -7,7 +7,7 @@ import { TRPCError } from '@trpc/server';
 import { ChatCoreManager } from './core/ChatCoreManager';
 import { ChatQualityService } from './managers/ChatQualityService';
 import { parseUnitCostVarianceRequest, formatUnitCostVariance } from './core/CostVarianceRequest';
-import { parseMathRequest, calculateMath, isMathematicalQuestion } from './core/AZMathEngine';
+import { parseMathRequest, calculateMath, isMathematicalQuestion, parseProductionAverageRequest } from './core/AZMathEngine';
 import { getDb } from './db';
 import { feedback } from '../drizzle/schema';
 import { v4 as uuidv4 } from 'uuid';
@@ -127,6 +127,33 @@ export const chatRouter = router({
           await dialogueRepository.saveMessage(message, input.sessionId);
           return { message, session: (await dialogueRepository.getSession(input.sessionId))!,
             relatedMemories: [], reasoning: 'Calculated from user supplied figures' };
+        }
+        const productionAverage = parseProductionAverageRequest(input.message);
+        if (productionAverage) {
+          const askedAt = Date.now();
+          await dialogueRepository.saveMessage({
+            id: input.messageId ?? uuidv4(),
+            userId: dialogueUserId,
+            role: 'user',
+            content: input.message,
+            timestamp: askedAt
+          }, input.sessionId);
+
+          const message = {
+            id: uuidv4(),
+            userId: dialogueUserId,
+            role: 'assistant' as const,
+            content: productionAverage,
+            timestamp: Math.max(Date.now(), askedAt + 1),
+            metadata: { replyTo: input.messageId }
+          };
+          await dialogueRepository.saveMessage(message, input.sessionId);
+          return {
+            message,
+            session: (await dialogueRepository.getSession(input.sessionId))!,
+            relatedMemories: [],
+            reasoning: 'Calculated from production quantities and elapsed times'
+          };
         }
         const mathInput = parseMathRequest(input.message);
         if (mathInput) {

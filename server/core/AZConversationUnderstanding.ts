@@ -137,7 +137,7 @@ async function interpret(userId: string, original: string, turns: ChatMessage[],
     codeRequest: String(turn.metadata?.codePreview?.request ?? '').slice(0, 160) }));
   try {
     const model = await conversationModel();
-    const response = await invokeLLM({ model, userId, learningContextIncluded: true, timeoutMs: 45000,
+    const response = await invokeLLM({ model, userId, learningContextIncluded: true, timeoutMs: 300000,
       contextWindow: original.length > 2000 ? 16384 : 8192, max_tokens: 384, temperature: 0,
       response_format: { type: 'json_schema', json_schema: { name: 'az_intent', strict: true, schema: {
         type: 'object', properties: {

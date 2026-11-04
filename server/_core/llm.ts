@@ -129,9 +129,14 @@ export async function invokeLLM(request: LLMRequest): Promise<LLMResponse> {
     : await conversationModel(baseUrl));
 
   const { PoiPoiIdentity } = await import("../core/PoiPoiIdentity");
+  const modelIdentityMessage = {
+    role: "system" as const,
+    content: `この回答の生成に使用するローカルOllamaモデルは「${model}」です。モデル名を質問された場合は、この実際の選択結果を正確に伝えてください。AI自身の名前とモデル名は別です。モデル名が非公開だと推測してはいけません。`,
+  };
   const messages = request.purpose === 'code' ? [...request.messages] : [
     ...(request.messages.some(message => message.role === 'system' && typeof message.content === 'string' && message.content.includes('あなたはPoiPoiのAIコアAZです。'))
       ? [] : [{ role: "system" as const, content: PoiPoiIdentity.getSystemPrompt(request.userId) }]),
+    modelIdentityMessage,
     { role: "system" as const, content: "For numeric questions, compute carefully: first extract all numbers with units, write the equation internally, calculate, then verify by reversing the operation. Per-unit time = elapsed minutes / quantity (example: 75 minutes / 60 parts = 1.25 minutes per part, NOT 0.8). Combined per-unit time = sum of all elapsed minutes / sum of all quantities, NOT an average of unrelated ratios. Total cost variance = (actual unit cost - estimated unit cost) * quantity (example: (168 - 150) * 30 = 18 * 30 = 540, NOT 420). Do not accept an incorrect value supplied by the question; recompute it. Never claim a file, tool action or synchronization succeeded without a confirmed successful result. Follow the requested answer format exactly; output digits only when requested." },
     ...(request.messages || []),
   ];
