@@ -73,6 +73,24 @@ async function interpret(userId: string, original: string, turns: ChatMessage[],
   // identify its target and retained constraints. Treat only self-contained
   // implementation requests as independent jobs here.
   const contextualCodeRequest = /^(?:(?:それ|これ|その|この|前の|さっきの|先ほどの|続きの)(?:機能|アプリ|ソフト|コード|変更|作業|部分)?(?:に|を|も|は)?|(?:続き|つづき|もう一度))/u.test(original);
+  if (contextualCodeRequest && isCodeImplementationRequest(original)) {
+    // An explicit feature edit immediately after a code preview has one known
+    // target. Preserve the complete reviewed request without a slow second
+    // intent-model call. An intervening unrelated task must not be inherited.
+    const latestTask = [...turns].reverse().find(turn => turn.role === 'assistant' &&
+      (turn.metadata?.understanding || turn.metadata?.codePreview));
+    const priorRequest = latestTask?.metadata?.codePreview?.request;
+    if (typeof priorRequest === 'string' && priorRequest.trim()) {
+      const combined = '前の依頼: ' + priorRequest + '\n今回の追加・修正指示: ' + original;
+      if (combined.length > 60000) return clarification(original, '引き継ぐ依頼が保存上限の60000文字を超えています。対象と条件を分けて指定してください。');
+      const result = simple('code', 'request', combined, true);
+      result.newTask = false;
+      result.targetDescription = priorRequest.slice(0, 500);
+      result.targetMessageIds = [latestTask!.id];
+      result.constraints = [original.slice(0, 500)];
+      return result;
+    }
+  }
   if (isCodeImplementationRequest(original) && !contextualCodeRequest) {
     try {
       const task = resolveImplementationRequest(original, turns);

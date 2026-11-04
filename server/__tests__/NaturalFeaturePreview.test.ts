@@ -94,14 +94,25 @@ describe('new feature requests without source paths through the actual PC chat r
         metadata: { understanding: { domain: 'code', goal: earlier.slice(0, 1000), constraints: ['既存履歴は残す'] },
           codePreview: { request: earlier } } },
     ];
-    model.replies.push(JSON.stringify({ domain: 'code', act: 'constraint', newTask: false, target: 1,
-      goal: 'チャットの検索機能を追加する', conditions: ['タイトルでも検索する'], replaceConditions: [], question: '', confidence: 0.95 }));
     const result = await understandConversationTurn('771', 'follow-up', 'その機能にタイトル検索も追加して。', turns);
     expect(result).toMatchObject({ domain: 'code', newTask: false, execute: true, targetMessageIds: ['a1'] });
     expect(result.resolvedRequest).toContain(earlier);
     expect(result.resolvedRequest).toContain('最後の検索条件を残す。');
-    expect(result.resolvedRequest).toContain('既存履歴は残す');
-    expect(result.resolvedRequest).toContain('タイトルでも検索する');
+    expect(result.resolvedRequest).toContain('その機能にタイトル検索も追加して。');
+    expect(model.requests).toHaveLength(0);
+  });
+  it('does not reuse a code proposal after an unrelated task intervenes', async () => {
+    const turns = [
+      { id: 'a1', userId: '771', role: 'assistant' as const, content: '変更案を作成しました。', timestamp: 1,
+        metadata: { codePreview: { request: 'チャット履歴を検索する機能を追加して。' }, understanding: { domain: 'code' } } },
+      { id: 'a2', userId: '771', role: 'assistant' as const, content: '予定を確認しました。', timestamp: 2,
+        metadata: { understanding: { domain: 'schedule', goal: '予定確認', constraints: [] } } },
+    ];
+    model.replies.push(JSON.stringify({ domain: 'code', act: 'question', newTask: true, target: -1,
+      goal: '対象の機能を確認する', conditions: [], replaceConditions: [], question: 'どの機能を変更しますか？', confidence: 0.6 }));
+    const result = await understandConversationTurn('771', 'ambiguous-follow-up', 'その機能に検索を追加して。', turns);
+    expect(result.needsClarification).toBe(true);
+    expect(result.resolvedRequest).not.toContain('チャット履歴を検索する機能');
     expect(model.requests).toHaveLength(1);
   });
   it('passes a long natural-language code request to the existing segmented generator', async () => {
