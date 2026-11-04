@@ -337,6 +337,8 @@ export class PoipoiCodeAgent {
       const registerAnchor = (node: import('typescript').Node) => {
         if (!uiFeature) return;
         if (ts.isVariableDeclaration(node)) node = node.parent.parent;
+        if ((ts.isJsxElement(node) || ts.isJsxSelfClosingElement(node)) &&
+            !ts.isJsxElement(node.parent) && !ts.isJsxFragment(node.parent)) return;
         const text = node.getText(parsed).replace(/\r\n/g, '\n');
         if (text.length > 11000) return;
         const id = 'a' + createHash('sha256').update(uiPage + '\n' + text).digest('hex').slice(0, 12);
@@ -389,7 +391,7 @@ export class PoipoiCodeAgent {
       let shownNamedUI = 0;
       if (!composerFeature) {
         const quoted = [...intent.matchAll(/「([^」]{2,40})」/g)].map(match => match[1]);
-        const keywords = quoted.length ? quoted : ['送信', '設定', '承認', '履歴', '添付', 'メニュー', '検索', '画像', 'ホーム', 'モデル']
+        const keywords = quoted.length ? quoted.slice(0, 1) : ['送信', '設定', '承認', '履歴', '添付', 'メニュー', '検索', '画像', 'ホーム', 'モデル']
           .filter(word => intent.includes(word));
         let shown = 0;
         const findNamedUI = (node: import('typescript').Node) => {

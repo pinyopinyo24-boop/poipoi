@@ -134,6 +134,29 @@ describe('new feature requests without source paths through the actual PC chat r
       expect(readFileSync(model.root + '/' + page, 'utf8')).toBe(actual);
     } finally { writeFileSync(model.root + '/' + page, original); }
   });
+  it('anchors the quoted history target and never offers an insertion inside the unrelated zero-results expression', async () => {
+    const actual = readFileSync(new URL('../../client/src/pages/StreamingChat.tsx', import.meta.url), 'utf8');
+    writeFileSync(model.root + '/' + page, actual);
+    const history = '<span>チャット履歴</span>';
+    const historyId = 'a' + createHash('sha256').update(page + '\n' + history).digest('hex').slice(0, 12);
+    const unrelated = '<p>検索結果は0件です</p>';
+    const unrelatedId = 'a' + createHash('sha256').update(page + '\n' + unrelated).digest('hex').slice(0, 12);
+    try {
+      model.replies.push(JSON.stringify({ changes: [{ path: page, edits: [
+        { anchorId: historyId, operation: 'insertAfter', newText: '<span>{conversations.length}件</span>' },
+      ] }] }), accepted);
+      const changes = await PoipoiCodeAgent.getInstance().generate(
+        'チャット画面の「チャット履歴」の見出しの横に、保存済み会話の件数を表示する新機能を追加して。0件なら「0件」と表示して。既存機能は残して。');
+      const prompt = model.requests[0].messages.at(-1).content;
+      const grammar = model.requests[0].response_format.json_schema.schema.properties.changes.items.oneOf[0];
+      const ids = grammar.properties.edits.items.oneOf.flatMap((item: any) => item.properties.anchorId.enum);
+      expect(prompt).toContain(history);
+      expect(ids).toContain(historyId);
+      expect(ids).not.toContain(unrelatedId);
+      expect(changes[0].content).toContain(history + '\n<span>{conversations.length}件</span>');
+      expect(readFileSync(model.root + '/' + page, 'utf8')).toBe(actual);
+    } finally { writeFileSync(model.root + '/' + page, original); }
+  });
   it('keeps the real chat composer context bounded without including auxiliary editors', async () => {
     const actual = readFileSync(new URL('../../client/src/pages/StreamingChat.tsx', import.meta.url), 'utf8');
     const control = actual.match(/<Input\b[\s\S]*?\/>/)![0];
