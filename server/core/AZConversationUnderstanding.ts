@@ -154,10 +154,18 @@ async function interpret(userId: string, original: string, turns: ChatMessage[],
     const conditions = [...new Set([...priorConditions.filter((_, index) => !replaced.has(index)), ...compact.conditions])];
     if (conditions.length > 12) return clarification(original, '保持条件が増えたため、今回の対象と必要な条件を確認させてください。');
     const goal = compact.newTask ? original : String(activeState?.goal ?? compact.goal ?? original).slice(0, 1000);
+    const codeSource = !compact.newTask && activeState?.domain === 'code'
+      ? target?.role === 'assistant' ? target
+        : target?.role === 'user' ? recent.find(turn => turn.role === 'assistant' && turn.metadata?.replyTo === target.id)
+          : [...recent].reverse().find(turn => turn.role === 'assistant' && turn.metadata?.understanding === activeState)
+      : undefined;
+    const priorCodeRequest = typeof codeSource?.metadata?.codePreview?.request === 'string'
+      ? codeSource.metadata.codePreview.request : undefined;
     const current = !compact.newTask
-      ? '前の依頼: ' + goal.slice(0, 700) + '\n保持条件: ' + conditions.join(' / ').slice(0, 900) + '\n今回のユーザー原文: ' + original
+      ? '前の依頼: ' + (priorCodeRequest ?? goal.slice(0, 700)) + '\n保持条件: ' + conditions.join(' / ').slice(0, 900) + '\n今回のユーザー原文: ' + original
       : original;
-    if (current.length > 4000) return clarification(original, '依頼が長いため、今回実行する対象と内容を4000文字以内で指定してください。');
+    const requestLimit = compact.domain === 'code' ? 60000 : 4000;
+    if (current.length > requestLimit) return clarification(original, '引き継ぐ依頼が保存上限の' + requestLimit + '文字を超えています。対象と必要な条件を分けて指定してください。');
     const memoryGoal = compact.domain === 'memory' && /^(?:私の名前は|あなたの名前は)/u.test(compact.goal) ? compact.goal : undefined;
     const value = schema.parse({ domain: compact.domain, act: compact.act, newTask: compact.newTask, goal: goal.slice(0, 1000),
       targetDescription: target ? conversationInstruction(target.content).slice(0, 500) : '', targetMessageIds: target ? [target.id] : [],
