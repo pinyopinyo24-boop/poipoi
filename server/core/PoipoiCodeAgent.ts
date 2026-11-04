@@ -940,11 +940,6 @@ export class PoipoiCodeAgent {
           // Validate the inserted JSX independently before reconstructing the page.
           // A fragment wrapper allows multiple adjacent JSX children.
           if (unit.context === 'jsxChildren') {
-            const fragment = ts.createSourceFile(
-              'jsx-insertion.tsx',
-              'const __poipoi = <>' + edit.newText + '</>;',
-              ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX
-            );
             if ((ts.transpileModule(
               'const __poipoi = <>' + edit.newText + '</>;',
               {
