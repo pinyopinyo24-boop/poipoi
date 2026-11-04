@@ -3,6 +3,7 @@ import { researchForAZ } from './AZWebKnowledge';
 import { getLatestNews, getWeatherForecast, getTrafficInformation } from './AZLiveInformation';
 import { addPersonalTask, listPersonalTasks, changePersonalTask } from './AZPersonalTasks';
 import { isCodeImplementationRequest } from './AZCapabilityCatalog';
+import { calculateMath, isMathematicalQuestion } from './AZMathEngine';
 import { z } from 'zod';
 import { randomUUID, createHash } from 'node:crypto';
 import { promises as fs } from 'node:fs';
@@ -103,6 +104,8 @@ export async function runAZTask(ctx: TrpcContext, sessionId: string, request: st
       createPresentationFromDocuments: tool('Excel/PDFから分析・PPT作成を連続実行。{title,files:[{file,type}],question}', z.object({ title: z.string().min(1), files: z.array(file).min(1).max(6), question: z.string().min(1) }), args => caller.createPresentationFromDocuments(args), true),
       listManufacturing: tool('保存済み製造記録・原価・在庫を読む。{}', z.object({}), () => caller.listManufacturingRecords()),
       analyzeManufacturing: tool('原価差異等を数値計算。{estimatedUnitCost,actualUnitCost,quantity,producedUnits?,plannedUnits?,stockQuantity?,reorderLevel?,unitPrice?}。単価×数量で計算。', manufacturing, args => caller.analyzeManufacturing(args)),
+      calculateMath: tool('数式を計算・簡約・微分・3次以下の方程式を解く・定積分の近似をする。算数、三角関数、統計、行列を含む。{operation:"calculate"|"simplify"|"differentiate"|"solve"|"integrate",expression:数式,lower?:積分下限,upper?:積分上限}。文章題は数式に置き換え、明示された数値だけを使う。数値結果を推測せず、このツールを使う。',
+        z.object({ operation: z.enum(['calculate', 'simplify', 'differentiate', 'solve', 'integrate']), expression: z.string().min(1).max(500), lower: z.number().finite().optional(), upper: z.number().finite().optional() }), args => calculateMath(args)),
       saveManufacturing: tool('依頼された製造記録を保存。{itemId,estimatedUnitCost,actualUnitCost,quantity,stockQuantity?,reorderLevel?}', manufacturing.pick({ estimatedUnitCost: true, actualUnitCost: true, quantity: true, stockQuantity: true, reorderLevel: true }).extend({ itemId: z.string().min(1) }), args => caller.saveManufacturingRecord(args), true),
       listSchedules: tool('予定一覧を読む。{} または {date:"YYYY-MM-DD"}', z.object({ date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional() }), args => args.date ? schedules.getByDate({ date: args.date }) : schedules.getAll()),
       addSchedule: tool('依頼された予定を登録。{title,scheduledDate:"YYYY-MM-DD",startTime?:"HH:mm",endTime?:"HH:mm",description?}。日時を推測しない。', z.object({ title: z.string().min(1), scheduledDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/), startTime: z.string().regex(/^\d{2}:\d{2}$/).optional(), endTime: z.string().regex(/^\d{2}:\d{2}$/).optional(), description: z.string().optional() }), args => schedules.addSchedule(args), true),
@@ -144,6 +147,12 @@ export async function runAZTask(ctx: TrpcContext, sessionId: string, request: st
         continue;
       }
       if (decision.type === 'finish') {
+        if (!decision.needsInput && isMathematicalQuestion(request) &&
+            !result.steps.some(entry => entry.status === 'completed' &&
+              (entry.tool === 'calculateMath' || entry.tool === 'analyzeManufacturing'))) {
+          messages.push({ role: 'user', content: '数値の答えをまだ計算で確かめていません。calculateMathまたは適切な計算ツールで実際に求めてから答えるか、対応できない場合はneedsInput:trueで未確認と伝えてください。' });
+          continue;
+        }
         if (!decision.needsInput && !result.steps.some(entry => entry.status === 'completed') &&
             /作って|作成|修正|直して|なおして|改善して|追加|登録|出力|生成|実行|保存|記録|集計|取得|ニュース|天気|運行情報/.test(request)) {
           messages.push({ role: 'user', content: '依頼された操作の成功結果がまだありません。必要なツールを実行するか、不足条件をneedsInput:trueで質問してください。未実行のまま完了を報告できません。' });

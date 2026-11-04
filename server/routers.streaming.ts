@@ -1,4 +1,5 @@
 import { understandConversationTurn } from './core/AZConversationUnderstanding';
+import { parseMathRequest } from './core/AZMathEngine';
 import { resolveImageConversationRequest } from './core/ImageConversationRouter';
 import { searchPoiPoiMemory, getPoiPoiMemoryCacheStatus } from "./core/PoiPoiLongTermMemory";
 import { publicProcedure, router } from "./_core/trpc";
@@ -56,6 +57,14 @@ export const streamingRouter = router({
         if (input.messageId) {
           const cached = (await repository.getMessages(conversationId, 100000)).find(turn => turn.role === 'assistant' && turn.metadata?.replyTo === input.messageId);
           if (cached) return { conversationId, tokens: [cached.content], fullText: cached.content, tokenCount: 1, isImage: Boolean(cached.metadata?.generated), messageId: cached.id, metadata: cached.metadata };
+        }
+        if (!input.images?.length && !input.sourceImageId && parseMathRequest(input.message)) {
+          const response = await chatRouter.createCaller(ctx).processMessage({
+            userId, sessionId: conversationId, message: input.message, messageId: input.messageId,
+          });
+          const text = response.message.content;
+          return { conversationId, tokens: [text], fullText: text, tokenCount: 1,
+            isImage: false, messageId: response.message.id, metadata: response.message.metadata };
         }
         ctx.trace?.("chat.session-ready");
         const recentImages = await repository.getMessages(conversationId, input.sourceImageId ? 100000 : 60);

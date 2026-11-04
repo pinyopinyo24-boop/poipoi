@@ -7,6 +7,7 @@ import { TRPCError } from '@trpc/server';
 import { ChatCoreManager } from './core/ChatCoreManager';
 import { ChatQualityService } from './managers/ChatQualityService';
 import { parseUnitCostVarianceRequest, formatUnitCostVariance } from './core/CostVarianceRequest';
+import { parseMathRequest, calculateMath, isMathematicalQuestion } from './core/AZMathEngine';
 import { getDb } from './db';
 import { feedback } from '../drizzle/schema';
 import { v4 as uuidv4 } from 'uuid';
@@ -126,6 +127,19 @@ export const chatRouter = router({
           await dialogueRepository.saveMessage(message, input.sessionId);
           return { message, session: (await dialogueRepository.getSession(input.sessionId))!,
             relatedMemories: [], reasoning: 'Calculated from user supplied figures' };
+        }
+        const mathInput = parseMathRequest(input.message);
+        if (mathInput) {
+          const calculated = await calculateMath(mathInput);
+          const askedAt = Date.now();
+          await dialogueRepository.saveMessage({ id: input.messageId ?? uuidv4(), userId: dialogueUserId,
+            role: 'user', content: input.message, timestamp: askedAt }, input.sessionId);
+          const message = { id: uuidv4(), userId: dialogueUserId, role: 'assistant' as const,
+            content: `${calculated.expression} → ${calculated.result}`,
+            timestamp: Math.max(Date.now(), askedAt + 1), metadata: { replyTo: input.messageId } };
+          await dialogueRepository.saveMessage(message, input.sessionId);
+          return { message, session: (await dialogueRepository.getSession(input.sessionId))!,
+            relatedMemories: [], reasoning: 'Calculated with bounded mathematical engine' };
         }
         const recentDialogue = await dialogueRepository.getMessages(input.sessionId, 100);
         const understanding = await understandConversationTurn(dialogueUserId, input.sessionId, input.message, recentDialogue, input.messageId);
@@ -253,7 +267,9 @@ export const chatRouter = router({
           if (!session || session.userId !== String(ctx.user.id)) {
             throw new TRPCError({ code: 'NOT_FOUND', message: 'チャットセッションが見つかりません' });
           }
-          if (['documents','manufacturing','schedule','information','personal_tasks','music','web'].includes(understanding.domain) && (understanding.execute || understanding.readOnly || understanding.act === 'question')) {
+          const mathIntent = isMathematicalQuestion(command);
+          if ((mathIntent || ['documents','manufacturing','schedule','information','personal_tasks','music','web'].includes(understanding.domain)) &&
+              (understanding.execute || understanding.readOnly || understanding.act === 'question')) {
             const userId = String(ctx.user.id);
             await repository.saveMessage({ id: input.messageId ?? uuidv4(), userId, role: 'user', content: input.message, timestamp: Date.now() }, input.sessionId);
             const task = await runAZTask(ctx, input.sessionId, command, understanding);
