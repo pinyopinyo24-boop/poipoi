@@ -50,6 +50,23 @@ describe('local model request limits', () => {
     resolveFetch({ ok: true, text: async () => JSON.stringify({ message: { content: '{}' } }) });
     await expect(result).resolves.toMatchObject({ choices: [{ message: { content: '{}' } }] });
   });
+  it('retries a lost local connection during code generation without rerunning application', async () => {
+    vi.useFakeTimers();
+    const fetch = vi.fn()
+      .mockRejectedValueOnce(new TypeError('fetch failed', { cause: new Error('ECONNRESET') }))
+      .mockResolvedValueOnce({ ok: true, text: async () => JSON.stringify({ message: { content: '{}' } }) });
+    vi.stubGlobal('fetch', fetch);
+    const result = invokeLLM({ ...request, purpose: 'code', timeoutMs: 0 });
+    await vi.advanceTimersByTimeAsync(5000);
+    await expect(result).resolves.toMatchObject({ choices: [{ message: { content: '{}' } }] });
+    expect(fetch).toHaveBeenCalledTimes(2);
+  });
+  it('does not retry a failed ordinary chat request', async () => {
+    const fetch = vi.fn().mockRejectedValue(new TypeError('fetch failed'));
+    vi.stubGlobal('fetch', fetch);
+    await expect(invokeLLM(request)).rejects.toThrow('fetch failed');
+    expect(fetch).toHaveBeenCalledTimes(1);
+  });
   for (const [label, timeoutMs] of [['coder', 300000], ['default', undefined]] as const) {
     it(`keeps the ${label} deadline bounded and aborts at its own limit`, async () => {
       vi.useFakeTimers();

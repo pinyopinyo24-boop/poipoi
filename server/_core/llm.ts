@@ -179,11 +179,7 @@ export async function invokeLLM(request: LLMRequest): Promise<LLMResponse> {
   const controller = new AbortController();
   const timer = timeoutMs === 0 ? undefined : setTimeout(() => controller.abort(), timeoutMs);
   try {
-    const response = await fetch(`${baseUrl}/api/chat`, {
-      signal: controller.signal,
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
+    const body = JSON.stringify({
         model,
         messages,
         stream: false,
@@ -199,15 +195,34 @@ export async function invokeLLM(request: LLMRequest): Promise<LLMResponse> {
           ...(request.max_tokens !== undefined ? { num_predict: request.max_tokens } : {}),
         },
         ...(request.response_format ? { format: request.response_format.json_schema.schema } : {}),
-      }),
     });
-
-    if (!response.ok) {
-      const errorData = await response.text();
-      throw new Error(`Local AI error: ${response.status} - ${errorData}`);
+    let rawText = '';
+    const attempts = request.purpose === 'code' ? 3 : 1;
+    for (let attempt = 0; attempt < attempts; attempt++) {
+      try {
+        const response = await fetch(`${baseUrl}/api/chat`, {
+          signal: controller.signal, method: 'POST',
+          headers: { 'Content-Type': 'application/json' }, body,
+        });
+        if (!response.ok) {
+          const errorData = await response.text();
+          throw new Error(`Local AI error: ${response.status} - ${errorData}`);
+        }
+        rawText = await response.text();
+        break;
+      } catch (error) {
+        const transient = error instanceof TypeError && /fetch failed|terminated|socket/i.test(error.message);
+        if (!transient || controller.signal.aborted || attempt + 1 === attempts) {
+          if (transient && request.purpose === 'code') {
+            const cause = error.cause as { code?: string; message?: string } | undefined;
+            throw new Error(`Local AI connection failed after ${attempt + 1} attempts: ${cause?.code ?? cause?.message ?? error.message}`, { cause: error });
+          }
+          throw error;
+        }
+        console.warn(`[LLM RETRY] Local code model connection failed; retry ${attempt + 1}/${attempts - 1}`);
+        await new Promise(resolve => setTimeout(resolve, 5000 * (attempt + 1)));
+      }
     }
-
-    const rawText = await response.text();
 
 let data: any;
 try {
