@@ -61,6 +61,10 @@ export function isCodeImplementationRequest(request: string) {
   // A source path is optional when the request explicitly names code or a feature.
   if (codeTask && previewRequest) return true;
   if (/(?:実装|じっそう|追加|ついか|修正|改善)(?:しないで|するな|しない|は禁止)/u.test(request)) return false;
+  // An explicit request to create a software product or UI screen is a code
+  // request even when the user does not say "code" or "feature". Keep the
+  // verb adjacent to the product so "画面の画像を作って" remains an image request.
+  if (/(?:アプリ|ソフト(?:ウェア)?|ゲーム|画面)を(?:新規に)?(?:作って|つくって|作成して|追加して|開発して|実装して)(?=[。！!\s]|$)/u.test(request)) return true;
   if (/^(?:実装|じっそう|機能を追加|きのうをついか)(?:して|してください|してほしい)[。！!\s]*$/u.test(request.trim())) return true;
   return (sourceTask && /(?:新規作成|作成|実装|追加|修正)(?:してください|してほしい|して)(?=[。！!\s]|$)/u.test(request))
     || /(?:実装|じっそう)(?:してください|してほしい|して)(?=[。！!\s]|$)/u.test(request)

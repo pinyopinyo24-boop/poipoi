@@ -63,28 +63,26 @@ beforeEach(() => { model.replies.length = 0; model.requests.length = 0; });
 afterAll(() => { vi.restoreAllMocks(); rmSync(model.root, { recursive: true, force: true }); });
 
 describe('new feature requests without source paths through the actual PC chat route', () => {
-  it('asks the intent model about an unfamiliar application request instead of treating it as casual chat', async () => {
-    model.replies.push(JSON.stringify({ domain: 'code', act: 'request', newTask: true, target: -1,
-      goal: '新しいアプリを作る', conditions: [], replaceConditions: [], question: '', confidence: 0.95 }));
+  it('routes an explicit application creation request to a code preview without waiting for intent classification', async () => {
     const result = await understandConversationTurn('771', 'new-app', '新しいアプリを作って。', []);
     expect(result).toMatchObject({ domain: 'code', execute: true, resolvedRequest: '新しいアプリを作って。' });
-    expect(model.requests).toHaveLength(1);
+    expect(model.requests).toHaveLength(0);
   });
   it('keeps an action request actionable when the last sentence only states a constraint', async () => {
     model.replies.push(JSON.stringify({ domain: 'code', act: 'request', newTask: true, target: -1,
-      goal: '新しい帳票画面を作る', conditions: ['既存画面は残す'], replaceConditions: [], question: '', confidence: 0.95 }));
-    const request = '新しい帳票画面を作って。既存の画面は消さないで。';
+      goal: '新しい計算器を作る', conditions: ['既存結果は残す'], replaceConditions: [], question: '', confidence: 0.95 }));
+    const request = '新しい計算器を作って。既存の計算結果は残して。';
     const result = await understandConversationTurn('771', 'screen-with-constraint', request, []);
     expect(result).toMatchObject({ domain: 'code', execute: true, resolvedRequest: request });
     expect(model.requests).toHaveLength(1);
   });
   it('treats a local negative rule as a requirement rather than canceling the entire creation request', async () => {
-    model.replies.push(JSON.stringify({ domain: 'code', act: 'request', newTask: true, target: -1,
-      goal: '部品登録画面を作る', conditions: ['同じ品番は重複登録しない'], replaceConditions: [], question: '', confidence: 0.95 }));
     const request = '新しい部品登録画面を作って。品番と名前を入力して保存し、同じ品番は重複登録しない。';
     const result = await understandConversationTurn('771', 'new-form', request, []);
     expect(result).toMatchObject({ domain: 'code', execute: true, readOnly: false, resolvedRequest: request });
-    expect(model.requests).toHaveLength(1);
+    expect(model.requests).toHaveLength(0);
+    expect(isCodeImplementationRequest('画面の画像を作って。')).toBe(false);
+    expect(isCodeImplementationRequest('アプリを作れる？')).toBe(false);
   });
   it('resolves a follow-up code change against the earlier task and preserves its constraints', async () => {
     const earlier = 'チャットの検索機能を追加して。' + '検索対象の詳細。'.repeat(450) + '最後の検索条件を残す。';
