@@ -31,13 +31,7 @@ it('combines staged source changes without writing an intermediate change to the
   writeFileSync(join(root, file), original);
   writeFileSync(join(root, 'package.json'), '{"dependencies":{}}');
   const agent = new (PoipoiCodeAgent as any)(root) as PoipoiCodeAgent;
-  responses.push(
-    JSON.stringify({ steps: [
-      { clauses: [0, 1], focus: 'backend' },
-      { clauses: [2], focus: 'UI integration' },
-    ] }),
-    JSON.stringify({ complete: true, missing: [] }),
-  );
+  responses.push(JSON.stringify({ complete: true, missing: [] }));
   let calls = 0;
   vi.spyOn(PoipoiCodeAgent.prototype, 'generate').mockImplementation(async function () {
     calls++;
@@ -52,5 +46,37 @@ it('combines staged source changes without writing an intermediate change to the
     expect(changes[0].content).toContain('export const backend = 2;');
     expect(changes[0].content).toContain('export const ui = backend;');
     expect(readFileSync(join(root, file), 'utf8')).toBe(original);
+  } finally { rmSync(root, { recursive: true, force: true }); }
+});
+
+it('assigns every CD copy requirement once without asking the model to plan', async () => {
+  const root = mkdtempSync(join(tmpdir(), 'poipoi-stage-cd-test-'));
+  const file = 'server/core/Feature.ts';
+  mkdirSync(join(root, 'server/core'), { recursive: true });
+  writeFileSync(join(root, file), 'export const value = 0;\n');
+  writeFileSync(join(root, 'package.json'), '{"dependencies":{}}');
+  const agent = new (PoipoiCodeAgent as any)(root) as PoipoiCodeAgent;
+  const clauses = [
+    'Windows PC版にCDから別のCDへコピーする機能を新規作成して。',
+    'CDドライブが1台なら、元CDを読み取った後に空CDへの入れ替えを案内し、書き込み後に照合する。',
+    'チャットで「CDをコピーして」と頼んだときと、チャット画面のリサイクルマーク横に追加するCDマークを押したときに、同じコピー画面を開く。',
+    '進捗とエラーを表示し、既存機能は残して。',
+    '実際の読み取り・書き込み処理を含む変更案を作成し、適用前に全変更を確認させて。',
+    'まだ適用しないで。',
+  ];
+  const stageTasks: string[] = [];
+  responses.push(JSON.stringify({ complete: true, missing: [] }));
+  vi.spyOn(PoipoiCodeAgent.prototype, 'generate').mockImplementation(async function (task) {
+    stageTasks.push(task);
+    return [{ path: file, content: `export const value = ${stageTasks.length};\n` }];
+  });
+  try {
+    await agent.generateStaged(clauses.join(''), '1');
+    expect(stageTasks).toHaveLength(2);
+    expect(stageTasks[0]).toContain(clauses[1]);
+    expect(stageTasks[1]).toContain(clauses[2]);
+    for (const clause of clauses) {
+      expect(stageTasks.filter(task => task.includes(clause))).toHaveLength(1);
+    }
   } finally { rmSync(root, { recursive: true, force: true }); }
 });

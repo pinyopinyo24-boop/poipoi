@@ -91,31 +91,24 @@ export class PoipoiCodeAgent {
     for (const directory of ['server', 'client/src', 'shared', 'src', 'mobile/src'])
       walk(resolve(this.root, directory), directory);
     await options.onProgress?.('機能全体の実装順を整理');
-    const planResponse = await invokeLLM({
-      purpose: 'code', userId, model: process.env.LOCAL_CODER_MODEL || 'qwen2.5-coder:7b',
-      temperature: 0, timeoutMs: 120000, contextWindow: 8192, max_tokens: 600,
-      response_format: { type: 'json_schema', json_schema: { name: 'poipoi_staged_code_plan',
-        schema: { type: 'object', properties: { steps: { type: 'array', minItems: 2, maxItems: 4,
-          items: { type: 'object', properties: { clauses: { type: 'array', minItems: 1, items: { type: 'integer' } },
-            focus: { type: 'string' } }, required: ['clauses', 'focus'], additionalProperties: false } } },
-          required: ['steps'], additionalProperties: false } } },
-      messages: [
-        { role: 'system', content: 'Plan implementation in 2-4 coherent stages by dependency order. Assign each numbered clause to exactly one stage. Each stage must produce real source changes, with backend before UI wiring when needed. Do not omit requirements. Return JSON only.' },
-        { role: 'user', content: JSON.stringify({ clauses: clauses.map((text, index) => ({ index, text })),
-          relevantFiles: sourcePaths.filter(file => /(?:StreamingChat|routers\.streaming|routers\.chat|routers\.ts|Home|App|CodeAgent)/i.test(file)).slice(0, 24) }) },
-      ],
+    // Keep every clause without relying on a small local model to reproduce
+    // exact indices. Device/server work precedes UI wiring in the draft.
+    const ui: number[] = [];
+    const implementation: number[] = [];
+    clauses.forEach((clause, index) => {
+      if (/画面|ボタン|マーク|表示|入力欄|クリック|\bUI\b/i.test(clause) &&
+          !/実際の読み取り|書き込み処理|保存処理|データベース/.test(clause)) ui.push(index);
+      else implementation.push(index);
     });
-    const planText = planResponse.choices?.[0]?.message?.content;
-    if (typeof planText !== 'string') throw Error('実装順を作成できませんでした。変更は適用していません。');
-    let plan: { steps?: Array<{ clauses: number[]; focus: string }> };
-    try { plan = JSON.parse(planText); } catch { throw Error('実装順の形式が不正です。変更は適用していません。'); }
-    const steps = plan.steps;
-    const assigned = steps?.flatMap(step => step.clauses) ?? [];
-    if (!steps || steps.length < 2 || steps.length > 4 ||
-        steps.some(step => !step.focus?.trim() || !Array.isArray(step.clauses) || !step.clauses.length) ||
-        assigned.length !== clauses.length || new Set(assigned).size !== clauses.length ||
-        assigned.some(index => !Number.isInteger(index) || index < 0 || index >= clauses.length))
-      throw Error('依頼の全要件を含む実装順を作成できませんでした。変更は適用していません。');
+    if (!ui.length || !implementation.length) {
+      const midpoint = Math.ceil(clauses.length / 2);
+      implementation.splice(0, implementation.length, ...clauses.slice(0, midpoint).map((_, index) => index));
+      ui.splice(0, ui.length, ...clauses.slice(midpoint).map((_, index) => index + midpoint));
+    }
+    const steps = [
+      { clauses: implementation, focus: 'Implement working core logic and supporting APIs' },
+      { clauses: ui, focus: 'Connect user interface and chat commands to the core logic' },
+    ];
 
     const temporary = mkdtempSync(join(tmpdir(), 'poipoi-code-stage-'));
     const touched = new Map<string, string | null>();
