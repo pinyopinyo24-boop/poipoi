@@ -70,6 +70,14 @@ describe('new feature requests without source paths through the actual PC chat r
     expect(result).toMatchObject({ domain: 'code', execute: true, resolvedRequest: '新しいアプリを作って。' });
     expect(model.requests).toHaveLength(1);
   });
+  it('keeps an action request actionable when the last sentence only states a constraint', async () => {
+    model.replies.push(JSON.stringify({ domain: 'code', act: 'request', newTask: true, target: -1,
+      goal: '新しい帳票画面を作る', conditions: ['既存画面は残す'], replaceConditions: [], question: '', confidence: 0.95 }));
+    const request = '新しい帳票画面を作って。既存の画面は消さないで。';
+    const result = await understandConversationTurn('771', 'screen-with-constraint', request, []);
+    expect(result).toMatchObject({ domain: 'code', execute: true, resolvedRequest: request });
+    expect(model.requests).toHaveLength(1);
+  });
   it('resolves a follow-up code change against the earlier task and preserves its constraints', async () => {
     const earlier = 'チャットの検索機能を追加して。';
     const turns = [

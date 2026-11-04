@@ -107,7 +107,7 @@ async function interpret(userId: string, original: string, turns: ChatMessage[],
     return clarification(original, error instanceof Error ? error.message : '編集する画像を選んでください。');
   }
   const operationalTopic = /画像|写真|イラスト|資料|Excel|PDF|PPT|製造|原価|在庫|予定|会議|ニュース|天気|交通|タスク|通知|音楽|検索|ネット|自己進化|コード|プログラム|機能|アプリ|ソフト|ゲーム|チャット欄|添付|貼り付|名前|記憶/i.test(original);
-  const actionRequest = /(?:作って|つくって|作成して|生成して|追加して|修正して|変更して|実装して|直して|実行して|保存して|登録して|削除して|開いて|送って|調べて|探して|まとめて)(?:ください|ほしい)?[。！!\s]*$/u.test(original);
+  const actionRequest = /(?:作って|つくって|作成して|生成して|追加して|修正して|変更して|実装して|直して|実行して|保存して|登録して|削除して|開いて|送って|調べて|探して|まとめて)(?:ください|ほしい)?(?:[。！!\n]|$)/u.test(original);
   if (!operationalTopic && !/^(?:それ|これ|もう|まだ|なお|直|続|つづ|はい|いいえ|お願い|おねがい)/u.test(original) &&
       !actionRequest && (!previousState || previousState.domain === 'conversation') && !priorImage) return simple('conversation', 'chat');
   const recent = turns.slice(-10);
