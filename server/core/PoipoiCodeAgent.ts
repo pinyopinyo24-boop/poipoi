@@ -212,7 +212,7 @@ export class PoipoiCodeAgent {
       });
       const reviewResponse = await invokeLLM({
         purpose: 'code', userId, model: process.env.LOCAL_REVIEW_MODEL?.trim() || await conversationModel(),
-        temperature: 0, timeoutMs: 120000, contextWindow: 16384, max_tokens: 768,
+        temperature: 0, timeoutMs: 0, contextWindow: 16384, max_tokens: 768,
         response_format: { type: 'json_schema', json_schema: { name: 'poipoi_staged_code_review',
           schema: { type: 'object', properties: { complete: { type: 'boolean' },
             missing: { type: 'array', items: { type: 'integer' } } },
@@ -632,22 +632,15 @@ export class PoipoiCodeAgent {
         unit.source.split('\n').filter(line => /setInput\(/.test(line)).join('\n')];
       return [];
     }) : [];
-    const configuredTimeout = Number(process.env.LOCAL_CODER_TIMEOUT_MS);
-    const timeoutMs = Number.isFinite(configuredTimeout) && configuredTimeout >= 1000
-      ? Math.min(600000, configuredTimeout) : 300000;
+    // A detached code-generation worker may need multiple model calls. Keep
+    // working until it finishes or the user stops it; zero disables only this
+    // worker's local-model timer, not ordinary chat request deadlines.
+    const timeoutMs = 0;
     const configuredContext = Number(process.env.LOCAL_CODER_CONTEXT_SIZE);
     const contextFor = (characters: number) => {
       if (Number.isFinite(configuredContext) && configuredContext >= 4096) return Math.min(32768, configuredContext);
       return characters <= 16000 ? 8192 : characters <= 40000 ? 16384 : 32768;
     };
-    // A single model call and the entire multi-stage job need separate budgets.
-    const configuredTotalTimeout = Number(process.env.LOCAL_CODER_TOTAL_TIMEOUT_MS);
-    const shortTaskTimeoutMs = Number.isFinite(configuredTotalTimeout) && configuredTotalTimeout >= 1000
-      ? Math.min(600000, configuredTotalTimeout)
-      : Math.max(timeoutMs, Math.min(540000, timeoutMs * 2));
-    const planningParts = Math.max(0, Math.ceil(Array.from(intent).length / 3000) - 1);
-    const totalTimeoutMs = shortTaskTimeoutMs + (planningParts && !Number.isFinite(configuredTotalTimeout) ? (planningParts + 1) * 90000 : 0);
-    const deadline = Date.now() + totalTimeoutMs;
     let webContext = '';
     try {
       const { researchForAZ, webResearchContext, webResearchQuery } = await import('./AZWebKnowledge');
@@ -666,23 +659,17 @@ export class PoipoiCodeAgent {
       webContext = webContext.slice(0, 6000);
     } catch (error) { webContext = 'ネット情報の参照は取得できませんでした。現在のローカルソースから判断し、外部確認済みとは報告しない。'; }
     const callCoder = async (stage: string, request: Parameters<typeof invokeLLM>[0]) => {
-      const remaining = deadline - Date.now();
-      const stageTimeoutMs = Math.min(request.timeoutMs ?? timeoutMs, remaining);
-      const limitedByTotal = stageTimeoutMs < (request.timeoutMs ?? timeoutMs);
       try {
-        if (remaining < 1000) throw new Error('自己進化の全体制限時間に達しました。変更は適用していません。');
         console.log("[AZ CODE GENERATION]", {
           stage, contextWindow: request.contextWindow, maxTokens: request.max_tokens,
           inputCharacters: JSON.stringify(request.messages).length,
-          timeoutMs: stageTimeoutMs, remainingMs: remaining, totalTimeoutMs,
+          timeoutMs: 0,
         });
         await options.onProgress?.(stage);
-        return await invokeLLM({ ...request, purpose: 'code', timeoutMs: stageTimeoutMs });
+        return await invokeLLM({ ...request, purpose: 'code', timeoutMs: 0 });
       } catch (error) {
         const detail = error instanceof Error ? error.message : String(error);
-        const budget = limitedByTotal && remaining >= 1000
-          ? '（全体制限の残り時間により、この処理の上限は' + Math.round(stageTimeoutMs / 1000) + '秒でした）' : '';
-        throw new Error(stage + "に失敗しました: " + detail + budget);
+        throw new Error(stage + "に失敗しました: " + detail);
       }
     };
     let modelIntent = intent;

@@ -171,13 +171,13 @@ export async function invokeLLM(request: LLMRequest): Promise<LLMResponse> {
   });
 
   const requestedTimeout = Number(request.timeoutMs ?? process.env.LOCAL_AI_TIMEOUT_MS ?? 120000);
-  const timeoutMs = Number.isFinite(requestedTimeout)
+  const timeoutMs = request.purpose === 'code' && requestedTimeout === 0 ? 0 : Number.isFinite(requestedTimeout)
     ? Math.max(1000, Math.min(600000, requestedTimeout)) : 120000;
   const requestedContext = Number(request.contextWindow ?? process.env.LOCAL_AI_CONTEXT_SIZE ?? 32768);
   const contextWindow = Number.isFinite(requestedContext)
     ? Math.max(4096, Math.min(32768, Math.trunc(requestedContext))) : 32768;
   const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  const timer = timeoutMs === 0 ? undefined : setTimeout(() => controller.abort(), timeoutMs);
   try {
     const response = await fetch(`${baseUrl}/api/chat`, {
       signal: controller.signal,
@@ -240,7 +240,7 @@ try {
       },
     };
   } catch (error) {
-    const failure = controller.signal.aborted
+    const failure = timeoutMs !== 0 && controller.signal.aborted
       ? new DOMException(`Local AI request timed out after ${Math.round(timeoutMs / 1000)} seconds`, 'TimeoutError')
       : error;
     const errorMsg = failure instanceof Error ? failure.message : String(failure);

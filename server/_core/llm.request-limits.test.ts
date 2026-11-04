@@ -31,6 +31,25 @@ describe('local model request limits', () => {
     await invokeLLM({ ...request, contextWindow: 8192, timeoutMs: 300000 });
     expect(JSON.parse(fetch.mock.calls[0][1].body).options.num_ctx).toBe(8192);
   });
+  it('lets a code generation call wait without a timer when explicitly unbounded', async () => {
+    vi.useFakeTimers();
+    let resolveFetch!: (value: { ok: boolean; text: () => Promise<string> }) => void;
+    let started!: () => void;
+    const ready = new Promise<void>(resolve => { started = resolve; });
+    let signal!: AbortSignal;
+    vi.stubGlobal('fetch', vi.fn((_url: string, options: RequestInit) => {
+      signal = options.signal!;
+      started();
+      return new Promise(resolve => { resolveFetch = resolve; });
+    }));
+    const result = invokeLLM({ ...request, purpose: 'code', timeoutMs: 0 });
+    await ready;
+    await vi.advanceTimersByTimeAsync(24 * 60 * 60 * 1000);
+    expect(signal.aborted).toBe(false);
+    expect(vi.getTimerCount()).toBe(0);
+    resolveFetch({ ok: true, text: async () => JSON.stringify({ message: { content: '{}' } }) });
+    await expect(result).resolves.toMatchObject({ choices: [{ message: { content: '{}' } }] });
+  });
   for (const [label, timeoutMs] of [['coder', 300000], ['default', undefined]] as const) {
     it(`keeps the ${label} deadline bounded and aborts at its own limit`, async () => {
       vi.useFakeTimers();
