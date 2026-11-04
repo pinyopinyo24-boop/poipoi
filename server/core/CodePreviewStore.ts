@@ -126,31 +126,53 @@ export function describeCodePreview(preview: CodePreview) {
   };
 }
 
-// Reserve synchronously before any I/O; two requests cannot apply the same preview.
+// Serialize approval reservations across server processes, not only within one
+// process. A leftover lock after a crash deliberately blocks reapproval until
+// the interrupted application has been inspected; never retry it automatically.
 const reservations = new Set<string>();
-export async function reserveCodePreview(userId: string, id: string) {
+async function reserveExclusively<T>(userId: string, id: string, action: () => Promise<T>): Promise<T> {
   const key = location(userId, id);
-  if (reservations.has(key)) throw new Error('コード変更を適用中です');
+  if (reservations.has(key)) throw new Error('コード変更を処理中です');
   reservations.add(key);
+  let lock: Awaited<ReturnType<typeof fs.open>> | undefined;
+  const lockFile = key + '.reservation.lock';
   try {
+    try {
+      lock = await fs.open(lockFile, 'wx', 0o600);
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === 'EEXIST')
+        throw new Error('別プロセスが承認を処理中か、中断した承認ロックの確認が必要です');
+      throw error;
+    }
+    return await action();
+  } finally {
+    if (lock) {
+      try {
+        await lock.close();
+      } finally {
+        await fs.rm(lockFile, { force: true });
+      }
+    }
+    reservations.delete(key);
+  }
+}
+export async function reserveCodePreview(userId: string, id: string) {
+  return reserveExclusively(userId, id, async () => {
     const preview = await readCodePreview(userId, id);
     if (preview.status !== 'pending' || preview.expires <= Date.now()) throw new Error('Preview expired or already used');
     preview.status = 'applying';
     await saveCodePreview(preview);
     return preview;
-  } finally { reservations.delete(key); }
+  });
 }
 
 // Explicit continuation is limited to an interrupted, already-written new file.
 export async function reserveInterruptedCodePreview(userId: string, id: string) {
-  const key = location(userId, id);
-  if (reservations.has(key)) throw new Error('コード変更を処理中です');
-  reservations.add(key);
-  try {
+  return reserveExclusively(userId, id, async () => {
     const preview = await readCodePreview(userId, id);
     if (!canResumeCodeApproval(preview)) throw new Error('安全に続行できる中断状態ではありません');
     preview.application = { startedAt: Date.now(), phase: 'preparing', typeCheckRequested: true, resumeWritten: true };
     await saveCodePreview(preview);
     return preview;
-  } finally { reservations.delete(key); }
+  });
 }
