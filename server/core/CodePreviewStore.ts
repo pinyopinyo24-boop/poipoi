@@ -146,14 +146,17 @@ async function reserveExclusively<T>(userId: string, id: string, action: () => P
     }
     return await action();
   } finally {
-    if (lock) {
-      try {
-        await lock.close();
-      } finally {
-        await fs.rm(lockFile, { force: true });
+    try {
+      if (lock) {
+        try {
+          await lock.close();
+        } finally {
+          await fs.rm(lockFile, { force: true });
+        }
       }
+    } finally {
+      reservations.delete(key);
     }
-    reservations.delete(key);
   }
 }
 export async function reserveCodePreview(userId: string, id: string) {
