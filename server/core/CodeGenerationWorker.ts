@@ -81,6 +81,9 @@ export async function runCodeGenerationWorker(userId: string, id: string, jobId:
     preview.status = 'failed';
     preview.changes = [];
     preview.generation.phase = '生成失敗';
+    // A warning about reviewing a candidate applies only to a pending
+    // proposal, never to a failed job with no approvable files.
+    delete preview.generation.reviewWarning;
     preview.generation.error = String(error instanceof Error ? error.message : error).slice(0, 4000);
   } finally {
     preview.generation.finishedAt = Date.now();

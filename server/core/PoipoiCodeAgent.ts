@@ -1234,7 +1234,53 @@ export class PoipoiCodeAgent {
           };
           visit(parsed);
         }
-        const syntaxErrors = [...sampleErrors, ...placementErrors, ...this.syntaxErrors(generated)];
+        let syntaxErrors = [...sampleErrors, ...placementErrors, ...this.syntaxErrors(generated)];
+        // Keep a valid multi-file draft intact when only a newly created
+        // module has a small syntax error. Ask for bounded, exact edits to that
+        // module instead of asking the model to regenerate every integration.
+        if (!isolatedDisplay && !sampleErrors.length && !placementErrors.length) {
+          for (const change of generated) {
+            if (change.baseHash !== null || change.content.length > 12000 ||
+                !this.syntaxErrors([change]).length) continue;
+            const errors = this.syntaxErrors([change]);
+            try {
+              const repair = await callCoder('生成ファイルの構文修復', {
+                userId, timeoutMs: 180000,
+                model: process.env.LOCAL_CODER_MODEL || 'qwen2.5-coder:7b',
+                temperature: 0, contextWindow: contextFor(change.content.length + 4096),
+                max_tokens: 1024,
+                response_format: { type: 'json_schema', json_schema: {
+                  name: 'poipoi_syntax_repair', schema: { type: 'object', properties: {
+                    edits: { type: 'array', minItems: 1, maxItems: 3, items: { type: 'object', properties: {
+                      oldText: { type: 'string', minLength: 1, maxLength: 500 },
+                      newText: { type: 'string', maxLength: 1000 },
+                    }, required: ['oldText', 'newText'], additionalProperties: false } },
+                  }, required: ['edits'], additionalProperties: false },
+                } },
+                messages: [
+                  { role: 'system', content: 'Fix ONLY the reported TypeScript syntax errors. Return JSON edits with exact oldText from the provided file and the smallest possible replacement. Preserve all functions, API calls and behavior. Do not rewrite the file or add placeholders.' },
+                  { role: 'user', content: JSON.stringify({ path: change.path, errors, content: change.content }) },
+                ],
+              });
+              const parsed = JSON.parse(repair.choices?.[0]?.message?.content ?? '');
+              if (!Array.isArray(parsed.edits) || parsed.edits.length < 1 || parsed.edits.length > 3) throw Error('Invalid repair');
+              let corrected = change.content;
+              for (const edit of parsed.edits) {
+                if (typeof edit.oldText !== 'string' || !edit.oldText || edit.oldText.length > 500 ||
+                    typeof edit.newText !== 'string' || edit.newText.length > 1000 ||
+                    corrected.indexOf(edit.oldText) !== corrected.lastIndexOf(edit.oldText) ||
+                    !corrected.includes(edit.oldText)) throw Error('Unsafe repair');
+                corrected = corrected.replace(edit.oldText, edit.newText);
+              }
+              if (corrected === change.content || this.syntaxErrors([{ ...change, content: corrected }]).length)
+                throw Error('Repair did not resolve syntax');
+              change.content = corrected;
+            } catch {
+              // The existing full-proposal retry still owns unresolved errors.
+            }
+          }
+          syntaxErrors = this.syntaxErrors(generated);
+        }
         await options.onCandidate?.(generated, syntaxErrors);
         if (syntaxErrors.length) {
           if (syntaxRetryUsed) throw new Error((sampleErrors.length ? '生成コードが依頼された文字数の数え方を満たしていません。' : '生成コードの構文エラーが残っています。') + "変更は適用していません: " + syntaxErrors.slice(0, 10).join("; ").slice(0, 2000));

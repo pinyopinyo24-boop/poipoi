@@ -64,6 +64,18 @@ beforeEach(() => { model.replies.length = 0; model.requests.length = 0; });
 afterAll(() => { vi.restoreAllMocks(); rmSync(model.root, { recursive: true, force: true }); });
 
 describe('new feature requests without source paths through the actual PC chat route', () => {
+  it('repairs a malformed new module without regenerating its valid UI integration', async () => {
+    const malformed = JSON.parse(connected);
+    malformed.changes[1].content = component + '\n}';
+    model.replies.push(JSON.stringify(malformed), JSON.stringify({ edits: [{ oldText: '\n}', newText: '' }] }), accepted);
+    const changes = await PoipoiCodeAgent.getInstance().generate(request, '771');
+    expect(changes.find(change => change.path === modulePath)?.content).toBe(component);
+    expect(changes.find(change => change.path === page)?.content).toContain('<CharacterCount text={input} />');
+    expect(model.requests).toHaveLength(3);
+    expect(model.requests[1].messages[0].content).toContain('Fix ONLY the reported TypeScript syntax errors');
+    expect(readFileSync(model.root + '/' + page, 'utf8')).toBe(original);
+    expect(existsSync(model.root + '/' + modulePath)).toBe(false);
+  });
   it('reads an existing integration file before regenerating a proposed edit to it', async () => {
     const target = 'server/core/AZConversationUnderstanding.ts';
     writeFileSync(model.root + '/' + target, 'export const value = 1;\n');
