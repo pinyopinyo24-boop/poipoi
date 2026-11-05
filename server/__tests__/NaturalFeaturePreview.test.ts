@@ -95,6 +95,17 @@ describe('new feature requests without source paths through the actual PC chat r
       expect(readFileSync(model.root + '/' + target, 'utf8')).toBe(originalSource);
     } finally { rmSync(model.root + '/' + target, { force: true }); }
   });
+  it('bounds requirement review and reports an inconclusive result without applying code', async () => {
+    model.replies.push(connected, () => { throw new Error('Local AI request timed out'); });
+    const onReviewWarning = vi.fn();
+    const changes = await PoipoiCodeAgent.getInstance().generate(request, '771', { onReviewWarning });
+    expect(changes).toHaveLength(2);
+    expect(model.requests[1].timeoutMs).toBe(180000);
+    expect(model.requests[1].model).toBe('qwen2.5-coder:7b');
+    expect(onReviewWarning).toHaveBeenCalledWith(expect.stringContaining('正しさは未確認'));
+    expect(readFileSync(model.root + '/' + page, 'utf8')).toBe(original);
+    expect(existsSync(model.root + '/' + modulePath)).toBe(false);
+  });
   it('grounds a new screen in the application route and home instead of the chat page', async () => {
     const newScreenRequest = '新しい部品登録画面を作って。品番と名前を入力して保存し、同じ品番は重複登録しない。';
     model.replies.push(unconnected, unconnected);
@@ -190,7 +201,7 @@ describe('new feature requests without source paths through the actual PC chat r
     expect(changes[0].path).toBe(target);
     expect(model.requests).toHaveLength(4);
     expect(model.requests.map(call => call.model)).toEqual([
-      'qwen2.5:7b', 'qwen2.5:7b', 'qwen2.5-coder:7b', 'qwen2.5:7b',
+      'qwen2.5:7b', 'qwen2.5:7b', 'qwen2.5-coder:7b', 'qwen2.5-coder:7b',
     ]);
     expect(model.requests[0].messages.at(-1).content).toContain(leading);
     expect(model.requests[1].messages.at(-1).content).toContain(trailing);
