@@ -77,6 +77,24 @@ describe('new feature requests without source paths through the actual PC chat r
       expect(readFileSync(model.root + '/' + target, 'utf8')).toBe('export const value = 1;\n');
     } finally { rmSync(model.root + '/' + target, { force: true }); }
   });
+  it('shows an omitted existing source range before regenerating its edit', async () => {
+    const target = 'server/core/AZConversationUnderstanding.ts';
+    const marker = 'export const answer = 1;';
+    const originalSource = 'export const start = true;\n' + '// contextual source padding\n'.repeat(650) + marker + '\n';
+    writeFileSync(model.root + '/' + target, originalSource);
+    const draft = JSON.stringify({ changes: [{ path: target, edits: [
+      { oldText: marker, newText: 'export const answer = 2;' },
+    ] }] });
+    model.replies.push(draft, draft, accepted);
+    try {
+      const changes = await PoipoiCodeAgent.getInstance().generate(target + ' の値を更新して', '771');
+      expect(changes[0].content).toBe(originalSource.replace(marker, 'export const answer = 2;'));
+      expect(JSON.stringify(model.requests[0].messages)).not.toContain(marker);
+      expect(JSON.stringify(model.requests[1].messages)).toContain(marker);
+      expect(model.requests).toHaveLength(3);
+      expect(readFileSync(model.root + '/' + target, 'utf8')).toBe(originalSource);
+    } finally { rmSync(model.root + '/' + target, { force: true }); }
+  });
   it('grounds a new screen in the application route and home instead of the chat page', async () => {
     const newScreenRequest = '新しい部品登録画面を作って。品番と名前を入力して保存し、同じ品番は重複登録しない。';
     model.replies.push(unconnected, unconnected);

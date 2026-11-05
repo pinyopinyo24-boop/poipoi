@@ -1126,6 +1126,27 @@ export class PoipoiCodeAgent {
           if (message.startsWith('Invalid source anchor: ')) throw error;
           const unreviewed = message.startsWith('Generated change targets an unreviewed file: ')
             ? message.slice('Generated change targets an unreviewed file: '.length).replace(/\\/g, '/') : '';
+          const omitted = message.startsWith('Edit targets source omitted from this model request: ')
+            ? message.slice('Edit targets source omitted from this model request: '.length).replace(/\\/g, '/') : '';
+          if (omitted && candidates.includes(omitted) && sourceContents.has(omitted) && sourceReadCount < 3) {
+            const source = sourceContents.get(omitted)!.replace(/\r\n/g, '\n');
+            const edit = proposals.find(change => change.path.replace(/\\/g, '/') === omitted)?.edits?.find(item =>
+              typeof item.oldText === 'string' && source.includes(item.oldText.replace(/\r\n/g, '\n')));
+            const position = edit?.oldText ? source.indexOf(edit.oldText.replace(/\r\n/g, '\n')) : -1;
+            const line = position < 0 ? 1 : source.slice(0, position).split('\n').length;
+            const span = position < 0 ? 20 : Math.min(40, edit!.oldText!.split(/\r?\n/).length + 5);
+            // Give the model the exact omitted range on the next request.
+            // The rejected edit is discarded; source being in memory alone is
+            // not evidence that the model has seen it.
+            if (loadSource(omitted, Math.max(1, line - 2), line + span)) {
+              sourceReadCount++;
+              followUp = 'The previous edit targeted a source range omitted from your request: ' + omitted +
+                '. The relevant ORIGINAL lines are now shown. Discard the previous edit and regenerate the COMPLETE change set. ' +
+                'Use only oldText that appears verbatim in the reviewed source; request more lines if needed.';
+              proposals = [];
+              continue;
+            }
+          }
           // A model may discover a real integration point after the initial
           // inventory was selected. Read it and regenerate; never accept the
           // proposed edit to a file whose source the model has not seen.
