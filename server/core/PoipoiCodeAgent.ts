@@ -882,6 +882,23 @@ export class PoipoiCodeAgent {
             const resolved = resolveEdit(edit, normalizedPath, after);
             const oldText = resolved.oldText.replace(/\r\n/g, "\n");
             const newText = resolved.newText.replace(/\r\n/g, "\n");
+            // Replacing only a function's opening declaration with a complete
+            // function leaves its original body at module scope. This also
+            // bypasses preservation of existing validation and ownership checks.
+            if (!edit.anchorId && oldText !== newText) {
+              const ts = requireCompiler('typescript') as typeof import('typescript');
+              const parsed = ts.createSourceFile(normalizedPath, nextContent, ts.ScriptTarget.Latest, true);
+              let partialFunction = false;
+              const visit = (node: import('typescript').Node) => {
+                if (ts.isFunctionDeclaration(node) && node.body &&
+                    nextContent.slice(node.getStart(parsed), node.body.getStart(parsed) + 1).trim() === oldText.trim())
+                  partialFunction = true;
+                ts.forEachChild(node, visit);
+              };
+              visit(parsed);
+              if (partialFunction) throw new Error('Partial function declaration edit is forbidden: ' + normalizedPath +
+                '. Preserve the entire existing function, including its original body and security checks. Insert additions at a complete declaration boundary.');
+            }
             // JSX markup may be changed only at a complete AST node boundary.
             // Reject partial closing tags, expressions and import/JSX mixtures.
             if (normalizedPath.endsWith('.tsx') && !edit.anchorId &&

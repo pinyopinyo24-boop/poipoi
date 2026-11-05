@@ -64,6 +64,26 @@ beforeEach(() => { model.replies.length = 0; model.requests.length = 0; });
 afterAll(() => { vi.restoreAllMocks(); rmSync(model.root, { recursive: true, force: true }); });
 
 describe('new feature requests without source paths through the actual PC chat route', () => {
+  it('rejects the observed function-header replacement before it strands the original ownership checks', async () => {
+    const target = 'server/core/UploadCopy.ts';
+    const header = 'async function resolveUpload(file: string, userId: string): Promise<string> {';
+    const source = header + '\n  if (userId !== file) throw new Error("Not owned");\n  return file;\n}\n';
+    const addition = 'export function copyCD() { return "draft"; }\n';
+    writeFileSync(model.root + '/' + target, source);
+    model.replies.push(JSON.stringify({ changes: [{ path: target, edits: [{ oldText: header,
+      newText: header + '\n  return file;\n}\n' + addition }] }] }), call => {
+        expect(call.messages.at(-1).content).toContain('Partial function declaration edit is forbidden');
+        return JSON.stringify({ changes: [{ path: target, edits: [{ oldText: source, newText: source + addition }] }] });
+      }, accepted);
+    try {
+      const candidate = vi.fn();
+      const changes = await PoipoiCodeAgent.getInstance().generate(target + 'に関数を追加して。既存機能は残して。', '771', { onCandidate: candidate });
+      expect(changes[0].content).toBe(source + addition);
+      expect(candidate).toHaveBeenCalledTimes(1);
+      expect(candidate.mock.calls[0][1]).toEqual([]);
+      expect(readFileSync(model.root + '/' + target, 'utf8')).toBe(source);
+    } finally { rmSync(model.root + '/' + target, { force: true }); }
+  });
   it('repairs a malformed new module without regenerating its valid UI integration', async () => {
     const malformed = JSON.parse(connected);
     malformed.changes[1].content = component + '\n}';
