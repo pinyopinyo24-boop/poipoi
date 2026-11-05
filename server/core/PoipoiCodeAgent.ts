@@ -609,6 +609,19 @@ export class PoipoiCodeAgent {
         };
         findNamedUI(parsed);
         shownNamedUI = shown;
+        // A button-backed feature may need component state. Show a real hook
+        // insertion point as well as the visible JSX button; import anchors
+        // are never a valid place to call a hook.
+        if (shownNamedUI) {
+          const component = parsed.statements.find(statement => ts.isFunctionDeclaration(statement) &&
+            statement.name?.text === 'StreamingChat');
+          const state = component && ts.isFunctionDeclaration(component) && component.body?.statements.find(statement =>
+            ts.isVariableStatement(statement) && statement.declarationList.declarations.some(declaration =>
+              ts.isArrayBindingPattern(declaration.name) &&
+              declaration.name.elements.some(element => ts.isBindingElement(element) &&
+                element.name.getText(parsed) === 'settingsOpen')));
+          if (state) showNode(state);
+        }
       }
       const findDeclarations = (node: import('typescript').Node) => {
         if ((ts.isVariableDeclaration(node) || ts.isFunctionDeclaration(node)) &&
@@ -1070,6 +1083,24 @@ export class PoipoiCodeAgent {
       }
       if (proposals.length) {
         if (proposal.readFiles?.length) throw new Error('変更案と追加ソース要求が混在しています。未確認の変更案は保存しません。');
+        if (uiFeature && /リサイクルマーク|♻️?/.test(intent)) {
+          const stateAnchor = [...anchors].find(([, unit]) => unit.context === 'componentBody' &&
+            /\[settingsOpen,\s*setSettingsOpen\]/.test(unit.source) && visibleSource.includes(unit.source));
+          const buttonAnchor = [...anchors].find(([, unit]) => unit.context === 'jsxChildren' &&
+            unit.source.includes('♻️') && visibleSource.includes(unit.source));
+          for (const change of proposals) {
+            if (change.path.replace(/\\/g, '/') !== uiPage) continue;
+            for (const edit of change.edits ?? []) {
+              const unit = edit.anchorId ? anchors.get(edit.anchorId) : undefined;
+              if (unit?.context !== 'module' || edit.operation === 'replace') continue;
+              if (stateAnchor && /^\s*const\s+\[[^\]]+\]\s*=\s*use[A-Z]\w*\s*\(/.test(edit.newText)) {
+                edit.anchorId = stateAnchor[0]; edit.operation = 'insertAfter';
+              } else if (buttonAnchor && /^\s*<button\b/.test(edit.newText)) {
+                edit.anchorId = buttonAnchor[0]; edit.operation = 'insertAfter';
+              }
+            }
+          }
+        }
         const invalidNewFiles = proposals.filter(change => {
           const file = change.path?.replace(/\\/g, "/");
           return typeof file === "string" &&

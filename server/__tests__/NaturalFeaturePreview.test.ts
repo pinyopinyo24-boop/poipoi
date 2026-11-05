@@ -272,6 +272,29 @@ describe('new feature requests without source paths through the actual PC chat r
       expect(readFileSync(model.root + '/' + page, 'utf8')).toBe(actual);
     } finally { writeFileSync(model.root + '/' + page, original); }
   });
+  it('places a generated CD state hook inside the component and its button beside recycle', async () => {
+    const actual = readFileSync(new URL('../../client/src/pages/StreamingChat.tsx', import.meta.url), 'utf8');
+    writeFileSync(model.root + '/' + page, actual);
+    const importSource = actual.match(/^import .+;$/m)![0];
+    const moduleId = 'a' + createHash('sha256').update(page + '\n' + importSource).digest('hex').slice(0, 12);
+    const hook = 'const [cdOpen, setCdOpen] = useState(false);';
+    const button = '<button type="button" onClick={() => setCdOpen(true)}>CD</button>';
+    try {
+      model.replies.push(JSON.stringify({ changes: [{ path: page, edits: [
+        { anchorId: moduleId, operation: 'insertAfter', newText: hook },
+        { anchorId: moduleId, operation: 'insertAfter', newText: button },
+      ] }] }), accepted);
+      const changes = await PoipoiCodeAgent.getInstance().generate(
+        'リサイクルマーク横にCDボタンを追加し、クリックでCD画面を開く。', 'system');
+      const source = changes[0].content;
+      expect(source.indexOf(hook)).toBeGreaterThan(source.indexOf('export default function StreamingChat()'));
+      expect(source.indexOf(hook)).toBeLessThan(source.indexOf('  return ('));
+      expect(source.indexOf(button)).toBeGreaterThan(source.indexOf('♻️'));
+      expect(source.indexOf(button)).toBeLessThan(source.indexOf('⚙️'));
+      expect(model.requests).toHaveLength(2);
+      expect(readFileSync(model.root + '/' + page, 'utf8')).toBe(actual);
+    } finally { writeFileSync(model.root + '/' + page, original); }
+  });
   it('rejects JSX placed after a module import and requests a JSX child anchor', async () => {
     const importSource = 'import { useState } from "react";';
     const moduleId = 'a' + createHash('sha256').update(page + '\n' + importSource).digest('hex').slice(0, 12);
