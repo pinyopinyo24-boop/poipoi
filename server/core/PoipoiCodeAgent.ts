@@ -64,6 +64,17 @@ type GeneratedCodeProposal = {
   reason?: string;
 };
 
+// Staged requests start with this marker; ordinary chat tasks can contain it
+// later in the prompt. In either case, route using only the current stage's
+// actual requirement, not the later compatibility notes for other stages.
+export function currentCodeRequest(task: string): string {
+  const marker = '現在のユーザー依頼:\n';
+  const start = task.indexOf(marker);
+  if (start < 0) return task;
+  return task.slice(start + marker.length)
+    .split(/\n(?:参照する既存の接続箇所|直前の参考会話)[^\n]*:/)[0].trim();
+}
+
 export interface CodeTaskResult {
   success: boolean;
   changes: CodeChange[];
@@ -98,7 +109,7 @@ export class PoipoiCodeAgent {
     onCandidate?: (changes: readonly CodeChange[], errors: readonly string[]) => void | Promise<void>;
     onReviewWarning?: (warning: string) => void | Promise<void>;
   } = {}): Promise<CodeChange[]> {
-    const intent = task.split("\n現在のユーザー依頼:\n")[1]?.split("\n直前の参考会話")[0] ?? task;
+    const intent = currentCodeRequest(task);
     const clauses = intent.split(/(?<=。)/u).map(value => value.trim()).filter(Boolean);
     if (clauses.length < 3) return this.generate(task, userId, options);
     const sourcePaths: string[] = [];
@@ -402,7 +413,7 @@ export class PoipoiCodeAgent {
     // Discover relevant tracked source context when a user names a capability rather
     // than a path. Never run project code or expose configuration/secrets.
     // Route from the actual request, not from the generic evolution instructions.
-    const intent = task.split("\n現在のユーザー依頼:\n")[1]?.split("\n直前の参考会話")[0] ?? task;
+    const intent = currentCodeRequest(task);
     const explicit = intent.replace(/\\/g, "/").match(/(?:server|mobile|client|shared|src)\/[a-zA-Z0-9_./-]+\.(?:tsx?|jsx?)\b/g) ?? [];
     const tokens: string[] = intent.normalize('NFKC').toLowerCase().match(/[a-z][a-z0-9_-]{2,}/g) ?? [];
     const hints = [

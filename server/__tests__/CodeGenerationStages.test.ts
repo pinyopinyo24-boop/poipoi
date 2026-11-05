@@ -11,7 +11,7 @@ vi.mock('../_core/llm', () => ({ invokeLLM: vi.fn(async () => ({
 })) }));
 vi.mock('../_core/ai/ConversationModel', () => ({ conversationModel: async () => 'review-model' }));
 
-import { PoipoiCodeAgent, relocateStreamingRouterImports } from '../core/PoipoiCodeAgent';
+import { PoipoiCodeAgent, currentCodeRequest, relocateStreamingRouterImports } from '../core/PoipoiCodeAgent';
 import { needsStagedGeneration } from '../core/CodeGenerationWorker';
 
 afterEach(() => { responses.length = 0; vi.restoreAllMocks(); });
@@ -34,6 +34,16 @@ it('routes a multi-part UI and device request to staged generation', () => {
     '進捗とエラーを表示し、既存機能は残して。実際の読み取り・書き込み処理を含む変更案を作成し、適用前に全変更を確認させて。まだ適用しないで。';
   expect(needsStagedGeneration(request)).toBe(true);
   expect(needsStagedGeneration('チャットの文字数を表示して。')).toBe(false);
+});
+
+it('keeps a staged model call scoped to its current requirement', () => {
+  const hardware = '実際のCD読み取りと書き込みを作る。';
+  const all = 'CD画面とボタンも作る。';
+  const stage = '現在のユーザー依頼:\n' + hardware + '\n参照する既存の接続箇所: server/routers.streaming.ts' +
+    '\n直前の参考会話（実装条件）:\nComplete user goal for compatibility across stages: ' + all;
+  expect(currentCodeRequest(stage)).toBe(hardware);
+  expect(currentCodeRequest('背景\n' + stage)).toBe(hardware);
+  expect(currentCodeRequest(all)).toBe(all);
 });
 
 it('combines staged source changes without writing an intermediate change to the real project', async () => {
