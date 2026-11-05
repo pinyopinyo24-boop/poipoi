@@ -64,6 +64,21 @@ beforeEach(() => { model.replies.length = 0; model.requests.length = 0; });
 afterAll(() => { vi.restoreAllMocks(); rmSync(model.root, { recursive: true, force: true }); });
 
 describe('new feature requests without source paths through the actual PC chat route', () => {
+  it('rejects invented Windows SDK package imports before reviewing a proposal', async () => {
+    const target = 'server/core/ExistingDependency.ts';
+    const source = 'export const value = 1;\n';
+    writeFileSync(model.root + '/' + target, source);
+    model.replies.push(JSON.stringify({ changes: [{ path: target, content: "import { IStream } from 'imapi2';\n" + source }] }),
+      call => {
+        expect(call.messages.at(-1).content).toContain('undeclared dependency: imapi2');
+        return JSON.stringify({ changes: [{ path: target, content: source + 'export const second = 2;\n' }] });
+      }, accepted);
+    try {
+      const changes = await PoipoiCodeAgent.getInstance().generate(target + 'を修正して', '771');
+      expect(changes[0].content).not.toContain('imapi2');
+      expect(readFileSync(model.root + '/' + target, 'utf8')).toBe(source);
+    } finally { rmSync(model.root + '/' + target, { force: true }); }
+  });
   it('rejects the observed function-header replacement before it strands the original ownership checks', async () => {
     const target = 'server/core/UploadCopy.ts';
     const header = 'async function resolveUpload(file: string, userId: string): Promise<string> {';

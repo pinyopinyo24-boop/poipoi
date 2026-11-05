@@ -71,8 +71,8 @@ describe('syntax validation before saving an AI proposal', () => {
     model.replies.push(broken, repaired, accepted);
     const onCandidate = vi.fn();
     const result = await PoipoiCodeAgent.getInstance().generate(task, 'system', { onCandidate });
-    expect(onCandidate).toHaveBeenCalledTimes(2);
-    expect(onCandidate.mock.calls[0][1].join(' ')).toContain('TS1128');
+    expect(onCandidate).toHaveBeenCalledTimes(1);
+    expect(onCandidate.mock.calls[0][1]).toEqual([]);
     expect(onCandidate.mock.calls[0][0][0].content).not.toBe(original);
     expect(result).toHaveLength(1);
     expect(result[0].content).toBe(original + addition);
@@ -80,15 +80,14 @@ describe('syntax validation before saving an AI proposal', () => {
     expect(readFileSync(model.root + '/' + target, 'utf8')).toBe(original);
     expect(model.requests).toHaveLength(3);
     const retry = JSON.stringify(model.requests[1].messages);
-    expect(retry).toContain('RECONSTRUCTED');
-    expect(retry).toContain('TS1128');
+    expect(retry).toContain('Partial function declaration edit is forbidden');
     const review = JSON.parse(model.requests[2].messages.at(-1).content);
     expect(review.files[0].resultingSource).toBe(original + addition);
   });
 
   it('stops after one failed syntax correction and never submits broken code for approval', async () => {
     model.replies.push(broken, broken);
-    await expect(PoipoiCodeAgent.getInstance().generate(task)).rejects.toThrow('構文エラーが残っています');
+    await expect(PoipoiCodeAgent.getInstance().generate(task)).rejects.toThrow('Partial function declaration edit is forbidden');
     expect(model.requests).toHaveLength(2);
     expect(readFileSync(model.root + '/' + target, 'utf8')).toBe(original);
     expect(existsSync(model.root + '/data/code-previews')).toBe(false);
@@ -99,7 +98,7 @@ describe('syntax validation before saving an AI proposal', () => {
     const content = 'throw new Error("must not execute");\nexport const value = 1;';
     model.replies.push(
       JSON.stringify({ changes: [{ path: file, content: 'export const value = ;' }] }),
-      JSON.stringify({ changes: [{ path: file, content }] }), accepted,
+      JSON.stringify({ edits: [{ oldText: 'export const value = ;', newText: content }] }), accepted,
     );
     const result = await PoipoiCodeAgent.getInstance().generate('Create ' + file + '. Reference ' + target + ' only.');
     expect(result[0].content).toBe(content);
@@ -131,9 +130,7 @@ describe('syntax validation before saving an AI proposal', () => {
     expect(prompt).toContain(composer);
     expect(prompt).toContain(handler);
     const correction = model.requests[1].messages.at(-1).content;
-    expect(correction).toContain('TS17008');
-    expect(correction).toContain('affectedSource');
-    expect(correction).toContain('reconstructed');
+    expect(correction).toContain('JSX編集が完全な構文単位ではありません');
     expect(correction).toContain('original');
     expect(result[0].content).toBe(source.replace(input, input + '\n<output>{[...input].length}文字</output>'));
     expect(readFileSync(model.root + '/' + file, 'utf8')).toBe(source);

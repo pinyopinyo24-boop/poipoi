@@ -12,7 +12,7 @@ import {
 import { dirname, resolve, relative, join } from "path";
 import { execFile, execFileSync } from "child_process";
 import { createHash, randomUUID } from "node:crypto";
-import { createRequire } from "node:module";
+import { createRequire, isBuiltin } from "node:module";
 import { tmpdir } from "node:os";
 import { invokeLLM } from "../_core/llm";
 import { conversationModel } from "../_core/ai/ConversationModel";
@@ -163,6 +163,8 @@ export class PoipoiCodeAgent {
         writeFileSync(target, readFileSync(this.safePath(file)));
       }
       writeFileSync(resolve(temporary, 'package.json'), readFileSync(resolve(this.root, 'package.json')));
+      if (existsSync(resolve(this.root, 'tsconfig.json')))
+        writeFileSync(resolve(temporary, 'tsconfig.json'), readFileSync(resolve(this.root, 'tsconfig.json')));
       const stagedAgent = new PoipoiCodeAgent(temporary);
       for (const [index, step] of steps.entries()) {
         await options.onProgress?.(`機能を段階生成 ${index + 1}/${steps.length}`);
@@ -184,6 +186,7 @@ export class PoipoiCodeAgent {
           'Microsoft Learn: https://learn.microsoft.com/en-us/windows-hardware/drivers/ddi/ntddcdrm/ni-ntddcdrm-ioctl_cdrom_raw_read — DeviceIoControl with RAW_READ_INFO reads CD sectors, including CDDA track mode.',
           'Microsoft Learn: https://learn.microsoft.com/en-us/windows/win32/api/imapi2/nn-imapi2-idiscformat2rawcd — IDiscFormat2RawCD writes a raw CD image. Data-CD file copying and image creation do not preserve audio tracks or guarantee a sector-identical clone.',
           'Target Windows. Implement actual source reading into temporary storage before the one-drive swap, media-ready checks, actual writing to the selected drive, and independent post-write readback/verification. If data and audio media differ, handle their formats explicitly rather than claiming one path copies both. Use no Unix dd, cdrecord, /dev/null or dummy read/write/compare functions. Do not pretend hardware was tested.',
+          'Windows SDK interfaces are not Node packages. Use only installed dependencies or a real Windows system bridge. Importing imapi2 or node-ffi-napi does not create that bridge. fs.writeFile to a drive directory, data.bin or a CD folder is ordinary file I/O, not optical-disc burning.',
         ].join('\n') : [
           'Implement the following coherent part of a larger PoiPoi feature in the existing TypeScript project.',
           'This is a DRAFT in a disposable source copy. Do not apply or commit. Preserve existing behavior.',
@@ -951,6 +954,25 @@ export class PoipoiCodeAgent {
         }
         if (normalizedPath === 'server/routers.streaming.ts' && sourceContents.has(normalizedPath))
           nextContent = relocateStreamingRouterImports(sourceContents.get(normalizedPath)!, nextContent);
+        {
+          const ts = requireCompiler('typescript') as typeof import('typescript');
+          const manifest = JSON.parse(readFileSync(resolve(this.root, 'package.json'), 'utf8'));
+          const packages = new Set(Object.keys({ ...manifest.dependencies, ...manifest.devDependencies, ...manifest.peerDependencies }));
+          const config = ts.readConfigFile(resolve(this.root, 'tsconfig.json'), ts.sys.readFile).config;
+          const aliases = Object.keys(config?.compilerOptions?.paths ?? {});
+          const imports = (text: string) => ts.createSourceFile(normalizedPath, text, ts.ScriptTarget.Latest, true).statements.flatMap(node =>
+            (ts.isImportDeclaration(node) || ts.isExportDeclaration(node)) && node.moduleSpecifier && ts.isStringLiteral(node.moduleSpecifier)
+              ? [node.moduleSpecifier.text] : []);
+          const previousImports = new Set(imports(sourceContents.get(normalizedPath) ?? ''));
+          for (const name of imports(nextContent)) {
+            if (previousImports.has(name) || name.startsWith('.') || isBuiltin(name) ||
+                aliases.some(alias => alias.endsWith('*') ? name.startsWith(alias.slice(0, -1)) : name === alias) ||
+                name.startsWith('@/') || name.startsWith('@shared/')) continue;
+            const packageName = name.startsWith('@') ? name.split('/').slice(0, 2).join('/') : name.split('/')[0];
+            if (!packages.has(packageName)) throw new Error('Generated import requires an undeclared dependency: ' + name +
+              '. Use the existing dependencies or a real platform bridge; do not invent an npm package for a Windows SDK interface.');
+          }
+        }
         if (sourceContents.get(normalizedPath)?.includes('\r\n')) nextContent = nextContent.replace(/\r?\n/g, '\r\n');
         if (!nextContent.trim()) throw new Error("Empty generated source: " + normalizedPath);
         if (nextContent === sourceContents.get(normalizedPath)) throw new Error("Generated proposal contains no change: " + normalizedPath);
