@@ -28,7 +28,7 @@ const broken = JSON.stringify({ changes: [{ path: target, edits: [{
   oldText: original.split('\n')[0], newText: original + addition,
 }] }] });
 const repaired = JSON.stringify({ changes: [{ path: target, edits: [{
-  oldText: original, newText: original + addition,
+  anchorId: 'b' + createHash('sha256').update(target + '\n' + original).digest('hex').slice(0, 12), operation: 'insertAfter', newText: addition.trim(),
 }] }] });
 const accepted = JSON.stringify({ accepted: true, issues: [] });
 const task = target + 'だけを修正して。identity関数を保持しpassThrough関数を追加する。';
@@ -75,19 +75,19 @@ describe('syntax validation before saving an AI proposal', () => {
     expect(onCandidate.mock.calls[0][1]).toEqual([]);
     expect(onCandidate.mock.calls[0][0][0].content).not.toBe(original);
     expect(result).toHaveLength(1);
-    expect(result[0].content).toBe(original + addition);
+    expect(result[0].content).toBe(original + '\n' + addition.trim());
     expect(result[0].previousContent).toBe(original);
     expect(readFileSync(model.root + '/' + target, 'utf8')).toBe(original);
     expect(model.requests).toHaveLength(3);
     const retry = JSON.stringify(model.requests[1].messages);
     expect(retry).toContain('Partial function declaration edit is forbidden');
     const review = JSON.parse(model.requests[2].messages.at(-1).content);
-    expect(review.files[0].resultingSource).toBe(original + addition);
+    expect(review.files[0].resultingSource).toBe(original + '\n' + addition.trim());
   });
 
   it('stops after one failed syntax correction and never submits broken code for approval', async () => {
     model.replies.push(broken, broken);
-    await expect(PoipoiCodeAgent.getInstance().generate(task)).rejects.toThrow('Partial function declaration edit is forbidden');
+    await expect(PoipoiCodeAgent.getInstance().generate(task)).rejects.toThrow('Backend recovery requires insertion');
     expect(model.requests).toHaveLength(2);
     expect(readFileSync(model.root + '/' + target, 'utf8')).toBe(original);
     expect(existsSync(model.root + '/data/code-previews')).toBe(false);

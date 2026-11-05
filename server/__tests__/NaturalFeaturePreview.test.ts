@@ -88,12 +88,17 @@ describe('new feature requests without source paths through the actual PC chat r
     model.replies.push(JSON.stringify({ changes: [{ path: target, edits: [{ oldText: header,
       newText: header + '\n  return file;\n}\n' + addition }] }] }), call => {
         expect(call.messages.at(-1).content).toContain('Partial function declaration edit is forbidden');
-        return JSON.stringify({ changes: [{ path: target, edits: [{ oldText: source, newText: source + addition }] }] });
+        const schema = call.response_format.json_schema.schema.properties.changes.items.oneOf[0].properties.edits.items.oneOf[0].properties;
+        expect(schema.operation.enum).toEqual(['insertBefore', 'insertAfter']);
+        const anchorId = 'b' + createHash('sha256').update(target + '\n' + source.trim()).digest('hex').slice(0, 12);
+        expect(schema.anchorId.enum).toContain(anchorId);
+        return JSON.stringify({ changes: [{ path: target, edits: [{ anchorId, operation: 'insertAfter', newText: addition.trim() }] }] });
       }, accepted);
     try {
       const candidate = vi.fn();
       const changes = await PoipoiCodeAgent.getInstance().generate(target + 'に関数を追加して。既存機能は残して。', '771', { onCandidate: candidate });
-      expect(changes[0].content).toBe(source + addition);
+      expect(changes[0].content).toContain(source.trim());
+      expect(changes[0].content).toContain(addition.trim());
       expect(candidate).toHaveBeenCalledTimes(1);
       expect(candidate.mock.calls[0][1]).toEqual([]);
       expect(readFileSync(model.root + '/' + target, 'utf8')).toBe(source);
