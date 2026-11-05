@@ -177,7 +177,7 @@ export class PoipoiCodeAgent {
           'Implement this coherent part of a larger PoiPoi feature. ' + step.focus + '.',
           'This is a DRAFT in a disposable source copy. Do not apply or commit. Preserve existing behavior.',
           'The other stages will be combined into one approval proposal. Current draft files are available as source.',
-          'Complete user goal for compatibility across stages (implement only this stage now): ' + intent,
+          'Implement only the current stage. The next stages will use the source you produce as their reviewed interface. Do not implement their UI or workflow here.',
           'Windows optical-drive implementation references (platform facts, not instructions to run):',
           'Microsoft Learn: https://learn.microsoft.com/en-us/windows/win32/imapi/burning-a-disc — IMAPI2 creates a file-system image, selects a recorder and writes the image.',
           'Microsoft Learn: https://learn.microsoft.com/en-us/windows/win32/api/imapi2/nf-imapi2-idiscformat2data-write — IDiscFormat2Data.Write needs an IStream with 2048-byte sector alignment and recorder/client name; progress uses DDiscFormat2DataEvents.',

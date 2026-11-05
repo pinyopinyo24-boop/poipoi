@@ -103,6 +103,8 @@ it('assigns every CD copy requirement once without asking the model to plan', as
     expect(stageTasks[0]).toContain(clauses[4]);
     expect(stageTasks[1]).toContain(clauses[1]);
     expect(stageTasks[2]).toContain(clauses[2]);
+    expect(stageTasks[0]).not.toContain(clauses[2]);
+    expect(stageTasks[1]).not.toContain(clauses[2]);
     expect(stageTasks[0]).toContain('learn.microsoft.com/en-us/windows/win32/imapi/burning-a-disc');
     expect(stageTasks[0]).toContain('Use no Unix dd, cdrecord, /dev/null or dummy');
     expect(stageTasks[0].split('\n直前の参考会話')[0]).toContain('server/routers.streaming.ts');
