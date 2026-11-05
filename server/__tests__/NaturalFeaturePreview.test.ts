@@ -76,6 +76,21 @@ describe('new feature requests without source paths through the actual PC chat r
     expect(readFileSync(model.root + '/' + page, 'utf8')).toBe(original);
     expect(existsSync(model.root + '/' + modulePath)).toBe(false);
   });
+  it('repairs syntax only within an introduced span of an existing file', async () => {
+    const target = 'server/core/ExistingCopy.ts';
+    const source = 'export const current = 1;\n';
+    const addition = 'export function copy() { return true; }\n}\n';
+    writeFileSync(model.root + '/' + target, source);
+    model.replies.push(JSON.stringify({ changes: [{ path: target, content: source + addition }] }),
+      JSON.stringify({ edits: [{ oldText: '\n}\n', newText: '\n' }] }), accepted);
+    try {
+      const changes = await PoipoiCodeAgent.getInstance().generate(target + 'にcopy関数を追加して', '771');
+      expect(changes[0].content).toBe(source + 'export function copy() { return true; }\n');
+      expect(model.requests).toHaveLength(3);
+      expect(JSON.parse(model.requests[1].messages[1].content).introducedSource).toContain('}\n');
+      expect(readFileSync(model.root + '/' + target, 'utf8')).toBe(source);
+    } finally { rmSync(model.root + '/' + target, { force: true }); }
+  });
   it('reads an existing integration file before regenerating a proposed edit to it', async () => {
     const target = 'server/core/AZConversationUnderstanding.ts';
     writeFileSync(model.root + '/' + target, 'export const value = 1;\n');
