@@ -1,5 +1,6 @@
 import { enrichPromptWithLearning } from "../core/LearningContextIntegration";
 import { conversationModel } from './ai/ConversationModel';
+import { postLocalCodeModel } from './localCodeTransport';
 /**
  * PoiPoi local Ollama LLM integration.
  */
@@ -203,7 +204,9 @@ export async function invokeLLM(request: LLMRequest): Promise<LLMResponse> {
     const attempts = request.purpose === 'code' ? 3 : 1;
     for (let attempt = 0; attempt < attempts; attempt++) {
       try {
-        const response = await fetch(`${baseUrl}/api/chat`, {
+        const response = request.purpose === 'code'
+          ? await postLocalCodeModel(`${baseUrl}/api/chat`, { signal: controller.signal, body })
+          : await fetch(`${baseUrl}/api/chat`, {
           signal: controller.signal, method: 'POST',
           headers: { 'Content-Type': 'application/json' }, body,
         });
@@ -214,8 +217,9 @@ export async function invokeLLM(request: LLMRequest): Promise<LLMResponse> {
         rawText = await response.text();
         break;
       } catch (error) {
-        const transient = error instanceof TypeError && /fetch failed|terminated|socket/i.test(error.message);
-        if (!transient || controller.signal.aborted || attempt + 1 === attempts) {
+        const transient = error instanceof TypeError && /fetch failed|terminated|socket|HTTP connection failed/i.test(error.message);
+        const requestSent = error instanceof Error && (error as Error & { requestSent?: boolean }).requestSent === true;
+        if (!transient || requestSent || controller.signal.aborted || attempt + 1 === attempts) {
           if (transient && request.purpose === 'code') {
             const failures: Array<{ code?: string; address?: string; port?: number }> = [];
             const inspect = (value: unknown, depth = 0) => {
@@ -237,7 +241,8 @@ export async function invokeLLM(request: LLMRequest): Promise<LLMResponse> {
             console.error('[LLM CONNECTION DIAGNOSTIC]', { endpoint, model, pid: process.pid,
               elapsedMs: Date.now() - startedAt, attempts: attempt + 1, listener, failures });
             const detail = failures.map(item => item.code + (item.address ? `@${item.address}:${item.port ?? ''}` : '')).join(', ') || error.message;
-            throw new Error(`Local AI connection failed after ${attempt + 1} attempts: ${detail}; endpoint=${endpoint}; listener=${listener}; model=${model}; pid=${process.pid}`, { cause: error });
+            throw new Error(`Local AI connection failed after ${attempt + 1} attempts: ${detail}; endpoint=${endpoint}; listener=${listener}; model=${model}; pid=${process.pid}` +
+              (requestSent ? '; inference outcome unknown; request was not replayed' : ''), { cause: error });
           }
           throw error;
         }

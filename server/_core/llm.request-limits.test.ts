@@ -1,5 +1,9 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { invokeLLM, type LLMRequest } from './llm';
+// This suite checks invokeLLM retry/deadline policy. The native transport is
+// tested with real HTTP sockets in localCodeTransport.test.ts.
+vi.mock('./localCodeTransport', () => ({ postLocalCodeModel: (url: string, options: any) =>
+  globalThis.fetch(url, { ...options, method: 'POST', headers: { 'Content-Type': 'application/json' } }) }));
 const request: LLMRequest = {
   userId: 'request-limits-test',
   model: 'qwen2.5-coder:7b',
@@ -8,6 +12,16 @@ const request: LLMRequest = {
 };
 afterEach(() => { vi.unstubAllGlobals(); vi.useRealTimers(); });
 describe('local model request limits', () => {
+  it('does not replay an inference after its request was sent and the connection was lost', async () => {
+    const error = Object.assign(new TypeError('Local model HTTP connection failed', {
+      cause: Object.assign(new Error('reset'), { code: 'ECONNRESET' }),
+    }), { requestSent: true });
+    const fetch = vi.fn().mockRejectedValueOnce(error).mockResolvedValueOnce({ ok: true });
+    vi.stubGlobal('fetch', fetch);
+    await expect(invokeLLM({ ...request, purpose: 'code', timeoutMs: 0 })).rejects.toThrow('request was not replayed');
+    expect(fetch).toHaveBeenCalledTimes(2);
+    expect(fetch.mock.calls[1][0]).toContain('/api/tags');
+  });
   it('preserves Ollama output-limit completion instead of reporting a normal stop', async () => {
     vi.stubGlobal('fetch', vi.fn(async () => ({ ok: true, text: async () => JSON.stringify({
       message: { content: '{"changes":[' }, done_reason: 'length',
