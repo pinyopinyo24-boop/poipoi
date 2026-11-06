@@ -66,7 +66,7 @@ it('combines staged source changes without writing an intermediate change to the
     return [{ path: file, content: readFileSync(join((this as any).root, file), 'utf8') + 'export const ui = backend;\n', baseHash: 'draft' }];
   });
   try {
-    const changes = await agent.generateStaged('新機能を作る。保存処理を追加する。画面から操作できるようにする。', '1', { onProgress });
+    const changes = await agent.generateStaged('保存処理を追加する。画面から操作できるようにする。', '1', { onProgress });
     expect(calls).toBe(2);
     expect(changes).toHaveLength(1);
     expect(changes[0].baseHash).toBe(createHash('sha256').update(original).digest('hex'));

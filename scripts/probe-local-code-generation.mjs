@@ -14,8 +14,8 @@ const staged = process.argv.includes('--staged');
 const original = 'export const version = 1;\n' + '// Preserve this existing source.\n'.repeat(500);
 const expected = original.replace('version = 1', 'version = 2');
 const matches = changes => changes.length === 1 && changes[0].path === target &&
-  (staged ? changes[0].content.startsWith(expected) &&
-    changes[0].content.slice(expected.length).trim() === 'export const displayVersion = version;'
+  (staged ? changes[0].content === expected.replace('export const version = 2;\n',
+    'export const version = 2;\nexport const displayVersion = version;\n')
     : changes[0].content === expected);
 try {
   mkdirSync(path.join(fixture, 'server/core'), { recursive: true });
@@ -28,14 +28,18 @@ try {
   // JS can construct the isolated agent; TypeScript's private constructor is
   // a compile-time restriction. It uses the real project's compiler/provider.
   const agent = new PoipoiCodeAgent(fixture);
-  console.log('REAL LOCAL MODEL PROBE: disposable fixture only');
+  console.log('REAL LOCAL MODEL PROBE:', staged ? 'STAGED' : 'SINGLE', 'disposable fixture only');
   const options = {
     onProgress: stage => console.log('STAGE:', stage),
     onModelResponse: (stage, response) => console.log('RESPONSE:', stage, response.finishReason, response.content.length),
+    // Match the approval worker's handling of an inconclusive reviewer.
+    // The exact source oracle and independent type check below still gate PASS.
+    onReviewWarning: warning => console.log('REVIEW WARNING:', warning),
   };
   const changes = staged ? await agent.generateStaged(
     `保存処理の基礎として${target}のexport const versionの値だけを1から2に変更する。` +
-    `画面表示用に${target}の末尾に export const displayVersion = version; を追加し、既存行は保持する。`,
+    `画面表示用に${target}のversion宣言の直後に export const displayVersion = version; を追加する。` +
+    'それ以外の文字とコメントはすべて保持する。',
     'system', options,
   ) : await agent.generate(
     `Modify ${target}: change only the exported version from 1 to 2. Preserve every other character. Return an unapplied proposal.`,

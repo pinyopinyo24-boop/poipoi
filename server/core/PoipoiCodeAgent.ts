@@ -112,7 +112,7 @@ export class PoipoiCodeAgent {
   } = {}): Promise<CodeChange[]> {
     const intent = currentCodeRequest(task);
     const clauses = intent.split(/(?<=。)/u).map(value => value.trim()).filter(Boolean);
-    if (clauses.length < 3) return this.generate(task, userId, options);
+    if (clauses.length < 2) return this.generate(task, userId, options);
     const sourcePaths: string[] = [];
     const walk = (directory: string, prefix: string) => {
       if (!existsSync(directory)) return;
