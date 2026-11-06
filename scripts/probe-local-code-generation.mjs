@@ -35,6 +35,7 @@ try {
     // Match the approval worker's handling of an inconclusive reviewer.
     // The exact source oracle and independent type check below still gate PASS.
     onReviewWarning: warning => console.log('REVIEW WARNING:', warning),
+    validateGenerated: changes => matches(changes) ? [] : ['proposal or unchanged fixture verification did not match'],
   };
   const changes = staged ? await agent.generateStaged(
     `保存処理の基礎として${target}のexport const versionの値だけを1から2に変更する。` +

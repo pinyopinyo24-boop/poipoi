@@ -16,6 +16,32 @@ import { needsStagedGeneration } from '../core/CodeGenerationWorker';
 
 afterEach(() => { responses.length = 0; vi.restoreAllMocks(); });
 
+it.each(['unsupported', 'supported', 'invalid-result'])('handles a %s combined review without weakening source checks', async kind => {
+  const root = mkdtempSync(join(tmpdir(), 'poipoi-stage-review-'));
+  const file = 'server/core/Feature.ts';
+  const original = 'export const value = 0;\n';
+  mkdirSync(join(root, 'server/core'), { recursive: true });
+  writeFileSync(join(root, file), original);
+  writeFileSync(join(root, 'package.json'), '{"dependencies":{}}');
+  const onReviewWarning = vi.fn(), validateGenerated = vi.fn(() => kind === 'invalid-result' ? ['wrong combined source'] : []);
+  vi.spyOn(PoipoiCodeAgent.prototype, 'generate').mockResolvedValue([{ path: file, content: 'export const value = 1;\n' }]);
+  responses.push(JSON.stringify(kind === 'supported'
+    ? { complete: false, missing: [0], issues: [{ index: 0, path: file, problem: 'value is 1 instead of the requested 2', evidence: 'export const value = 1;' }] }
+    : { complete: false, missing: [2] }));
+  try {
+    const agent = new (PoipoiCodeAgent as any)(root) as PoipoiCodeAgent;
+    const run = agent.generateStaged('値を2にする。画面から利用できるようにする。ほかの文字は保持する。', '1', { onReviewWarning, validateGenerated });
+    if (kind === 'supported') await expect(run).rejects.toThrow('未実装の要件');
+    else if (kind === 'invalid-result') await expect(run).rejects.toThrow('wrong combined source');
+    else {
+      await expect(run).resolves.toHaveLength(1);
+      expect(onReviewWarning).toHaveBeenCalledWith(expect.stringContaining('判定不能'));
+    }
+    expect(validateGenerated).toHaveBeenCalledOnce();
+    expect(readFileSync(join(root, file), 'utf8')).toBe(original);
+  } finally { rmSync(root, { recursive: true, force: true }); }
+});
+
 it('repairs the actual misplaced CD import while preserving the router body', () => {
   const original = readFileSync(join(process.cwd(), 'server/routers.streaming.ts'), 'utf8');
   const marker = '  // STEP53_CACHE_STATUS_API';

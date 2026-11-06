@@ -10,7 +10,9 @@ const server = createServer(async (req, res) => {
   const body = JSON.parse(Buffer.concat(chunks).toString());
   const properties = body.format?.properties;
   let content: string;
-  if (properties?.complete) content = JSON.stringify({ complete: true, missing: [] });
+  // Reproduce the real failure: the final reviewer names preservation clause
+  // 2 without providing any evidence. The source oracle must still gate PASS.
+  if (properties?.complete) content = JSON.stringify({ complete: false, missing: [2] });
   else if (properties?.accepted) content = JSON.stringify({ accepted: false, issues: [{
     path: 'server/core/Probe.ts', requirement: 'unsupported requirement',
     problem: 'controlled unsupported review', evidence: 'invented source',
