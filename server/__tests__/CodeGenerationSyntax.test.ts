@@ -65,6 +65,10 @@ describe('syntax validation before saving an AI proposal', () => {
     expect(result[0].content).toBe(content.replace('version = 1', 'version = 2'));
     expect(readFileSync(model.root + '/' + file, 'utf8')).toBe(content);
     expect(model.requests[0].response_format.json_schema.schema.properties.changes.items.properties.edits).toBeDefined();
+    const grammar = model.requests[0].response_format.json_schema.schema.properties.changes.items;
+    expect(grammar.oneOf[0].properties.path.not.enum).toContain(file);
+    expect(grammar.oneOf[1].properties.path.enum).toContain(file);
+    expect(grammar.oneOf[1].properties.path.enum).not.toContain('server/core/NewFile.ts');
   });
 
   it('regenerates an incomplete replacement before requirement review without changing the source', async () => {
@@ -83,6 +87,19 @@ describe('syntax validation before saving an AI proposal', () => {
     expect(retry).toContain('Partial function declaration edit is forbidden');
     const review = JSON.parse(model.requests[2].messages.at(-1).content);
     expect(review.files[0].resultingSource).toBe(original + '\n' + addition.trim());
+  });
+  it('rejects a whole-file response for excerpted source and regenerates a preserving edit', async () => {
+    const file = 'server/core/ExcerptedRouter.ts';
+    const source = 'export const version = 1;\n' + '// existing checks must remain\n'.repeat(700);
+    writeFileSync(model.root + '/' + file, source);
+    model.replies.push(JSON.stringify({ changes: [{ path: file, content: 'export const version = 2;' }] }),
+      JSON.stringify({ changes: [{ path: file, edits: [{ oldText: 'export const version = 1;', newText: 'export const version = 2;' }] }] }), accepted);
+    const onCandidate = vi.fn();
+    const result = await PoipoiCodeAgent.getInstance().generate('Modify ' + file + ' to export version 2.', 'system', { onCandidate });
+    expect(JSON.stringify(model.requests[1].messages)).toContain('全文置換を拒否');
+    expect(result[0].content).toBe(source.replace('version = 1', 'version = 2'));
+    expect(onCandidate).toHaveBeenCalledTimes(1);
+    expect(readFileSync(model.root + '/' + file, 'utf8')).toBe(source);
   });
 
   it('stops after one failed syntax correction and never submits broken code for approval', async () => {

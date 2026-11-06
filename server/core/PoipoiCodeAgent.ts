@@ -1017,6 +1017,9 @@ export class PoipoiCodeAgent {
       // not need fragile edit anchors. Larger/excerpted files still use edits.
       const contentOnly = !newScreen && [...sourceContents].every(([file, source]) =>
         completeSources.has(file) && source.length <= 12000 && visibleSource.includes(source.replace(/\r\n/g, '\n')));
+      const editOnlyFiles = [...sourceContents].filter(([file, source]) =>
+        !completeSources.has(file) || source.length > 12000 || !visibleSource.includes(source.replace(/\r\n/g, '\n')))
+        .map(([file]) => file);
       const anchorEdits = (uiFeature || backendSafeEdits) && anchors.size > 0;
       const response = await callCoder(attempt ? "追加確認後のコード再生成" : "コード生成", { userId, timeoutMs,
       // prompt already contains the source context; do not count it twice.
@@ -1066,8 +1069,10 @@ export class PoipoiCodeAgent {
                   },
                   required: contentOnly ? ["path", "content"] : ["path"],
                   ...(contentOnly ? {} : { oneOf: [
-                    { required: ["content"], not: { required: ["edits"] } },
-                    { required: ["edits"], not: { required: ["content"] } },
+                    { required: ["content"], not: { required: ["edits"] },
+                      ...(editOnlyFiles.length ? { properties: { path: { not: { enum: editOnlyFiles } } } } : {}) },
+                    { required: ["edits"], not: { required: ["content"] },
+                      properties: { path: { enum: [...sourceContents.keys()] } } },
                   ] }),
                   additionalProperties: false,
                   }),
