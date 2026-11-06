@@ -64,6 +64,26 @@ beforeEach(() => { model.replies.length = 0; model.requests.length = 0; model.fi
 afterAll(() => { vi.restoreAllMocks(); rmSync(model.root, { recursive: true, force: true }); });
 
 describe('new feature requests without source paths through the actual PC chat route', () => {
+  it('recovers an ambiguous router edit using host-provided member anchors and preserves every existing entry', async () => {
+    const target = 'server/routers.ts';
+    const member = 'first: router({})';
+    const source = 'import { router } from "./trpc";\nexport const appRouter = router({\n  ' + member + ',\n  second: router({})\n});\n';
+    writeFileSync(model.root + '/' + target, source);
+    model.replies.push(JSON.stringify({ changes: [{ path: target, edits: [{ oldText: 'router({})', newText: 'router({changed:true})' }] }] }), call => {
+      const anchorId = 'b' + createHash('sha256').update(target + '\n' + member).digest('hex').slice(0, 12);
+      const choices = call.response_format.json_schema.schema.properties.changes.items.oneOf[0].properties.edits.items.oneOf;
+      const grammar = choices.find((item: any) => item.properties.anchorId.enum.includes(anchorId));
+      expect(grammar.properties.operation.enum).toEqual(['insertBefore']);
+      expect(call.messages.at(-1).content).toContain(member);
+      return JSON.stringify({ changes: [{ path: target, edits: [{ anchorId, operation: 'insertBefore', newText: 'cd: router({})' }] }] });
+    }, accepted);
+    try {
+      const changes = await PoipoiCodeAgent.getInstance().generate(target + 'にCDのAPIを追加して', '771');
+      expect(changes[0].content).toBe(source.replace(member, 'cd: router({}),\n' + member));
+      expect(readFileSync(model.root + '/' + target, 'utf8')).toBe(source);
+      expect(model.requests).toHaveLength(3);
+    } finally { rmSync(model.root + '/' + target, { force: true }); }
+  });
   it('pins every edit source when a later edit was omitted, including declarations longer than 40 lines', async () => {
     const target = 'server/core/LongIntegration.ts';
     const first = 'export const visible = 1;';

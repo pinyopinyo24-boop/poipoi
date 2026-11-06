@@ -488,7 +488,7 @@ export class PoipoiCodeAgent {
     const sourceContents = new Map<string, string>();
     const completeSources = new Set<string>();
     const viewedRanges = new Set<string>();
-    const anchors = new Map<string, { path: string; source: string; context: 'jsxChildren' | 'componentBody' | 'module'; startLine: number; endLine: number }>();
+    const anchors = new Map<string, { path: string; source: string; context: 'jsxChildren' | 'componentBody' | 'module' | 'objectMembers'; startLine: number; endLine: number }>();
     let registerReadAnchors: ((file: string, start: number, end: number) => void) | undefined;
     let contextSize = 0;
     // Keep full originals for hash checks and reconstruction. Large sources are
@@ -779,6 +779,7 @@ export class PoipoiCodeAgent {
       return { shown: chosen.join('\n\n'), omitted };
     };
     let backendSafeEdits = false;
+    const backendRecoveryFiles = new Set<string>();
     const buildPrompt = (followUp = '') => isolatedDisplay ? [
       "You are Poipoi's code implementation agent. Implement the user's requested display as one NEW standalone React TSX component. Return the implementation, not a plan or placeholder.",
       "Create exactly: " + displayPath,
@@ -793,6 +794,7 @@ export class PoipoiCodeAgent {
     ].join('\n') : backendSafeEdits ? [
       'Implement the current request as an unapplied proposal. Preserve existing code and checks.',
       'For anchored existing files, use ONLY insertBefore/insertAfter at the complete declaration anchors listed below. Return only added code in newText. The host preserves the entire anchor. Never repeat or replace the existing function. Put imports beside imports and new functions beside complete module declarations.',
+      'objectMembers anchors are existing router entries. Use insertBefore only and return complete new router properties. The host inserts the separating comma. Do not put imports or function declarations inside router entries.',
       'New files require complete content. Other existing files require reviewed exact edits. Use only declared dependencies. Return a complete changes array; request missing source with readFiles.',
       'Anchors:', JSON.stringify([...anchors].filter(([, unit]) => promptSources().shown.includes(unit.source)).map(([id, unit]) => ({ id, ...unit }))),
       'Reviewed source:', promptSources().shown,
@@ -857,6 +859,15 @@ export class PoipoiCodeAgent {
         if (!unit || unit.path !== file || edit.oldText !== undefined || typeof edit.newText !== 'string')
           throw new Error('Invalid source anchor: ' + file);
         const oldText = unit.source;
+        if (unit.context === 'objectMembers') {
+          if (edit.operation !== 'insertBefore') throw new Error('Router member anchors permit insertBefore only: ' + file);
+          const ts = requireCompiler('typescript') as typeof import('typescript');
+          const added = edit.newText.trim().replace(/,\s*$/, '');
+          if (!added || (ts.transpileModule('const __router = {' + added + '};', { fileName: 'router-member.ts', reportDiagnostics: true })
+            .diagnostics ?? []).some(d => d.category === ts.DiagnosticCategory.Error))
+            throw new Error('Invalid complete router properties: ' + file);
+          return { oldText, newText: added + ',\n' + oldText };
+        }
         if (edit.operation === 'insertBefore') return { oldText, newText: edit.newText + '\n' + oldText };
         if (edit.operation === 'insertAfter') {
           const previous = after.get(edit.anchorId) ?? '';
@@ -1052,13 +1063,17 @@ export class PoipoiCodeAgent {
                     required: ['path', 'content'], additionalProperties: false } : anchorEdits ? { oneOf: [
                     { type: 'object', properties: { path: { enum: [...new Set([...anchors.values()].map(unit => unit.path))] }, edits: {
                       type: 'array', minItems: 1, maxItems: 12, items: { oneOf: [true, false].flatMap(jsx => {
-                        const ids = [...anchors].filter(([, unit]) => (unit.context === 'jsxChildren') === jsx && visibleSource.includes(unit.source)).map(([id]) => id);
+                        const ids = [...anchors].filter(([, unit]) => unit.context !== 'objectMembers' && (unit.context === 'jsxChildren') === jsx && visibleSource.includes(unit.source)).map(([id]) => id);
                         return ids.length ? [{ type: 'object', properties: {
                         anchorId: { type: 'string', enum: ids },
                         operation: { type: 'string', enum: backendSafeEdits ? ['insertBefore', 'insertAfter'] : ['insertBefore', 'insertAfter', 'replace'] }, newText: { type: 'string' },
                         ...(jsx ? { newText: { type: 'string', pattern: '^\\s*(<|\\{)' } } : {}),
                       }, required: ['anchorId', 'operation', 'newText'], additionalProperties: false }] : [];
-                      }) },
+                      }).concat([...anchors].filter(([, unit]) => unit.context === 'objectMembers' && visibleSource.includes(unit.source)).map(([id]) => ({
+                        type: 'object', properties: { anchorId: { type: 'string', enum: [id] },
+                          operation: { type: 'string', enum: ['insertBefore'] }, newText: { type: 'string' } },
+                        required: ['anchorId', 'operation', 'newText'], additionalProperties: false,
+                      }))) },
                     } }, required: ['path', 'edits'], additionalProperties: false },
                     ...([...sourceContents.keys()].some(file => ![...anchors.values()].some(unit => unit.path === file)) ? [{ type: 'object', properties: {
                       path: { type: 'string', enum: [...sourceContents.keys()].filter(file => ![...anchors.values()].some(unit => unit.path === file)) },
@@ -1206,26 +1221,55 @@ export class PoipoiCodeAgent {
           const message = error instanceof Error ? error.message : String(error);
           if (message.startsWith('Invalid source anchor: ')) throw error;
           if (message.startsWith('Backend recovery requires insertion')) throw error;
-          if (!backendSafeEdits && message.startsWith('Partial function declaration edit is forbidden: ')) {
-            const file = message.slice('Partial function declaration edit is forbidden: '.length).split('. Preserve')[0];
+          if (message.startsWith('Partial function declaration edit is forbidden: ') || message.startsWith('Edit does not match exactly one source location: ')) {
+            const file = message.slice(message.indexOf(': ') + 2).split('. Preserve')[0];
             const source = sourceContents.get(file);
-            if (source && !file.endsWith('.tsx')) {
+            if (source && !file.endsWith('.tsx') && !backendRecoveryFiles.has(file)) {
               const ts = requireCompiler('typescript') as typeof import('typescript');
               const parsed = ts.createSourceFile(file, source, ts.ScriptTarget.Latest, true);
               const edits = proposals.find(change => change.path === file)?.edits ?? [];
+              let importAnchors = 0;
               for (const node of parsed.statements) {
-                const selected = ts.isImportDeclaration(node) || ts.isFunctionDeclaration(node) && node.body && edits.some(edit =>
+                const selected = ts.isImportDeclaration(node) && importAnchors < 2 || ts.isFunctionDeclaration(node) && node.body && edits.some(edit =>
                   edit.oldText?.trim() === source.slice(node.getStart(parsed), node.body!.getStart(parsed) + 1).trim());
                 if (!selected) continue;
                 const text = node.getText(parsed).replace(/\r\n/g, '\n');
+                if (text.length > 7000) continue;
+                if (ts.isImportDeclaration(node)) importAnchors++;
                 const startLine = parsed.getLineAndCharacterOfPosition(node.getStart(parsed)).line + 1;
                 const endLine = parsed.getLineAndCharacterOfPosition(node.end).line + 1;
                 loadSource(file, startLine, endLine);
                 anchors.set('b' + createHash('sha256').update(file + '\n' + text).digest('hex').slice(0, 12),
                   { path: file, source: text, context: 'module', startLine, endLine });
               }
+              let members = 0;
+              const visit = (node: import('typescript').Node) => {
+                if (members < 3 && ts.isPropertyAssignment(node) && ts.isObjectLiteralExpression(node.parent) &&
+                    ts.isCallExpression(node.parent.parent) && node.parent.parent.expression.getText(parsed) === 'router') {
+                  const text = node.getText(parsed).replace(/\r\n/g, '\n');
+                  if (text.length <= 1500 && visibleSource.includes(text)) {
+                    anchors.set('b' + createHash('sha256').update(file + '\n' + text).digest('hex').slice(0, 12),
+                      { path: file, source: text, context: 'objectMembers',
+                        startLine: parsed.getLineAndCharacterOfPosition(node.getStart(parsed)).line + 1,
+                        endLine: parsed.getLineAndCharacterOfPosition(node.end).line + 1 });
+                    members++;
+                  }
+                }
+                ts.forEachChild(node, visit);
+              };
+              visit(parsed);
               if ([...anchors.values()].some(unit => unit.path === file)) {
+                focusedSources.clear();
+                let size = 0;
+                for (const [id, unit] of anchors) {
+                  if (unit.path !== file) continue;
+                  const excerpt = 'Existing source: ' + file + '\nComplete ' + unit.context + ' anchor ' + id + ':\n' + unit.source;
+                  if (size + excerpt.length > 8000) { anchors.delete(id); continue; }
+                  focusedSources.set(id, excerpt);
+                  size += excerpt.length;
+                }
                 backendSafeEdits = true;
+                backendRecoveryFiles.add(file);
                 followUp = message + ' Return added code only at the supplied complete declaration anchors. The original functions are preserved by the host.';
                 proposals = [];
                 continue;
