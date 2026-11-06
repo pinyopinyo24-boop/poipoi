@@ -8,6 +8,13 @@ const request: LLMRequest = {
 };
 afterEach(() => { vi.unstubAllGlobals(); vi.useRealTimers(); });
 describe('local model request limits', () => {
+  it('preserves Ollama output-limit completion instead of reporting a normal stop', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => ({ ok: true, text: async () => JSON.stringify({
+      message: { content: '{"changes":[' }, done_reason: 'length',
+    }) })));
+    const result = await invokeLLM({ ...request, purpose: 'code' });
+    expect(result.choices[0].finish_reason).toBe('length');
+  });
   it('disables hidden thinking for structured Qwen 3.5 intent responses', async () => {
     const fetch = vi.fn(async () => ({ ok: true, text: async () => JSON.stringify({ message: { content: '{}' } }) }));
     vi.stubGlobal('fetch', fetch);

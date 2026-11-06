@@ -5,7 +5,7 @@ import { randomUUID, createHash } from 'node:crypto';
 const model = vi.hoisted(() => {
   const root = process.cwd() + '/node_modules/.cache/natural-feature-' + Date.now();
   vi.spyOn(process, 'cwd').mockReturnValue(root);
-  return { root, replies: [] as Array<string | ((request: any) => string)>, requests: [] as any[] };
+  return { root, replies: [] as Array<string | ((request: any) => string)>, requests: [] as any[], finishes: [] as string[] };
 });
 // Controlled model output tests routing/grounding, not live model capability.
 vi.mock('../_core/llm', () => ({
@@ -14,7 +14,7 @@ vi.mock('../_core/llm', () => ({
     const reply = model.replies.shift();
     const content = typeof reply === 'function' ? reply(request) : reply;
     if (content === undefined) throw new Error('Unexpected model invocation');
-    return { choices: [{ message: { content } }] };
+    return { choices: [{ message: { content }, finish_reason: model.finishes.shift() ?? 'stop' }] };
   }), listLLMModels: vi.fn(async () => ({ data: [] })),
 }));
 // This suite controls the generation runner to check routing/context. Detached
@@ -60,10 +60,22 @@ beforeAll(() => {
   writeFileSync(model.root + '/client/src/App.tsx', 'import StreamingChat from "./pages/StreamingChat";\nexport default function App() { return <StreamingChat />; }');
   writeFileSync(model.root + '/client/src/pages/Home.tsx', 'export default function Home() { return <main>Home</main>; }');
 });
-beforeEach(() => { model.replies.length = 0; model.requests.length = 0; });
+beforeEach(() => { model.replies.length = 0; model.requests.length = 0; model.finishes.length = 0; });
 afterAll(() => { vi.restoreAllMocks(); rmSync(model.root, { recursive: true, force: true }); });
 
 describe('new feature requests without source paths through the actual PC chat route', () => {
+  it('records truncated output and regenerates complete JSON with a larger output allowance', async () => {
+    const truncated = '{"changes":[{"path":';
+    model.replies.push(truncated, connected, accepted);
+    model.finishes.push('length', 'stop', 'stop');
+    const onModelResponse = vi.fn();
+    const result = await PoipoiCodeAgent.getInstance().generate(request, '771', { onModelResponse });
+    expect(result).toHaveLength(2);
+    expect(model.requests[1].max_tokens).toBe(8192);
+    expect(model.requests[1].messages.at(-1).content).toContain('not a continuation');
+    expect(onModelResponse.mock.calls[0][1]).toMatchObject({ finishReason: 'length', content: truncated });
+    expect(readFileSync(model.root + '/' + page, 'utf8')).toBe(original);
+  });
   it('rejects invented Windows SDK package imports before reviewing a proposal', async () => {
     const target = 'server/core/ExistingDependency.ts';
     const source = 'export const value = 1;\n';

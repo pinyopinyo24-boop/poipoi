@@ -268,7 +268,7 @@ try {
           role: "assistant",
           content: typeof data.message?.content === "string" ? data.message.content : "",
         },
-        finish_reason: "stop",
+        finish_reason: typeof data.done_reason === 'string' ? data.done_reason : 'stop',
       }],
       usage: {
         prompt_tokens: data.prompt_eval_count ?? data.usage?.prompt_tokens ?? 0,

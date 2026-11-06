@@ -108,6 +108,7 @@ export class PoipoiCodeAgent {
     onProgress?: (stage: string) => void | Promise<void>;
     onCandidate?: (changes: readonly CodeChange[], errors: readonly string[]) => void | Promise<void>;
     onReviewWarning?: (warning: string) => void | Promise<void>;
+    onModelResponse?: (stage: string, response: { model: string; finishReason: string; content: string }) => void | Promise<void>;
   } = {}): Promise<CodeChange[]> {
     const intent = currentCodeRequest(task);
     const clauses = intent.split(/(?<=。)/u).map(value => value.trim()).filter(Boolean);
@@ -196,6 +197,7 @@ export class PoipoiCodeAgent {
           'Never return placeholders or pretend a hardware operation is implemented.',
         ].join('\n');
         const changes = await stagedAgent.generate(stageTask, userId, {
+          onModelResponse: options.onModelResponse,
           onReviewWarning: options.onReviewWarning,
           // A failed stage never reaches the final combined proposal. Preserve
           // only its invalid candidate for diagnostics without touching source.
@@ -404,6 +406,7 @@ export class PoipoiCodeAgent {
     // review when the separate AI reviewer cannot provide a supported verdict.
     onReviewWarning?: (warning: string) => void | Promise<void>;
     // Only the caller can opt into executing its own acceptance checks.
+    onModelResponse?: (stage: string, response: { model: string; finishReason: string; content: string }) => void | Promise<void>;
     validateGenerated?: (changes: ReadonlyArray<Readonly<CodeChange>>) => readonly string[] | Promise<readonly string[]>;
   } = {}): Promise<CodeChange[]> {
     if (!task.trim()) {
@@ -706,7 +709,11 @@ export class PoipoiCodeAgent {
           timeoutMs: request.timeoutMs ?? 0,
         });
         await options.onProgress?.(stage);
-        return await invokeLLM({ ...request, purpose: 'code', timeoutMs: request.timeoutMs ?? 0 });
+        const response = await invokeLLM({ ...request, purpose: 'code', timeoutMs: request.timeoutMs ?? 0 });
+        await options.onModelResponse?.(stage, { model: response.model,
+          finishReason: response.choices?.[0]?.finish_reason ?? 'unknown',
+          content: response.choices?.[0]?.message?.content ?? '' });
+        return response;
       } catch (error) {
         const detail = error instanceof Error ? error.message : String(error);
         throw new Error(stage + "に失敗しました: " + detail);
@@ -1009,6 +1016,7 @@ export class PoipoiCodeAgent {
     let materializeRetryUsed = false;
     let syntaxRetryUsed = false;
     let syntaxFeedback = '';
+    let expandedOutput = false;
     // Each correction category is bounded to one retry under the same deadline.
     for (let attempt = 0; attempt < 6; attempt++) {
       const prompt = buildPrompt([followUp, syntaxFeedback, requirementFeedback, validationFeedback].filter(Boolean).join("\n"));
@@ -1024,7 +1032,7 @@ export class PoipoiCodeAgent {
       const response = await callCoder(attempt ? "追加確認後のコード再生成" : "コード生成", { userId, timeoutMs,
       // prompt already contains the source context; do not count it twice.
       contextWindow: contextFor(prompt.length + (anchorEdits ? 0 : 8192)),
-      max_tokens: anchorEdits ? 2048 : 4096,
+      max_tokens: expandedOutput ? 8192 : anchorEdits ? 2048 : 4096,
       model: process.env.LOCAL_CODER_MODEL || "qwen2.5-coder:7b",
       temperature: 0.1,
       response_format: {
@@ -1111,6 +1119,14 @@ export class PoipoiCodeAgent {
     if (typeof content !== "string") {
       throw new Error("LLM returned empty response");
     }
+
+      if (typeof response !== 'string' && response.choices?.[0]?.finish_reason === 'length') {
+        if (expandedOutput) throw new Error('モデルの出力上限でJSONが途中終了しました。変更は適用していません。');
+        expandedOutput = true;
+        followUp = 'Your last response ended at the output token limit. Return a fresh COMPLETE JSON proposal, not a continuation. Use compact exact edits for existing files. Keep all requested functionality; do not abbreviate new files or return incomplete strings.';
+        proposals = [];
+        continue;
+      }
 
       let proposal: GeneratedCodeProposal;
       try {

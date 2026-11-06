@@ -62,6 +62,11 @@ export async function runCodeGenerationWorker(userId: string, id: string, jobId:
     const staged = needsStagedGeneration(preview.generation.request);
     const agent = PoipoiCodeAgent.getInstance();
     preview.changes = await (staged ? agent.generateStaged.bind(agent) : agent.generate.bind(agent))(preview.generation.sourceTask, userId, {
+      onModelResponse: async (stage, response) => {
+        const directory = path.join(process.cwd(), 'data', 'code-previews', createHash('sha256').update(userId).digest('hex'));
+        await writeFile(path.join(directory, id + '.generation-response.json'),
+          JSON.stringify({ jobId, createdAt: Date.now(), stage, ...response }), { mode: 0o600 });
+      },
       onProgress: async phase => { preview.generation!.phase = phase; await saveCodePreview(preview); },
       onCandidate: async (changes, errors) => {
         const directory = path.join(process.cwd(), 'data', 'code-previews', createHash('sha256').update(userId).digest('hex'));

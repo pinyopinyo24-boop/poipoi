@@ -79,6 +79,11 @@ describe('detached generation with a controlled local HTTP model', () => {
       createHash('sha256').update(userId).digest('hex') + '/' + id + '.generation-candidate.json', 'utf8'));
     expect(diagnostic.changes).toEqual(preview.changes);
     expect(diagnostic.errors).toEqual([]);
+    const responseLog = JSON.parse(readFileSync(fixture.root + '/data/code-previews/' +
+      createHash('sha256').update(userId).digest('hex') + '/' + id + '.generation-response.json', 'utf8'));
+    expect(responseLog.jobId).toBe(preview.generation?.jobId);
+    expect(responseLog.content).toBeTruthy();
+    expect(responseLog.finishReason).toBe('stop');
     expect(existsSync(fixture.root + '/' + target)).toBe(false);
     await unifiedToolsRouter.createCaller(context).listCodePreviews({ accountId: userId, includeHistory: true });
     await unifiedToolsRouter.createCaller(context).listCodePreviews({ accountId: userId, includeHistory: true });
