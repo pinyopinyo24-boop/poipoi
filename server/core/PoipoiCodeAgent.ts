@@ -171,7 +171,7 @@ export class PoipoiCodeAgent {
         await options.onProgress?.(`機能を段階生成 ${index + 1}/${steps.length}`);
         const stageSources = opticalCopy && index === steps.length - 1
           ? ['client/src/pages/StreamingChat.tsx', 'server/routers.streaming.ts', 'server/core/AZConversationUnderstanding.ts']
-          : ['server/routers.streaming.ts'];
+          : opticalCopy ? ['server/routers.streaming.ts'] : [];
         const stageTask = opticalCopy ? [
           '現在のユーザー依頼:',
           step.clauses.map(clause => clauses[clause]).join(' '),
@@ -189,6 +189,10 @@ export class PoipoiCodeAgent {
           'Target Windows. Implement actual source reading into temporary storage before the one-drive swap, media-ready checks, actual writing to the selected drive, and independent post-write readback/verification. If data and audio media differ, handle their formats explicitly rather than claiming one path copies both. Use no Unix dd, cdrecord, /dev/null or dummy read/write/compare functions. Do not pretend hardware was tested.',
           'Windows SDK interfaces are not Node packages. Use only installed dependencies or a real Windows system bridge. Importing imapi2 or node-ffi-napi does not create that bridge. fs.writeFile to a drive directory, data.bin or a CD folder is ordinary file I/O, not optical-disc burning.',
         ].join('\n') : [
+          '現在のユーザー依頼:',
+          step.clauses.map(clause => clauses[clause]).join(' '),
+          '参照する既存の接続箇所: ' + [...touched.keys()].join(', '),
+          '直前の参考会話（実装条件）:',
           'Implement the following coherent part of a larger PoiPoi feature in the existing TypeScript project.',
           'This is a DRAFT in a disposable source copy. Do not apply or commit. Preserve existing behavior.',
           'Stage focus: ' + step.focus,
@@ -199,11 +203,9 @@ export class PoipoiCodeAgent {
         const changes = await stagedAgent.generate(stageTask, userId, {
           onModelResponse: options.onModelResponse,
           onReviewWarning: options.onReviewWarning,
-          // A failed stage never reaches the final combined proposal. Preserve
-          // only its invalid candidate for diagnostics without touching source.
-          onCandidate: async (candidate, errors) => {
-            if (errors.length) await options.onCandidate?.(candidate, errors);
-          },
+          onProgress: phase => options.onProgress?.(`機能を段階生成 ${index + 1}/${steps.length}・${phase}`),
+          // Semantic failures also need their syntactically valid candidate.
+          onCandidate: options.onCandidate,
         });
         if (!changes.length) throw Error('実装段階に変更がありません。変更は適用していません。');
         for (const change of changes) {
@@ -256,7 +258,7 @@ export class PoipoiCodeAgent {
       catch { throw Error('統合した変更案の要件照合に失敗しました。変更は適用していません。'); }
       if (review.complete !== true || !Array.isArray(review.missing) || review.missing.length)
         throw Error('統合した変更案に未実装の要件があります。変更は適用していません: ' + JSON.stringify(review.missing));
-      await options.onReviewWarning?.('複数段階で生成した全ファイルを一つの承認案にまとめ、構文とAIによる要件照合を行いました。型チェック・実機動作は未確認です。全ファイルを確認してから承認してください。');
+      await options.onReviewWarning?.('複数段階で生成した全ファイルを一つの承認案にまとめ、構文とAIによる要件照合を行いました。実機動作は未確認です。全ファイルを確認してから承認してください。');
       return combined;
     } finally { rmSync(temporary, { recursive: true, force: true }); }
   }
@@ -421,7 +423,10 @@ export class PoipoiCodeAgent {
     // than a path. Never run project code or expose configuration/secrets.
     // Route from the actual request, not from the generic evolution instructions.
     const intent = currentCodeRequest(task);
-    const explicit = intent.replace(/\\/g, "/").match(/(?:server|mobile|client|shared|src)\/[a-zA-Z0-9_./-]+\.(?:tsx?|jsx?)\b/g) ?? [];
+    // Stage handoff sources are outside the current requirement so they do
+    // not become extra requirements, but must still be available for editing.
+    const stageReferences = task.match(/^参照する既存の接続箇所:[^\r\n]*/m)?.[0] ?? '';
+    const explicit = (intent + '\n' + stageReferences).replace(/\\/g, "/").match(/(?:server|mobile|client|shared|src)\/[a-zA-Z0-9_./-]+\.(?:tsx?|jsx?)\b/g) ?? [];
     const tokens: string[] = intent.normalize('NFKC').toLowerCase().match(/[a-z][a-z0-9_-]{2,}/g) ?? [];
     const hints = [
       [/ネット|ウェブ|検索|画像|イラスト|参照/, ['azwebknowledge', 'webimagereferences', 'publicwebresource', 'chatimagerequests', 'imagegeneration', 'routers.streaming']],

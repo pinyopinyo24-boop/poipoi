@@ -15,6 +15,7 @@ const schema = z.object({
     sourceTask: z.string().min(1).max(65000), request: z.string().min(1).max(60000),
     replyTo: z.string().max(200).optional(), error: z.string().max(4000).optional(),
     reviewWarning: z.string().max(1000).optional(),
+    typeChecked: z.boolean().optional(),
   }).optional(),
   application: z.object({
     startedAt: z.number(), finishedAt: z.number().optional(),
@@ -117,7 +118,7 @@ export function describeCodePreview(preview: CodePreview) {
     updatedAt: preview.updatedAt, application: preview.application,
     generation: preview.generation ? { startedAt: preview.generation.startedAt, finishedAt: preview.generation.finishedAt,
       phase: preview.generation.phase, request: preview.generation.request, error: preview.generation.error,
-      reviewWarning: preview.generation.reviewWarning } : undefined,
+      reviewWarning: preview.generation.reviewWarning, typeChecked: preview.generation.typeChecked } : undefined,
     interrupted: isCodeApprovalInterrupted(preview), canResume: canResumeCodeApproval(preview),
     changes: preview.changes.map(change => ({ ...change,
       operation: change.baseHash === null ? 'create' as const : 'modify' as const,

@@ -1,4 +1,4 @@
-import { beforeAll, afterAll, beforeEach, describe, expect, it, vi } from 'vitest';
+import { beforeAll, afterAll, beforeEach, afterEach, describe, expect, it, vi } from 'vitest';
 import { createServer } from 'node:http';
 import { mkdirSync, writeFileSync, readFileSync, existsSync, symlinkSync, rmSync } from 'node:fs';
 import { spawn } from 'node:child_process';
@@ -17,6 +17,7 @@ import { unifiedToolsRouter } from '../routers/unifiedTools';
 import { getSharedChatRepository } from '../repositories/ChatRepository';
 
 let target = '', failModel = false, invalidReview = false;
+let stagedCase = false, invalidTypes = false, codeCalls = 0;
 let release = () => {};
 let gate: Promise<void>;
 const userId = '881';
@@ -29,9 +30,13 @@ const server = createServer(async (req, res) => {
   await gate;
   res.setHeader('content-type', 'application/json');
   if (failModel) { res.writeHead(500); res.end('{"error":"controlled model failure"}'); return; }
-  const content = body.format?.properties?.accepted
+  const content = body.format?.properties?.complete ? JSON.stringify({ complete: true, missing: [] })
+    : body.format?.properties?.accepted
     ? JSON.stringify(invalidReview ? { accepted: false, issues: [{ path: 'server/core/Missing.ts',
       requirement: 'missing', problem: 'unsupported', evidence: 'missing' }] } : { accepted: true, issues: [] })
+    : stagedCase ? JSON.stringify({ changes: [++codeCalls === 1
+      ? { path: target, content: 'export const count = 2;\n' }
+      : { path: target.replace('.ts', 'View.ts'), content: `import { count } from './${target.split('/').pop()!.replace('.ts', '')}';\nexport const total: ${invalidTypes ? 'string' : 'number'} = count;\n` }] })
     : JSON.stringify({ changes: [{ path: target, content: 'export const generated = true;\n' }] });
   res.end(JSON.stringify({ message: { role: 'assistant', content }, done: true }));
 });
@@ -49,9 +54,13 @@ beforeAll(async () => {
 beforeEach(() => {
   failModel = false;
   invalidReview = false;
+  stagedCase = false;
+  invalidTypes = false;
+  codeCalls = 0;
   gate = new Promise<void>(resolve => { release = resolve; });
   target = 'server/core/Generated_' + randomUUID().replaceAll('-', '') + '.ts';
 });
+afterEach(() => { rmSync(fixture.root + '/tsconfig.json', { force: true }); });
 afterAll(async () => {
   release();
   server.closeAllConnections();
@@ -63,6 +72,34 @@ afterAll(async () => {
 });
 
 describe('detached generation with a controlled local HTTP model', () => {
+  for (const invalid of [false, true]) it(`checks a combined two-stage proposal before approval (invalid types: ${invalid})`, async () => {
+    stagedCase = true;
+    invalidTypes = invalid;
+    writeFileSync(fixture.root + '/tsconfig.json', JSON.stringify({
+      compilerOptions: { strict: true, types: [], module: 'ESNext', moduleResolution: 'bundler', target: 'ES2022' },
+      include: ['server/**/*.ts'],
+    }));
+    const request = `新しい保存処理を ${target} に新規作成して、server/core/Reference.tsを参考に件数を数値として公開する。` +
+      `操作画面の表示処理を ${target.replace('.ts', 'View.ts')} に新規作成し、先の保存処理をimportして数値を表示する。` +
+      '既存の機能とファイルは保持する。すべての変更を一つの承認用の変更案として提示し、承認されるまではファイルへの適用やGitコミットを行わないでください。';
+    const preview = await queueCodeGeneration(userId, request, randomUUID(), request, randomUUID());
+    release();
+    const result = await waitFor(preview.id, p => p.status !== 'generating');
+    expect(codeCalls, result.generation?.error).toBe(2);
+    expect(result.status, result.generation?.error).toBe(invalid ? 'failed' : 'pending');
+    expect(result.generation?.typeChecked).toBe(true);
+    if (invalid) {
+      expect(result.generation?.error).toContain('TS2322');
+      const saved = JSON.parse(readFileSync(fixture.root + '/data/code-previews/' +
+        createHash('sha256').update(userId).digest('hex') + '/' + preview.id + '.generation-candidate.json', 'utf8'));
+      expect(saved.changes).toHaveLength(2);
+      expect(saved.errors.join(' ')).toContain('TS2322');
+      expect(result.changes).toEqual([]);
+    } else expect(result.changes).toHaveLength(2);
+    expect(existsSync(fixture.root + '/' + target)).toBe(false);
+    expect(existsSync(fixture.root + '/' + target.replace('.ts', 'View.ts'))).toBe(false);
+    expect(readFileSync(fixture.root + '/server/core/Reference.ts', 'utf8')).toBe('export const reference = true;');
+  });
   it('returns an acceptance response before generation finishes, then reports a real stored preview once', async () => {
     const sessionId = randomUUID();
     const message = target + 'を新規作成する変更案を生成して。参考はserver/core/Reference.tsだけ。';

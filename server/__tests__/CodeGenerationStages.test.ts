@@ -56,19 +56,26 @@ it('combines staged source changes without writing an intermediate change to the
   const agent = new (PoipoiCodeAgent as any)(root) as PoipoiCodeAgent;
   responses.push(JSON.stringify({ complete: true, missing: [] }));
   let calls = 0;
-  vi.spyOn(PoipoiCodeAgent.prototype, 'generate').mockImplementation(async function () {
+  const onProgress = vi.fn();
+  const tasks: string[] = [];
+  vi.spyOn(PoipoiCodeAgent.prototype, 'generate').mockImplementation(async function (task, _user, options) {
+    tasks.push(task);
+    await options.onProgress?.('コード生成');
     calls++;
     if (calls === 1) return [{ path: file, content: original + 'export const backend = 2;\n', baseHash: 'draft' }];
     return [{ path: file, content: readFileSync(join((this as any).root, file), 'utf8') + 'export const ui = backend;\n', baseHash: 'draft' }];
   });
   try {
-    const changes = await agent.generateStaged('新機能を作る。保存処理を追加する。画面から操作できるようにする。', '1');
+    const changes = await agent.generateStaged('新機能を作る。保存処理を追加する。画面から操作できるようにする。', '1', { onProgress });
     expect(calls).toBe(2);
     expect(changes).toHaveLength(1);
     expect(changes[0].baseHash).toBe(createHash('sha256').update(original).digest('hex'));
     expect(changes[0].content).toContain('export const backend = 2;');
     expect(changes[0].content).toContain('export const ui = backend;');
     expect(readFileSync(join(root, file), 'utf8')).toBe(original);
+    expect(currentCodeRequest(tasks[1])).toBe('画面から操作できるようにする。');
+    expect(tasks[1]).toContain('参照する既存の接続箇所: ' + file);
+    expect(onProgress).toHaveBeenCalledWith('機能を段階生成 2/2・コード生成');
   } finally { rmSync(root, { recursive: true, force: true }); }
 });
 
@@ -126,14 +133,14 @@ it('retains a failed stage candidate for diagnosis without changing the project'
   const agent = new (PoipoiCodeAgent as any)(root) as PoipoiCodeAgent;
   const onCandidate = vi.fn();
   vi.spyOn(PoipoiCodeAgent.prototype, 'generate').mockImplementation(async (_task, _userId, options) => {
-    await options.onCandidate?.([{ path: file, content: 'invalid source' }], ['TS1005: syntax error']);
-    throw new Error('生成コードの構文エラー');
+    await options.onCandidate?.([{ path: file, content: 'export const value = 0;' }], []);
+    throw new Error('生成コードの要件不足');
   });
   try {
     await expect(agent.generateStaged('機能を作る。処理を追加する。画面を追加する。', '1', { onCandidate }))
-      .rejects.toThrow('生成コードの構文エラー');
+      .rejects.toThrow('生成コードの要件不足');
     expect(onCandidate).toHaveBeenCalledWith(
-      [{ path: file, content: 'invalid source' }], ['TS1005: syntax error']);
+      [{ path: file, content: 'export const value = 0;' }], []);
     expect(readFileSync(join(root, file), 'utf8')).toBe(original);
   } finally { rmSync(root, { recursive: true, force: true }); }
 });

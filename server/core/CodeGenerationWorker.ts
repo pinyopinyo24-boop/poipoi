@@ -5,6 +5,7 @@ import { writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { PoipoiCodeAgent } from './PoipoiCodeAgent';
 import { lockProject } from './CodeApprovalWorker';
+import { checkCodeProposalTypes } from './CodeProposalTypeCheck';
 import { saveCodePreview, readCodePreview, listCodePreviews, type CodePreview } from './CodePreviewStore';
 
 export function needsStagedGeneration(request: string): boolean {
@@ -79,6 +80,16 @@ export async function runCodeGenerationWorker(userId: string, id: string, jobId:
       },
     }) as CodePreview['changes'];
     if (!preview.changes.length) throw new Error('No changes generated');
+    preview.generation.phase = '統合した変更案の型・importを検査';
+    await saveCodePreview(preview);
+    const typeCheck = checkCodeProposalTypes(process.cwd(), preview.changes);
+    preview.generation.typeChecked = typeCheck.checked;
+    if (typeCheck.errors.length) {
+      const directory = path.join(process.cwd(), 'data', 'code-previews', createHash('sha256').update(userId).digest('hex'));
+      await writeFile(path.join(directory, id + '.generation-candidate.json'),
+        JSON.stringify({ jobId, createdAt: Date.now(), errors: typeCheck.errors, changes: preview.changes }), { mode: 0o600 });
+      throw new Error('変更案の型・import検査に失敗しました。変更は適用していません: ' + typeCheck.errors.join('; ').slice(0, 3000));
+    }
     preview.status = 'pending';
     preview.expires = Date.now() + 24 * 3600000;
     preview.generation.phase = '変更案作成済み・承認待ち';
