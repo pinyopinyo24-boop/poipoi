@@ -64,6 +64,25 @@ beforeEach(() => { model.replies.length = 0; model.requests.length = 0; model.fi
 afterAll(() => { vi.restoreAllMocks(); rmSync(model.root, { recursive: true, force: true }); });
 
 describe('new feature requests without source paths through the actual PC chat route', () => {
+  it('identifies path-only JSON as missing implementation and retries with that exact feedback', async () => {
+    const pathOnly = JSON.stringify({ changes: [{ path: 'server/routers/unifiedTools.ts' },
+      { path: 'server/routers/streaming.ts' }, { path: 'server/opticalMedia.ts' }] });
+    model.replies.push(pathOnly, call => {
+      expect(call.messages.at(-1).content).toContain('no content or edits: server/routers/unifiedTools.ts');
+      expect(call.messages.at(-1).content).toContain('path-only list is not an implementation');
+      return connected;
+    }, accepted);
+    const result = await PoipoiCodeAgent.getInstance().generate(request, '771');
+    expect(result).toHaveLength(2);
+    expect(readFileSync(model.root + '/' + page, 'utf8')).toBe(original);
+  });
+  it('never reports path-only JSON as malformed JSON or returns it for approval', async () => {
+    const pathOnly = JSON.stringify({ changes: [{ path: 'server/routers/unifiedTools.ts' }] });
+    model.replies.push(pathOnly, pathOnly);
+    await expect(PoipoiCodeAgent.getInstance().generate(request, '771'))
+      .rejects.toThrow('LLM proposal has no content or edits: server/routers/unifiedTools.ts');
+    expect(readFileSync(model.root + '/' + page, 'utf8')).toBe(original);
+  });
   it('records truncated output and regenerates complete JSON with a larger output allowance', async () => {
     const truncated = '{"changes":[{"path":';
     model.replies.push(truncated, connected, accepted);

@@ -64,8 +64,11 @@ describe('syntax validation before saving an AI proposal', () => {
     const result = await PoipoiCodeAgent.getInstance().generate('Modify ' + file + ' to export version 2.');
     expect(result[0].content).toBe(content.replace('version = 1', 'version = 2'));
     expect(readFileSync(model.root + '/' + file, 'utf8')).toBe(content);
-    expect(model.requests[0].response_format.json_schema.schema.properties.changes.items.properties.edits).toBeDefined();
     const grammar = model.requests[0].response_format.json_schema.schema.properties.changes.items;
+    expect(grammar.properties).toBeUndefined();
+    expect(grammar.oneOf[0].required).toEqual(['path', 'content']);
+    expect(grammar.oneOf[1].required).toEqual(['path', 'edits']);
+    expect(grammar.oneOf[1].properties.edits).toBeDefined();
     expect(grammar.oneOf[0].properties.path.not.enum).toContain(file);
     expect(grammar.oneOf[1].properties.path.enum).toContain(file);
     expect(grammar.oneOf[1].properties.path.enum).not.toContain('server/core/NewFile.ts');

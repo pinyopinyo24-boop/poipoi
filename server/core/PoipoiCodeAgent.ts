@@ -360,12 +360,13 @@ export class PoipoiCodeAgent {
           typeof change.path !== "string" ||
           (typeof change.content !== "string" && !Array.isArray(change.edits))
         ) {
-          throw new Error("Invalid code change");
+          throw new Error("LLM proposal has no content or edits: " + (change?.path ?? '(missing path)'));
         }
       }
 
       return parsed;
-    } catch {
+    } catch (error) {
+      if (error instanceof Error && /^(LLM proposal has no content or edits:|changes array is missing)/.test(error.message)) throw error;
       const contentMatch = candidate.match(
         /"content"\s*:\s*`([\s\S]*?)`(?=\s*[,}])/
       );
@@ -391,7 +392,7 @@ export class PoipoiCodeAgent {
           typeof change.path !== "string" ||
           (typeof change.content !== "string" && !Array.isArray(change.edits))
         ) {
-          throw new Error("Invalid code change");
+          throw new Error("LLM proposal has no content or edits: " + (change?.path ?? '(missing path)'));
         }
       }
 
@@ -1066,24 +1067,21 @@ export class PoipoiCodeAgent {
                     }, required: ['path', 'edits'], additionalProperties: false }] : []),
                     { type: 'object', properties: { path: { type: 'string', not: { enum: [...sourceContents.keys()] } }, content: { type: 'string' } },
                       required: ['path', 'content'], additionalProperties: false },
-                  ] } : { properties: {
-                    path: { type: "string" },
-                    content: { type: "string" },
-                    ...(contentOnly ? {} : { edits: { type: "array", minItems: 1, items: {
-                      type: "object",
-                      properties: { oldText: { type: "string", minLength: 1 }, newText: { type: "string" } },
-                      required: ["oldText", "newText"], additionalProperties: false,
-                    } } }),
-                  },
-                  required: contentOnly ? ["path", "content"] : ["path"],
-                  ...(contentOnly ? {} : { oneOf: [
-                    { required: ["content"], not: { required: ["edits"] },
-                      ...(editOnlyFiles.length ? { properties: { path: { not: { enum: editOnlyFiles } } } } : {}) },
-                    { required: ["edits"], not: { required: ["content"] },
-                      properties: { path: { enum: [...sourceContents.keys()] } } },
+                  ] } : contentOnly ? {
+                    properties: { path: { type: 'string' }, content: { type: 'string' } },
+                    required: ['path', 'content'], additionalProperties: false,
+                  } : { oneOf: [
+                    { type: 'object', properties: {
+                      path: { type: 'string', ...(editOnlyFiles.length ? { not: { enum: editOnlyFiles } } : {}) },
+                      content: { type: 'string', minLength: 1 },
+                    }, required: ['path', 'content'], additionalProperties: false },
+                    { type: 'object', properties: {
+                      path: { type: 'string', enum: [...sourceContents.keys()] },
+                      edits: { type: 'array', minItems: 1, items: { type: 'object', properties: {
+                        oldText: { type: 'string', minLength: 1 }, newText: { type: 'string' },
+                      }, required: ['oldText', 'newText'], additionalProperties: false } },
+                    }, required: ['path', 'edits'], additionalProperties: false },
                   ] }),
-                  additionalProperties: false,
-                  }),
                 },
               },
             readFiles: {
@@ -1135,7 +1133,7 @@ export class PoipoiCodeAgent {
         if (formatRetryUsed) throw error;
         formatRetryUsed = true;
         proposals = [];
-        followUp = "The previous response was not a valid code proposal. Return valid JSON with a changes array. NEW files require complete non-empty content without edits; EXISTING files must follow the complete-content eligibility list or use exact edits from reviewed source. Regenerate the complete requested change set.";
+        followUp = "The previous response was not a valid code proposal: " + String(error instanceof Error ? error.message : error).slice(0, 500) + ". A path-only list is not an implementation. Return valid JSON with a changes array. NEW files require complete non-empty content without edits; EXISTING files must follow the complete-content eligibility list or use exact edits from reviewed source. Regenerate the complete requested change set.";
         continue;
       }
       if (proposal.readFiles !== undefined && !Array.isArray(proposal.readFiles)) {
