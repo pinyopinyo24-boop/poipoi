@@ -754,11 +754,12 @@ export class PoipoiCodeAgent {
     // Keep the model's source context within a bounded budget regardless of
     // repository size. Source not shown remains available through readFiles;
     // never shorten the user's request or silently treat omitted source as read.
+    const focusedSources = new Map<string, string>();
     const promptSources = () => {
       const budget = newScreen ? 14000 : 10000;
-      const chosen: string[] = [];
+      const chosen: string[] = [...focusedSources.values()];
       const omitted: string[] = [];
-      let used = 0;
+      let used = chosen.reduce((size, excerpt) => size + excerpt.length, 0);
       for (const excerpt of [...context].reverse()) {
         if (used + excerpt.length > budget) {
           const label = excerpt.split('\n', 2).join(' ');
@@ -1236,6 +1237,31 @@ export class PoipoiCodeAgent {
           const omitted = message.startsWith('Edit targets source omitted from this model request: ')
             ? message.slice('Edit targets source omitted from this model request: '.length).replace(/\\/g, '/') : '';
           if (omitted && candidates.includes(omitted) && sourceContents.has(omitted) && sourceReadCount < 3) {
+            // Pin ALL exact source units needed by this proposal. Selecting
+            // merely the first matching edit can reread an already visible
+            // import while the later, actually omitted edit remains hidden.
+            const needed = new Map<string, string>();
+            for (const change of proposals) {
+              const file = change.path.replace(/\\/g, '/');
+              const original = sourceContents.get(file)?.replace(/\r\n/g, '\n');
+              if (!original) continue;
+              for (const edit of change.edits ?? []) {
+                const raw = edit.anchorId ? anchors.get(edit.anchorId)?.source : edit.oldText;
+                const unit = raw?.replace(/\r\n/g, '\n');
+                if (!unit || !original.includes(unit)) continue;
+                const line = original.slice(0, original.indexOf(unit)).split('\n').length;
+                needed.set(file + ':' + createHash('sha256').update(unit).digest('hex'),
+                  'Existing source: ' + file + '\nExact reviewed unit at line ' + line + ':\n' + unit);
+              }
+            }
+            if (needed.size && [...needed.values()].reduce((size, unit) => size + unit.length, 0) <= 8000) {
+              focusedSources.clear();
+              needed.forEach((unit, key) => focusedSources.set(key, unit));
+              sourceReadCount++;
+              followUp = 'The previous proposal used omitted source. All exact ORIGINAL source units required by those edits are now pinned in Reviewed source. Discard that proposal and regenerate the COMPLETE change set using these source units. Request any additional source before editing it.';
+              proposals = [];
+              continue;
+            }
             const source = sourceContents.get(omitted)!.replace(/\r\n/g, '\n');
             const edit = proposals.find(change => change.path.replace(/\\/g, '/') === omitted)?.edits?.find(item =>
               typeof item.oldText === 'string' && source.includes(item.oldText.replace(/\r\n/g, '\n')));

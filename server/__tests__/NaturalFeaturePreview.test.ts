@@ -64,6 +64,30 @@ beforeEach(() => { model.replies.length = 0; model.requests.length = 0; model.fi
 afterAll(() => { vi.restoreAllMocks(); rmSync(model.root, { recursive: true, force: true }); });
 
 describe('new feature requests without source paths through the actual PC chat route', () => {
+  it('pins every edit source when a later edit was omitted, including declarations longer than 40 lines', async () => {
+    const target = 'server/core/LongIntegration.ts';
+    const first = 'export const visible = 1;';
+    const hidden = 'export function operation() {\n' + '  // preserve existing operation\n'.repeat(60) + '  return 1;\n}';
+    const source = first + '\n' + '// source padding\n'.repeat(1000) + hidden + '\n';
+    writeFileSync(model.root + '/' + target, source);
+    const draft = JSON.stringify({ changes: [{ path: target, edits: [
+      { oldText: first, newText: 'export const visible = 2;' },
+      { oldText: hidden, newText: hidden + '\nexport const added = true;' },
+    ] }] });
+    model.replies.push(draft, call => {
+      const prompt = call.messages.at(-1).content;
+      expect(prompt).toContain(first);
+      expect(prompt).toContain(hidden);
+      expect(prompt).toContain('pinned');
+      return draft;
+    }, accepted);
+    try {
+      const changes = await PoipoiCodeAgent.getInstance().generate(target + 'を修正して', '771');
+      expect(changes[0].content).toBe(source.replace(first, 'export const visible = 2;').replace(hidden, hidden + '\nexport const added = true;'));
+      expect(model.requests).toHaveLength(3);
+      expect(readFileSync(model.root + '/' + target, 'utf8')).toBe(source);
+    } finally { rmSync(model.root + '/' + target, { force: true }); }
+  });
   it('identifies path-only JSON as missing implementation and retries with that exact feedback', async () => {
     const pathOnly = JSON.stringify({ changes: [{ path: 'server/routers/unifiedTools.ts' },
       { path: 'server/routers/streaming.ts' }, { path: 'server/opticalMedia.ts' }] });
