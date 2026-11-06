@@ -456,6 +456,18 @@ export class PoipoiCodeAgent {
     // A concrete reference/target is already grounded context. Do not inflate a
     // one-file request with unrelated source, inventories or entry points.
     const explicitExisting = [...new Set(explicit)].filter(file => existsSync(this.safePath(file)));
+    // Positive path enums are used by the model grammar. A negative `not`
+    // exclusion must not be the only barrier between a new-file content
+    // response and an excerpted existing source file.
+    const featureId = 'Feature_' + randomUUID().replace(/-/g, '');
+    const newFilePaths = [...new Set([
+      ...explicit.filter(file => !existsSync(this.safePath(file))),
+      'server/core/generated/' + featureId + '.ts',
+      'server/routers/generated/' + featureId + '.ts',
+      'shared/generated/' + featureId + '.ts',
+      'client/src/components/generated/' + featureId + '.tsx',
+      'client/src/pages/generated/' + featureId + '.tsx',
+    ])].filter(file => !existsSync(this.safePath(file)));
     // A request to create a new screen needs a route and an entry point. It
     // must not be treated as an edit to the existing chat screen's JSX.
     const newScreen = (/(?:新しい|新規).{0,24}(?:画面|ページ|アプリ|ソフト|ゲーム)/.test(intent) ||
@@ -1032,14 +1044,15 @@ export class PoipoiCodeAgent {
     let expandedOutput = false;
     // Each correction category is bounded to one retry under the same deadline.
     for (let attempt = 0; attempt < 6; attempt++) {
-      const prompt = buildPrompt([followUp, syntaxFeedback, requirementFeedback, validationFeedback].filter(Boolean).join("\n"));
+      const prompt = buildPrompt([followUp, syntaxFeedback, requirementFeedback, validationFeedback].filter(Boolean).join("\n")) +
+        (isolatedDisplay ? '' : '\nAllowed NEW file paths (complete content only; use these exact paths for new modules and imports):\n' + JSON.stringify(newFilePaths));
       const visibleSource = promptSources().shown;
       // Constrain the model's JSON grammar too: small, fully reviewed files do
       // not need fragile edit anchors. Larger/excerpted files still use edits.
       const contentOnly = !newScreen && [...sourceContents].every(([file, source]) =>
         completeSources.has(file) && source.length <= 12000 && visibleSource.includes(source.replace(/\r\n/g, '\n')));
-      const editOnlyFiles = [...sourceContents].filter(([file, source]) =>
-        !completeSources.has(file) || source.length > 12000 || !visibleSource.includes(source.replace(/\r\n/g, '\n')))
+      const completeContentFiles = [...sourceContents].filter(([file, source]) =>
+        completeSources.has(file) && source.length <= 12000 && visibleSource.includes(source.replace(/\r\n/g, '\n')))
         .map(([file]) => file);
       const anchorEdits = (uiFeature || backendSafeEdits) && anchors.size > 0;
       const response = await callCoder(attempt ? "追加確認後のコード再生成" : "コード生成", { userId, timeoutMs,
@@ -1081,14 +1094,14 @@ export class PoipoiCodeAgent {
                         oldText: { type: 'string', minLength: 1 }, newText: { type: 'string' },
                       }, required: ['oldText', 'newText'], additionalProperties: false } },
                     }, required: ['path', 'edits'], additionalProperties: false }] : []),
-                    { type: 'object', properties: { path: { type: 'string', not: { enum: [...sourceContents.keys()] } }, content: { type: 'string' } },
+                    { type: 'object', properties: { path: { type: 'string', enum: newFilePaths }, content: { type: 'string' } },
                       required: ['path', 'content'], additionalProperties: false },
                   ] } : contentOnly ? {
-                    properties: { path: { type: 'string' }, content: { type: 'string' } },
+                    properties: { path: { type: 'string', enum: [...completeContentFiles, ...newFilePaths] }, content: { type: 'string' } },
                     required: ['path', 'content'], additionalProperties: false,
                   } : { oneOf: [
                     { type: 'object', properties: {
-                      path: { type: 'string', ...(editOnlyFiles.length ? { not: { enum: editOnlyFiles } } : {}) },
+                      path: { type: 'string', enum: [...completeContentFiles, ...newFilePaths] },
                       content: { type: 'string', minLength: 1 },
                     }, required: ['path', 'content'], additionalProperties: false },
                     { type: 'object', properties: {

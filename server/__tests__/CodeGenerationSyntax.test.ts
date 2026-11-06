@@ -69,7 +69,9 @@ describe('syntax validation before saving an AI proposal', () => {
     expect(grammar.oneOf[0].required).toEqual(['path', 'content']);
     expect(grammar.oneOf[1].required).toEqual(['path', 'edits']);
     expect(grammar.oneOf[1].properties.edits).toBeDefined();
-    expect(grammar.oneOf[0].properties.path.not.enum).toContain(file);
+    expect(grammar.oneOf[0].properties.path.enum).not.toContain(file);
+    expect(grammar.oneOf[0].properties.path.not).toBeUndefined();
+    expect(grammar.oneOf[0].properties.path.enum.every((name: string) => !existsSync(model.root + '/' + name))).toBe(true);
     expect(grammar.oneOf[1].properties.path.enum).toContain(file);
     expect(grammar.oneOf[1].properties.path.enum).not.toContain('server/core/NewFile.ts');
   });
