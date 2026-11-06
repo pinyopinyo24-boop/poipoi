@@ -119,6 +119,7 @@ export type LLMModel = {
 
 /** Invoke local Ollama models. */
 export async function invokeLLM(request: LLMRequest): Promise<LLMResponse> {
+  const startedAt = Date.now();
   const baseUrl = (request.baseUrl || process.env.LOCAL_AI_URL || "http://localhost:11434").replace(/\/+$/, "");
   const isCodeTask = request.messages.some(message =>
     typeof message.content === "string" &&
@@ -166,6 +167,8 @@ export async function invokeLLM(request: LLMRequest): Promise<LLMResponse> {
   }
   console.log("[LLM REQUEST] Local AI", {
     model,
+    pid: process.pid,
+    endpoint: new URL(baseUrl).origin,
     messageCount: messages.length,
     timestamp: new Date().toISOString(),
   });
@@ -214,8 +217,27 @@ export async function invokeLLM(request: LLMRequest): Promise<LLMResponse> {
         const transient = error instanceof TypeError && /fetch failed|terminated|socket/i.test(error.message);
         if (!transient || controller.signal.aborted || attempt + 1 === attempts) {
           if (transient && request.purpose === 'code') {
-            const cause = error.cause as { code?: string; message?: string } | undefined;
-            throw new Error(`Local AI connection failed after ${attempt + 1} attempts: ${cause?.code ?? cause?.message ?? error.message}`, { cause: error });
+            const failures: Array<{ code?: string; address?: string; port?: number }> = [];
+            const inspect = (value: unknown, depth = 0) => {
+              if (!value || typeof value !== 'object' || depth > 5) return;
+              const item = value as { code?: string; address?: string; port?: number; cause?: unknown; errors?: unknown[] };
+              if (item.code) failures.push({ code: item.code, address: item.address, port: item.port });
+              inspect(item.cause, depth + 1);
+              if (Array.isArray(item.errors)) item.errors.forEach(child => inspect(child, depth + 1));
+            };
+            inspect(error);
+            // One read-only probe records whether the Ollama listener is still
+            // reachable. A tags response is not proof that inference works.
+            let listener = 'unreachable';
+            try {
+              const health = await fetch(`${baseUrl}/api/tags`, { signal: AbortSignal.timeout(3000) });
+              listener = health.ok ? 'reachable' : 'HTTP ' + health.status;
+            } catch { /* Keep the original transport failure. */ }
+            const endpoint = new URL(baseUrl).origin;
+            console.error('[LLM CONNECTION DIAGNOSTIC]', { endpoint, model, pid: process.pid,
+              elapsedMs: Date.now() - startedAt, attempts: attempt + 1, listener, failures });
+            const detail = failures.map(item => item.code + (item.address ? `@${item.address}:${item.port ?? ''}` : '')).join(', ') || error.message;
+            throw new Error(`Local AI connection failed after ${attempt + 1} attempts: ${detail}; endpoint=${endpoint}; listener=${listener}; model=${model}; pid=${process.pid}`, { cause: error });
           }
           throw error;
         }

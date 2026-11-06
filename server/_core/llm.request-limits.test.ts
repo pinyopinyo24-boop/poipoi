@@ -67,6 +67,28 @@ describe('local model request limits', () => {
     await expect(invokeLLM(request)).rejects.toThrow('fetch failed');
     expect(fetch).toHaveBeenCalledTimes(1);
   });
+  it('preserves refused addresses and distinguishes listener health after final failure', async () => {
+    vi.useFakeTimers();
+    const failure = new TypeError('fetch failed', { cause: new AggregateError([
+      Object.assign(new Error('refused IPv6'), { code: 'ECONNREFUSED', address: '::1', port: 11434 }),
+      Object.assign(new Error('refused IPv4'), { code: 'ECONNREFUSED', address: '127.0.0.1', port: 11434 }),
+    ]) });
+    const fetch = vi.fn().mockRejectedValueOnce(failure).mockRejectedValueOnce(failure)
+      .mockRejectedValueOnce(failure).mockResolvedValueOnce({ ok: true });
+    vi.stubGlobal('fetch', fetch);
+    const result = invokeLLM({ ...request, purpose: 'code', timeoutMs: 0,
+      baseUrl: 'http://localhost:11434' }).catch(error => error);
+    await vi.advanceTimersByTimeAsync(15000);
+    const error = await result;
+    expect(error.message).toContain('ECONNREFUSED@::1:11434');
+    expect(error.message).toContain('ECONNREFUSED@127.0.0.1:11434');
+    expect(error.message).toContain('listener=reachable');
+    expect(error.message).toContain('endpoint=http://localhost:11434');
+    expect(error.cause).toBe(failure);
+    expect(fetch).toHaveBeenCalledTimes(4);
+    expect(fetch.mock.calls[3][0]).toBe('http://localhost:11434/api/tags');
+    expect(fetch.mock.calls.slice(0, 3).every(call => call[1].method === 'POST')).toBe(true);
+  });
   for (const [label, timeoutMs] of [['coder', 300000], ['default', undefined]] as const) {
     it(`keeps the ${label} deadline bounded and aborts at its own limit`, async () => {
       vi.useFakeTimers();
