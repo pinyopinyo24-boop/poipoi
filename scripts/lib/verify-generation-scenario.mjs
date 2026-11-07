@@ -63,7 +63,7 @@ export function verifyScenario(scenario, changes) {
       let longestLabel = 0;
       function visit(node) {
         if (ts.isCallExpression(node) && ts.isIdentifier(node.expression) &&
-            node.expression.text === 'assert' && node.arguments.length >= 2) {
+            (node.expression.text === 'assert' || node.expression.text === 'throws') && node.arguments.length >= 2) {
           const labelCode = node.arguments[1].getText(script);
           const literals = [...labelCode.matchAll(/(['"])(.*?)\1/g)]
             .map(match => match[2]).filter(Boolean);
