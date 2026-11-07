@@ -43,21 +43,24 @@ afterAll(async () => { vi.restoreAllMocks(); vi.unstubAllGlobals(); await rm(mod
 beforeEach(() => { model.replies.length = 0; model.requests.length = 0; user++; });
 const finish = (answer: string) => JSON.stringify({ type: 'finish', answer, needsInput: false });
 const next = (tool: string, args: unknown) => JSON.stringify({ type: 'tool', tool, args });
+const intentReply = (goal: string, domain: 'conversation' | 'manufacturing' = 'conversation', act: 'chat' | 'question' | 'request' = 'chat', newTask = true) => JSON.stringify({
+  domain, act, newTask, target: -1, goal, conditions: [], replaceConditions: [], question: '', confidence: 1,
+});
 
 // Only the model is controlled. Persistence, routing, tools and file parsers are real.
 describe('AZ PC integration with controlled model responses', () => {
   it('routes PC streaming through AZ with real conversation history and one stored copy per message ID', async () => {
     const stream = streamingRouter.createCaller(ctx(user)); const conversationId = 'verify-' + randomUUID();
-    model.replies.push('最初の回答', '続きの回答');
+    model.replies.push('最初の回答', intentReply('それは？', 'conversation', 'question', false), '続きの回答');
     await stream.chat({ message: '合言葉は青空です', messageId: 'first', conversationId });
     const response = await stream.chat({ message: 'それは？', messageId: 'second', conversationId });
     expect(response.fullText).toBe('続きの回答');
-    expect(model.requests[1].messages.some((m: any) => m.content === '合言葉は青空です')).toBe(true);
-    expect(model.requests[1].messages.some((m: any) => m.content === '最初の回答')).toBe(true);
-    expect(model.requests[1].messages.some((m: any) => m.role === 'system' && m.content.includes('AIコアAZ'))).toBe(true);
+    expect(model.requests[2].messages.some((m: any) => m.content === '合言葉は青空です')).toBe(true);
+    expect(model.requests[2].messages.some((m: any) => m.content === '最初の回答')).toBe(true);
+    expect(model.requests[2].messages.some((m: any) => m.role === 'system' && m.content.includes('AIコアAZ'))).toBe(true);
     const duplicate = await stream.chat({ message: 'それは？', messageId: 'second', conversationId });
     expect(duplicate.fullText).toBe('続きの回答');
-    expect(model.requests).toHaveLength(2);
+    expect(model.requests).toHaveLength(3);
     expect(await getSharedChatRepository().getMessages(conversationId, 100)).toHaveLength(4);
   });
   it('persists user and AI names separately and reads them through the normal PC path', async () => {
@@ -93,6 +96,7 @@ describe('AZ PC integration with controlled model responses', () => {
   it('runs multiple real business tools and carries the first result to the next model decision', async () => {
     const stream = streamingRouter.createCaller(ctx(user));
     model.replies.push(
+      intentReply('製造記録を登録して、一覧を確認し、原価差異も計算して', 'manufacturing', 'request'),
       next('saveManufacturing', { itemId: 'verification-part', estimatedUnitCost: 100, actualUnitCost: 120, quantity: 10 }),
       next('listManufacturing', {}),
       next('analyzeManufacturing', { estimatedUnitCost: 100, actualUnitCost: 120, quantity: 10 }),
@@ -104,7 +108,7 @@ describe('AZ PC integration with controlled model responses', () => {
     expect(task.steps.map((s: any) => s.status)).toEqual(['completed', 'completed', 'completed']);
     expect(task.steps[2].result.totalVariance).toBe(200);
     expect(task.steps[2].result.varianceType).toBe('unfavorable');
-    expect(model.requests[1].messages.some((message: any) => message.content.includes('"saved":true'))).toBe(true);
+    expect(model.requests[2].messages.some((message: any) => message.content.includes('"saved":true'))).toBe(true);
     expect((await getUserPoiPoiUnifiedState(String(user))).records.some(r => r.id.startsWith('manufacturing-'))).toBe(true);
   });
   it('enforces read-only requests even if the model tries to save a record', async () => {
