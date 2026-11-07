@@ -1,6 +1,9 @@
 # Real Qwen/Ollama matrix verification in a disposable Git worktree.
 # Does not merge, checkout, build an APK, or apply generated changes.
-param([string]$Repo = (Get-Location).Path)
+param(
+    [string]$Repo = (Get-Location).Path,
+    [string[]]$Case = @()
+)
 $ErrorActionPreference = 'Stop'
 $repo = (Resolve-Path -LiteralPath $Repo).Path
 if (!(Test-Path -LiteralPath (Join-Path $repo '.git'))) { throw "Not a PoiPoi git repository: $repo" }
@@ -23,7 +26,11 @@ try {
     $linked = $true
     Push-Location $work
     try {
-        node --import tsx scripts/probe-local-code-generation-matrix.mjs
+        $argsForProbe = @('--import', 'tsx', 'scripts/probe-local-code-generation-matrix.mjs')
+        if ($Case.Count -gt 0) {
+            $argsForProbe += '--case=' + ($Case -join ',')
+        }
+        & node @argsForProbe
         $exitCode = $LASTEXITCODE
     }
     finally { Pop-Location }
