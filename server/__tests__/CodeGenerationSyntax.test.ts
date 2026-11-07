@@ -128,6 +128,7 @@ describe('syntax validation before saving an AI proposal', () => {
     const fixRequest = model.requests[4];
     expect(fixRequest.messages.at(-1).content).toContain('expected 1, got 2');
     expect(fixRequest.messages.at(-1).content).toContain('input.length');
+    expect(fixRequest.messages.at(-1).content).toContain('Replace only the offending implementation');
     expect(readFileSync(model.root + '/' + target, 'utf8')).toBe(original);
     expect(existsSync(model.root + '/' + file)).toBe(false);
   });
