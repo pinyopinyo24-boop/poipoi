@@ -1100,6 +1100,7 @@ export class PoipoiCodeAgent {
     let requirementRetryUsed = false;
     let requirementFeedback = '';
     let validationRetryUsed = false;
+    const failedValidationSignatures = new Set<string>();
     let validationFeedback = '';
     let materializeRetryUsed = false;
     let syntaxRetryUsed = false;
@@ -1583,6 +1584,32 @@ export class PoipoiCodeAgent {
           proposals = [];
           continue;
         }
+        // Runtime acceptance is authoritative. Check it before asking a second
+        // model for a subjective review, so bad implementations receive actionable
+        // feedback instead of consuming another review call.
+        if (options.validateGenerated) {
+          const signature = JSON.stringify(generated.map(change => [change.path, change.content]));
+          if (failedValidationSignatures.has(signature))
+            throw new Error('AI repeated a previously rejected code proposal. No change was applied.');
+          const validationInput = Object.freeze(generated.map(change => Object.freeze({ ...change })));
+          const issues = await options.validateGenerated(validationInput);
+          if (!Array.isArray(issues) || issues.some((item: unknown) => typeof item !== "string" || !item.trim()))
+            throw new Error("生成コードの検証結果が不正です。変更は適用していません。");
+          if (issues.length) {
+            failedValidationSignatures.add(signature);
+            if (validationRetryUsed) throw new Error("生成コードの検証に失敗しました。変更は適用していません: " + issues.join("; ").slice(0, 1800));
+            validationRetryUsed = true;
+            validationFeedback = [
+              'Executable acceptance FAILED for the previous proposal. Preserve all already-correct behavior.',
+              'Correct the specific failing condition, with its input units and required output, not just superficial formatting.',
+              'Use the required original API names, edge cases and public exports exactly. Never edit or bypass checks.',
+              'Regenerate the COMPLETE proposal; the host will independently rerun its checks.',
+              JSON.stringify({ originalRequest: modelIntent, failures: issues.slice(0, 20), previousChanges: proposals }),
+            ].join('\\n');
+            proposals = [];
+            continue;
+          }
+        }
         // Review the current request and the resulting code, not old dialogue or
         // whether a preview has already been applied to the working tree.
         const reviewPrompt = JSON.stringify({
@@ -1727,21 +1754,6 @@ export class PoipoiCodeAgent {
             JSON.stringify({ issues: review.issues, previousChanges: proposals });
           proposals = [];
           continue;
-        }
-        if (options.validateGenerated) {
-          const validationInput = Object.freeze(generated.map(change => Object.freeze({ ...change })));
-          const issues = await options.validateGenerated(validationInput);
-          if (!Array.isArray(issues) || issues.some((item: unknown) => typeof item !== "string" || !item.trim())) {
-            throw new Error("生成コードの検証結果が不正です。変更は適用していません。");
-          }
-          if (issues.length) {
-            if (validationRetryUsed) throw new Error("生成コードの検証に失敗しました。変更は適用していません: " + issues.join("; ").slice(0, 1200));
-            validationRetryUsed = true;
-            validationFeedback = "The caller's acceptance checks actually failed on the previous generated code. Correct the reported failures without weakening validation, removing checks or changing requested behavior. Regenerate the COMPLETE change set. " +
-              JSON.stringify({ failures: issues.slice(0, 20).map(item => item.slice(0, 1000)), previousChanges: proposals });
-            proposals = [];
-            continue;
-          }
         }
         return generated;
       }
