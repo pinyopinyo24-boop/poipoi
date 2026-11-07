@@ -42,6 +42,28 @@ beforeEach(() => { model.replies.length = 0; model.requests.length = 0; });
 afterAll(() => { vi.restoreAllMocks(); rmSync(model.root, { recursive: true, force: true }); });
 
 describe('syntax validation before saving an AI proposal', () => {
+  it('repairs a repeated rejected new module with exact edits and independently reruns acceptance', async () => {
+    const file = 'server/core/CountCodepoints.ts';
+    const wrong = 'export function codepoints(input: string) { return input.length; }';
+    const right = 'export function codepoints(input: string) { return Array.from(input).length; }';
+    const bad = JSON.stringify({ changes: [{ path: file, content: wrong }] });
+    const patch = JSON.stringify({ edits: [{ oldText: 'input.length', newText: 'Array.from(input).length' }] });
+    model.replies.push(bad, bad, bad, bad, patch, accepted);
+    const validateGenerated = vi.fn(changes => changes[0].content === right ? [] : ['Unicode emoji count is wrong: expected 1, got 2']);
+    const changes = await PoipoiCodeAgent.getInstance().generate(
+      'Create NEW server/core/CountCodepoints.ts exporting codepoints(input: string) as Unicode code point length.',
+      'system', { validateGenerated },
+    );
+    expect(changes[0].content).toBe(right);
+    expect(validateGenerated).toHaveBeenCalledTimes(3);
+    expect(model.requests).toHaveLength(6);
+    const fixRequest = model.requests[4];
+    expect(fixRequest.messages.at(-1).content).toContain('expected 1, got 2');
+    expect(fixRequest.messages.at(-1).content).toContain('input.length');
+    expect(readFileSync(model.root + '/' + target, 'utf8')).toBe(original);
+    expect(existsSync(model.root + '/' + file)).toBe(false);
+  });
+
   it('recovers from TS18046 unknown catch variables with type-narrowing guidance', async () => {
     const file = 'server/core/ReportError.ts';
     const bad = "export function reportError() { try { throw Error('read failure'); } catch (error) { return error.message; } }";
