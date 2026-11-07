@@ -1,7 +1,7 @@
 # Real Qwen/Ollama matrix verification in a disposable Git worktree.
 # Does not merge, checkout, build an APK, or apply generated changes.
-$ErrorActionPreference = 'Stop'
 param([string]$Repo = (Get-Location).Path)
+$ErrorActionPreference = 'Stop'
 $repo = (Resolve-Path -LiteralPath $Repo).Path
 if (!(Test-Path -LiteralPath (Join-Path $repo '.git'))) { throw "Not a PoiPoi git repository: $repo" }
 $branch = 'fix/generation-diagnostics-20261107'
