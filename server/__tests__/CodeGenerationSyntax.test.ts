@@ -42,6 +42,29 @@ beforeEach(() => { model.replies.length = 0; model.requests.length = 0; });
 afterAll(() => { vi.restoreAllMocks(); rmSync(model.root, { recursive: true, force: true }); });
 
 describe('syntax validation before saving an AI proposal', () => {
+  it('recovers from a repeated failed candidate by changing implementation rather than applying it', async () => {
+    const file = 'server/core/CountItems.ts';
+    const bad = 'export function countItems(input: string) { return input.length; }';
+    const good = 'export function countItems(input: string) { return Array.from(input).length; }';
+    model.replies.push(
+      JSON.stringify({ changes: [{ path: file, content: bad }] }),
+      JSON.stringify({ changes: [{ path: file, content: bad }] }),
+      JSON.stringify({ changes: [{ path: file, content: good }] }),
+      accepted,
+    );
+    const validateGenerated = vi.fn(changes =>
+      changes[0].content === good ? [] : ['Unicode code points: input a😀い must count 3']);
+    const changes = await PoipoiCodeAgent.getInstance().generate(
+      'Create NEW server/core/CountItems.ts with exported countItems(input: string). Count Unicode code points for arbitrary input.',
+      'system', { validateGenerated },
+    );
+    expect(changes[0].content).toBe(good);
+    expect(existsSync(model.root + '/' + file)).toBe(false);
+    expect(validateGenerated).toHaveBeenCalledTimes(2);
+    expect(model.requests).toHaveLength(4);
+    expect(JSON.stringify(model.requests[2].messages)).toContain('BYTE-FOR-BYTE IDENTICAL');
+    expect(JSON.stringify(model.requests[2].messages)).toContain('Unicode code points');
+  });
   it('supplies the current stage scope to the actual requirement-review request', async () => {
     model.replies.push(JSON.stringify({changes:[{path:target,content:original+addition}]}),accepted);
     const stageContext={focus:'Implement one-drive exchange and verification',deferredRequirements:['Create the visible CD button in the following stage.']};
