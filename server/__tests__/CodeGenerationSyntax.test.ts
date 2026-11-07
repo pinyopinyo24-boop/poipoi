@@ -42,6 +42,24 @@ beforeEach(() => { model.replies.length = 0; model.requests.length = 0; });
 afterAll(() => { vi.restoreAllMocks(); rmSync(model.root, { recursive: true, force: true }); });
 
 describe('syntax validation before saving an AI proposal', () => {
+  it('recovers from TS18046 unknown catch variables with type-narrowing guidance', async () => {
+    const file = 'server/core/ReportError.ts';
+    const bad = "export function reportError() { try { throw Error('read failure'); } catch (error) { return error.message; } }";
+    const good = "export function reportError() { try { throw Error('read failure'); } catch (error) { return error instanceof Error ? error.message : String(error); } }";
+    model.replies.push(
+      JSON.stringify({ changes: [{ path: file, content: bad }] }),
+      JSON.stringify({ changes: [{ path: file, content: good }] }),
+      accepted,
+    );
+    const changes = await PoipoiCodeAgent.getInstance().generate(
+      'Create new server/core/ReportError.ts with reportError() preserving messages of caught read errors and compiling under TypeScript strict.',
+    );
+    expect(changes[0].content).toBe(good);
+    expect(model.requests).toHaveLength(3);
+    expect(JSON.stringify(model.requests[1].messages)).toContain('TS18046');
+    expect(JSON.stringify(model.requests[1].messages)).toContain('error instanceof Error');
+    expect(existsSync(model.root + '/' + file)).toBe(false);
+  });
   it('recovers from a repeated failed candidate by changing implementation rather than applying it', async () => {
     const file = 'server/core/CountItems.ts';
     const bad = 'export function countItems(input: string) { return input.length; }';
