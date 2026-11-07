@@ -35,3 +35,5 @@ jobs:
         run: pnpm exec vitest run server/__tests__/GenerationScenarioAcceptance.test.ts server/__tests__/GenerationMatrix.integration.test.ts server/__tests__/CodeGenerationSyntax.test.ts server/__tests__/CodeGenerationStages.test.ts --reporter=verbose
       - name: Check TypeScript compatibility
         run: pnpm check
+      - name: Run full server test suite
+        run: pnpm test:ci
