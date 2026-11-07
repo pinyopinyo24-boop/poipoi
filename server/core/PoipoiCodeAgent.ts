@@ -828,6 +828,15 @@ export class PoipoiCodeAgent {
       await options.onReviewWarning?.('長い依頼を分割して生成に渡しました。原文の全要件が実装されたかは自動確認できません。承認前に元の依頼と変更案を照合してください。');
     }
     const modelTask = task.replace(intent, modelIntent);
+    const standaloneReactComponent = /standalone React.*component|React.*standalone.*component/i.test(modelIntent) &&
+      /default export|default-export/i.test(modelIntent);
+    const reactRequest = /React|\.tsx\b|コンポーネント|画面部品/i.test(modelIntent);
+    const requestedElement = reactRequest ? (
+      modelIntent.match(/(?<!not )(?<!never )(?<!don't )\b(?:render|return)\s+(?:an?\s+)?([A-Za-z][\w-]*)\s+element\b/i)?.[1] ??
+      modelIntent.match(/\b(output|meter|progress|input|textarea|div|span)\s*(?:要素|タグ)?(?:に|で)(?:表示|描画)(?!しない|するな|せず|禁止)/)?.[1]
+    ) : undefined;
+    const noHooksRequested = reactRequest && /\b(?:no|without)\b[^.!?\n]*\bhooks?\b/i.test(modelIntent);
+
     // Keep the model's source context within a bounded budget regardless of
     // repository size. Source not shown remains available through readFiles;
     // never shorten the user's request or silently treat omitted source as read.
@@ -1107,6 +1116,25 @@ export class PoipoiCodeAgent {
               '. Use the existing dependencies or a real platform bridge; do not invent an npm package for a Windows SDK interface.');
           }
         }
+        if (requestedElement && normalizedPath.endsWith('.tsx') && sourceContents.has(normalizedPath) &&
+            !/(?<!not )(?<!never )(?<!don't )\b(?:move|relocate|extract|remove|replace)\b|(?:移動|移設|切り出|分離|削除|置換)(?!しない|するな|せず|禁止)/i.test(modelIntent)) {
+          const ts = requireCompiler('typescript') as typeof import('typescript');
+          const hasRequestedElement = (source: string) => {
+            const ast=ts.createSourceFile(normalizedPath,source,ts.ScriptTarget.Latest,true,ts.ScriptKind.TSX);
+            let found=false;
+            const visit=(node: import('typescript').Node) => {
+              if((ts.isJsxOpeningElement(node) || ts.isJsxSelfClosingElement(node)) && node.tagName.getText(ast)===requestedElement)found=true;
+              if(ts.isCallExpression(node) && node.arguments[0] && ts.isStringLiteral(node.arguments[0]) &&
+                  node.arguments[0].text===requestedElement &&
+                  ((ts.isIdentifier(node.expression) && node.expression.text==='createElement') ||
+                  (ts.isPropertyAccessExpression(node.expression) && node.expression.name.text==='createElement')))found=true;
+              ts.forEachChild(node,visit);
+            };
+            visit(ast);return found;
+          };
+          if(hasRequestedElement(sourceContents.get(normalizedPath)!) && !hasRequestedElement(nextContent))
+            throw Error('Requested JSX element <'+requestedElement+'> was removed from '+normalizedPath+'. Preserve the explicitly requested display element, current props and public exports.');
+        }
         if (sourceContents.get(normalizedPath)?.includes('\r\n')) nextContent = nextContent.replace(/\r?\n/g, '\r\n');
         if (!nextContent.trim()) throw new Error("Empty generated source: " + normalizedPath);
         if (nextContent === sourceContents.get(normalizedPath)) throw new Error("Generated proposal contains no change: " + normalizedPath);
@@ -1142,14 +1170,18 @@ export class PoipoiCodeAgent {
         (isolatedDisplay ? '' : '\nAllowed NEW file paths (complete content only; use these exact paths for new modules and imports):\n' + JSON.stringify(newFilePaths));
       // Generic React component contracts are structural, not canned answers.
       // A plain default-exported function is callable by any parent/test renderer.
-      const standaloneReactComponent = /standalone React.*component|React.*standalone.*component/i.test(modelIntent) &&
-        /default export|default-export/i.test(modelIntent);
-      const reactPrompt = standaloneReactComponent
+      const componentPrompt = standaloneReactComponent
         ? prompt + '\nFor a standalone React component, export a directly callable function by default. Use the exact component name, props and rendered element requested by the user. A React.memo(...) wrapper, React.forwardRef(...), an object, a JSX value, a named-only export, or module.exports is NOT a callable default-exported function. Derive the rendered values from current declared props, not fixed samples. Do not invent an input prop or replace the requested element with output unless the request specifies output.'
         : prompt;
-      const coderPrompt = /コードポイント|Unicode\s+code\s*point/i.test(modelIntent)
+      const reactPrompt = componentPrompt +
+        (requestedElement ? '\nThe request explicitly requires <' + requestedElement + '>. Render that element for the requested display; do not substitute a different tag.' : '') +
+        (noHooksRequested ? '\nThe current request explicitly forbids React hooks. Calculate directly from current props, without useMemo, useState or useEffect.' : '');
+      const unicodePrompt = /コードポイント|Unicode\s+code\s*point/i.test(modelIntent)
         ? reactPrompt + '\nJavaScript semantic constraint: String.length counts UTF-16 code units, not Unicode code points. For a code-point count, iterate the string by code point (for example Array.from(value) or for...of), without special-casing examples. Do not invent String methods such as codePointCount().'
         : reactPrompt;
+      const coderPrompt = /\b(?:non-?finite|finite)\b|有限/i.test(modelIntent)
+        ? unicodePrompt + '\nJavaScript numeric constraint: isNaN only detects NaN; it does not reject Infinity or -Infinity. Use Number.isFinite for a finite-number requirement and follow the requested error or fallback behavior for nonfinite inputs and results.'
+        : unicodePrompt;
       const visibleSource = promptSources().shown;
       // Constrain the model's JSON grammar too: small, fully reviewed files do
       // not need fragile edit anchors. Larger/excerpted files still use edits.
@@ -1702,6 +1734,45 @@ export class PoipoiCodeAgent {
                   generated[0].content.length <= 12000) {
                 const target = generated[0];
                 try {
+                  // An element-type failure must repair the offending JSX,
+                  // not a previously passing calculation elsewhere in the file.
+                  // Anchor candidates come from parsed source and the current
+                  // request; the model still supplies the replacement source.
+                  const elementFailure = !!requestedElement && failures.some(issue => /output element|requested [\w-]+ element|element type/i.test(issue));
+                  const hookFailure = noHooksRequested && failures.some(issue=>/use(?:Memo|State|Effect|Callback|Ref|Reducer|Context|LayoutEffect)\b|hooks?/i.test(issue));
+                  const repairAnchors = new Set<string>();
+                  if ((elementFailure || hookFailure) && target.path.endsWith('.tsx')) {
+                    const ts = requireCompiler('typescript') as typeof import('typescript');
+                    const ast = ts.createSourceFile(target.path,target.content,ts.ScriptTarget.Latest,true,ts.ScriptKind.TSX);
+                    const add = (node: import('typescript').Node) => {
+                      const source=node.getText(ast);
+                      if(source && source.length<=500 && target.content.indexOf(source)===target.content.lastIndexOf(source)) repairAnchors.add(source);
+                    };
+                    const root = (node: import('typescript').Expression) => {
+                      while(ts.isParenthesizedExpression(node))node=node.expression;
+                      if(elementFailure && ts.isJsxElement(node) && node.openingElement.tagName.getText(ast)!==requestedElement) {
+                        add(node.openingElement);add(node.closingElement);add(node);
+                      } else if(elementFailure && ts.isJsxSelfClosingElement(node) && node.tagName.getText(ast)!==requestedElement)add(node);
+                    };
+                    const hookNames=new Set<string>();
+                    for(const statement of ast.statements) {
+                      if(ts.isImportDeclaration(statement) && ts.isStringLiteral(statement.moduleSpecifier) && statement.moduleSpecifier.text==='react') {
+                        const bindings=statement.importClause?.namedBindings;
+                        if(bindings && ts.isNamedImports(bindings))for(const el of bindings.elements)
+                          if(/^use[A-Z]/.test((el.propertyName??el.name).text))hookNames.add(el.name.text);
+                      }
+                    }
+                    const visit = (node: import('typescript').Node) => {
+                      if(hookFailure && ts.isCallExpression(node) &&
+                          ((ts.isPropertyAccessExpression(node.expression) && /^use[A-Z]/.test(node.expression.name.text)) ||
+                          (ts.isIdentifier(node.expression) && (/^use[A-Z]/.test(node.expression.text) || hookNames.has(node.expression.text)))))add(node);
+                      if(ts.isReturnStatement(node) && node.expression)root(node.expression);
+                      if(ts.isArrowFunction(node) && !ts.isBlock(node.body))root(node.body);
+                      ts.forEachChild(node,visit);
+                    };
+                    visit(ast);
+                  }
+                  const allowedAnchors=[...repairAnchors];
                   const repair = await callCoder('不合格コードの限定修復', {
                     userId, timeoutMs: 180000,
                     model: process.env.LOCAL_CODER_MODEL || 'qwen2.5-coder:7b',
@@ -1713,7 +1784,8 @@ export class PoipoiCodeAgent {
                       schema: { type: 'object', properties: {
                         edits: { type: 'array', minItems: 1, maxItems: 3,
                           items: { type: 'object', properties: {
-                            oldText: { type: 'string', minLength: 1, maxLength: 500 },
+                            oldText: { type: 'string', minLength: 1, maxLength: 500,
+                              ...(allowedAnchors.length ? {enum:allowedAnchors} : {}) },
                             newText: { type: 'string', maxLength: 1000 },
                           }, required: ['oldText', 'newText'], additionalProperties: false } },
                       }, required: ['edits'], additionalProperties: false },
@@ -1725,6 +1797,8 @@ export class PoipoiCodeAgent {
                         failingChecks: failures,
                         repairGuidance: [
                           'Replace only the offending implementation expression or statement, never a test, API name or public type.',
+                          ...(elementFailure ? ['The failed check concerns the rendered ELEMENT TYPE. The current request requires <'+requestedElement+'>. Repair the mismatched returned JSX tag(s), preserving current props and calculations. Changing a code-point counting expression does not fix an element-type mismatch.'] : []),
+                          ...(hookFailure ? ['The current request forbids React hooks. Replace a COMPLETE hook invocation, including its callback and dependency array, with a direct calculation from props. Do not replace only the opening line and leave a dangling dependency array. Preserve the requested handling of finite and nonfinite values.'] : []),
                           ...(failures.some(issue => /preserve existing records|do not mutate inputs/i.test(issue))
                             ? ['Existing objects must be retained without rewriting their sku/name values. Normalize existing SKU temporarily only for comparison; normalize only the newly appended record. Return a new array while keeping original inputs unchanged.']
                             : []),
@@ -1746,6 +1820,7 @@ export class PoipoiCodeAgent {
                     if (typeof edit.oldText !== 'string' || !edit.oldText ||
                         edit.oldText.length > 500 || typeof edit.newText !== 'string' ||
                         edit.newText.length > 1000 ||
+                        (allowedAnchors.length && !allowedAnchors.includes(edit.oldText)) ||
                         corrected.indexOf(edit.oldText) < 0 ||
                         corrected.indexOf(edit.oldText) !== corrected.lastIndexOf(edit.oldText))
                       throw Error('Unsafe corrective patch');

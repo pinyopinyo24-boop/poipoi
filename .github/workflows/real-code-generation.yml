@@ -99,6 +99,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: real-generation-${{ matrix.case }}
+          overwrite: true
           path: |
             data/code-generation-verification/
             ${{ runner.temp }}/ollama.log
@@ -130,5 +131,6 @@ jobs:
         if: always()
         with:
           name: real-generation-summary
+          overwrite: true
           path: ${{ runner.temp }}/real-summary/
           retention-days: 7

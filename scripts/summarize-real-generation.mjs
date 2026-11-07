@@ -14,8 +14,12 @@ const runtimeFiles=['../server/core/PoipoiCodeAgent.ts','./probe-local-code-gene
 const sourceHashes=Object.fromEntries(runtimeFiles.map(file=>[file,createHash('sha256').update(readFileSync(new URL(file,import.meta.url))).digest('hex')]));
 const reports=[];
 for(const file of files.filter(file=>file.endsWith('summary.json'))) {
+  const manifestFile=path.join(path.dirname(file),'manifest.json');
+  // A rerun can also download the earlier aggregate artifact. Only raw
+  // per-case reports have a manifest; missing raw cases still fail below.
+  if(!existsSync(manifestFile))continue;
   const summary=JSON.parse(readFileSync(file,'utf8'));
-  const manifest=JSON.parse(readFileSync(path.join(path.dirname(file),'manifest.json'),'utf8'));
+  const manifest=JSON.parse(readFileSync(manifestFile,'utf8'));
   for(const result of summary.results)reports.push({manifest,result});
 }
 const assessed=assessRealReports(selectRealCases(selection),reports,sourceHashes);

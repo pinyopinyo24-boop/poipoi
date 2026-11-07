@@ -1,6 +1,9 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { mkdirSync, writeFileSync, readFileSync, existsSync, rmSync } from 'node:fs';
 import { createHash } from 'node:crypto';
+import { scenarios } from '../../scripts/lib/generation-scenarios.mjs';
+import { qualityScenarios } from '../../scripts/lib/generation-quality-scenarios.mjs';
+import { verifyScenario } from '../../scripts/lib/verify-generation-scenario.mjs';
 
 const model = vi.hoisted(() => {
   const root = process.cwd() + '/node_modules/.cache/generation-syntax-' + Date.now();
@@ -42,6 +45,124 @@ beforeEach(() => { model.replies.length = 0; model.requests.length = 0; });
 afterAll(() => { vi.restoreAllMocks(); rmSync(model.root, { recursive: true, force: true }); });
 
 describe('syntax validation before saving an AI proposal', () => {
+  it('preserves an explicitly requested existing display element without requiring a runtime callback', async () => {
+    const file='client/src/components/ExistingOutput.tsx';
+    const original='export default function ExistingOutput({input}:{input:string}) { return <output>{input}</output>; }';
+    const good=original.replace('{input}</output>','{input.trim()}</output>');
+    const bad=good.replaceAll('output','div');
+    mkdirSync(model.root+'/client/src/components',{recursive:true});writeFileSync(model.root+'/'+file,original);
+    try {
+      model.replies.push(JSON.stringify({changes:[{path:file,content:bad}]}),JSON.stringify({changes:[{path:file,content:good}]}),accepted);
+      const result=await PoipoiCodeAgent.getInstance().generate(
+        file+'を変更し、inputの前後空白を除いた結果だけをoutputに表示する。既存のdefault exportとpropsのinputは保持して。','system');
+      expect(result[0].content).toBe(good);
+      expect(model.requests[1].messages.at(-1).content).toContain('Requested JSX element <output> was removed');
+      expect(readFileSync(model.root+'/'+file,'utf8')).toBe(original);
+    } finally {rmSync(model.root+'/'+file,{force:true});}
+  });
+
+  it('allows an explicitly requested element replacement instead of imposing the old tag', async () => {
+    const file='client/src/components/ExistingOutput.tsx';
+    const original='export default function ExistingOutput({input}:{input:string}) { return <output>{input}</output>; }';
+    const next=original.replaceAll('output','span');
+    mkdirSync(model.root+'/client/src/components',{recursive:true});writeFileSync(model.root+'/'+file,original);
+    try {
+      model.replies.push(JSON.stringify({changes:[{path:file,content:next}]}),accepted);
+      const result=await PoipoiCodeAgent.getInstance().generate(
+        'Modify '+file+': return a span element instead of the old output element. Keep current props and default export.','system');
+      expect(result[0].content).toBe(next);
+      expect(readFileSync(model.root+'/'+file,'utf8')).toBe(original);
+    } finally {rmSync(model.root+'/'+file,{force:true});}
+  });
+
+  it('does not turn a negated Japanese display instruction into a preservation requirement', async () => {
+    const file='client/src/components/ExistingOutput.tsx';
+    const original='export default function ExistingOutput({input}:{input:string}) { return <output>{input}</output>; }';
+    const next=original.replaceAll('output','span');
+    mkdirSync(model.root+'/client/src/components',{recursive:true});writeFileSync(model.root+'/'+file,original);
+    try {
+      model.replies.push(JSON.stringify({changes:[{path:file,content:next}]}),accepted);
+      const result=await PoipoiCodeAgent.getInstance().generate(
+        file+'を変更し、outputに表示しないで、spanに表示する。既存のpropsとdefault exportを保持して。','system');
+      expect(result[0].content).toBe(next);
+      expect(model.requests[0].messages.at(-1).content).toContain('explicitly requires <span>');
+      expect(model.requests).toHaveLength(2);
+      expect(readFileSync(model.root+'/'+file,'utf8')).toBe(original);
+    } finally {rmSync(model.root+'/'+file,{force:true});}
+  });
+
+  it('repairs the complete forbidden hook call rather than leaving its callback and dependency array behind', async () => {
+    const scenario=qualityScenarios.find(s=>s.id==='react-gauge')!;
+    const file=scenario.required[0];
+    const hook='React.useMemo(()=>{if(isNaN(value)||value<0)return 0;if(value>100)return 100;return value;},[value])';
+    const bad='export default function Gauge({value}:{value:number}){const clampedValue='+hook+';return <meter min={0} max={100} value={clampedValue}/>;}';
+    const expression='Number.isFinite(value)?Math.max(0,Math.min(100,value)):0';
+    model.replies.push(...Array(2).fill(JSON.stringify({changes:[{path:file,content:bad}]})),
+      JSON.stringify({edits:[{oldText:hook,newText:expression}]}),accepted);
+    const result=await PoipoiCodeAgent.getInstance().generate(
+      scenario.request+' Using server/core/ApprovalUiVerification.ts as reference.', 'system',
+      {validateGenerated:changes=>verifyScenario(scenario,changes)});
+    expect(result[0].content).toBe(bad.replace(hook,expression));
+    const repair=model.requests[2];
+    const anchors=repair.response_format.json_schema.schema.properties.edits.items.properties.oldText.enum;
+    expect(anchors).toEqual([hook]);
+    expect(repair.messages.at(-1).content).toContain('COMPLETE hook invocation');
+    expect(model.requests[0].messages.at(-1).content).toContain('explicitly forbids React hooks');
+    expect(model.requests[0].messages.at(-1).content).toContain('Number.isFinite');
+    expect(existsSync(model.root+'/'+file)).toBe(false);
+  });
+
+  it('repairs the actual rejected JSX tag instead of changing a passing code-point calculation', async () => {
+    const scenario=scenarios.find(s=>s.id==='react-display')!;
+    const file=scenario.required[0];
+    const bad='const CharacterCount=({input}:{input:string})=>{const count=Array.from(input).length;return <span>{count}文字</span>;}; export default CharacterCount;';
+    const good=bad.replace('<span>','<output>').replace('</span>','</output>');
+    model.replies.push(
+      JSON.stringify({changes:[{path:file,content:'export '+bad}]}),
+      ...Array(2).fill(JSON.stringify({changes:[{path:file,content:bad}]})),
+      JSON.stringify({edits:[{oldText:'<span>',newText:'<output>'},{oldText:'</span>',newText:'</output>'}]}),accepted);
+    const check=vi.fn(changes=>verifyScenario(scenario,changes));
+    const result=await PoipoiCodeAgent.getInstance().generate(
+      scenario.request+' Using server/core/ApprovalUiVerification.ts as reference.', 'system',{validateGenerated:check});
+    expect(result[0].content).toBe(good);
+    expect(check).toHaveBeenCalledTimes(4);
+    const repair=model.requests[3];
+    const anchors=repair.response_format.json_schema.schema.properties.edits.items.properties.oldText.enum;
+    expect(anchors).toContain('<span>');expect(anchors).toContain('</span>');
+    expect(anchors).not.toContain('Array.from(input).length');
+    expect(repair.messages.at(-1).content).toContain('preserving current props and calculations');
+    expect(existsSync(model.root+'/'+file)).toBe(false);
+  });
+
+  it('rejects an unrelated expression patch when the runtime failure concerns the JSX tag', async () => {
+    const scenario=scenarios.find(s=>s.id==='react-display')!;
+    const file=scenario.required[0];
+    const bad='export default function CharacterCount({input}:{input:string}) { return <span>{Array.from(input).length}文字</span>; }';
+    model.replies.push(...Array(2).fill(JSON.stringify({changes:[{path:file,content:bad}]})),
+      JSON.stringify({edits:[{oldText:'Array.from(input).length',newText:'[...input].length'}]}));
+    await expect(PoipoiCodeAgent.getInstance().generate(
+      scenario.request+' Using server/core/ApprovalUiVerification.ts as reference.', 'system',
+      {validateGenerated:changes=>verifyScenario(scenario,changes)})).rejects.toThrow('previously rejected');
+    expect(model.requests).toHaveLength(3);
+    expect(existsSync(model.root+'/'+file)).toBe(false);
+  });
+
+  it('uses the same JSX repair mechanism for a different element and different props', async () => {
+    const scenario=qualityScenarios.find(s=>s.id==='react-gauge')!;
+    const file=scenario.required[0];
+    const wrongElement='<output>{value}</output>';
+    const bad='export default function Gauge({value}:{value:number}) { return '+wrongElement+'; }';
+    const meter='<meter min={0} max={100} value={Number.isFinite(value)?Math.max(0,Math.min(100,value)):0}/>';
+    model.replies.push(...Array(2).fill(JSON.stringify({changes:[{path:file,content:bad}]})),
+      JSON.stringify({edits:[{oldText:wrongElement,newText:meter}]}),accepted);
+    const result=await PoipoiCodeAgent.getInstance().generate(
+      scenario.request+' Using server/core/ApprovalUiVerification.ts as reference.', 'system',
+      {validateGenerated:changes=>verifyScenario(scenario,changes)});
+    expect(result[0].content).toBe(bad.replace(wrongElement,meter));
+    expect(model.requests[0].messages.at(-1).content).toContain('explicitly requires <meter>');
+    expect(existsSync(model.root+'/'+file)).toBe(false);
+  });
+
   it('does not prescribe a React default export when repairing a missing ordinary function export', async () => {
     const file='server/core/ProductionAverage.ts';
     const wrong='export function calculateProductionAverage(rows:{quantity:number,minutes:number}[]) { return rows.reduce((s,r)=>s+r.minutes*r.quantity,0)/rows.reduce((s,r)=>s+r.quantity,0); }';

@@ -57,6 +57,13 @@ it('reports the requested public API name when the model exports a different fun
   expect(verifyScenario(scenario,changes).join(' ')).toContain('required named export averageMinutes must be callable');
 });
 
+it('rejects staged UI wiring that returns the right text in the wrong requested element', () => {
+  const scenario=scenarios.find(s=>s.id==='staged-ui-core')!;
+  const contents=[...valid['staged-ui-core']];contents[1]=contents[1].replaceAll('output','div');
+  const changes=scenario.required.map((path:string,index:number)=>({path,content:contents[index]}));
+  expect(verifyScenario(scenario,changes).join(' ')).toContain('staged output element');
+});
+
 it('stops infinite generated loops and does not expose Node process or filesystem APIs', () => {
   const scenario=scenarios.find(s=>s.id==='unicode')!;
   for(const content of ['export function countCharacters(){while(true){}}',

@@ -8,7 +8,7 @@ export const qualityScenarios = [
     tests: `const C=load('client/src/components/Gauge.tsx').default;
       assert(typeof C==='function','required default export Gauge must be callable');
       for(const [value,expected] of [[-12,0],[0,0],[37.5,37.5],[100,100],[143,100],[NaN,0],[Infinity,0],[-Infinity,0],[0.25,0.25]]) {
-        const view=C({value}); assert(isReactElement(view),'real React element'); assert(view && view.type==='meter','requested meter element');
+        const view=C({value}); assert(isReactElement(view),'real React element'); assert(view && view.type==='meter','requested meter element: expected meter; actual '+String(view?.type));
         assert(view.props.min===0 && view.props.max===100,'meter bounds');
         assert(view.props.value===expected,'meter uses current value '+value);
       }`,

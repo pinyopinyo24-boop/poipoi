@@ -64,7 +64,7 @@ export const scenarios = [
     tests: `const C=load('client/src/components/CharacterCount.tsx').default;
       assert(typeof C==='function','required default export CharacterCount must be callable');
       for(const [input,text] of [['','0文字'],['あいう','3文字'],['😀','1文字'],['a😀い','3文字']]) {
-        const view=C({input}); assert(isReactElement(view),'real React element'); assert(view && view.type==='output','output element'); assert(renderText(view)===text,'render updated input '+input);
+        const view=C({input}); assert(isReactElement(view),'real React element'); assert(view && view.type==='output','output element: expected output; actual '+String(view?.type)); assert(renderText(view)===text,'render updated input '+input);
       }`,
   },
   {
@@ -103,6 +103,7 @@ export const scenarios = [
       const C=load('client/src/pages/PartPreview.tsx').default;
       const first=C({sku:' a-1 '}),second=C({sku:' b2 '});
       assert(isReactElement(first) && isReactElement(second),'real React elements');
+      assert(first.type==='output' && second.type==='output','staged output element: expected output; actual '+String(first.type));
       assert(renderText(first)==='A-1','UI connected to generated core');
       assert(renderText(second)==='B2','UI updates for different props');
       assert(calls===2,'UI must actually call the generated core');`,
