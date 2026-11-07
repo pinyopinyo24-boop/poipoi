@@ -1770,6 +1770,10 @@ export class PoipoiCodeAgent {
         // whether a preview has already been applied to the working tree.
         const reviewPrompt = JSON.stringify({
           request: modelIntent,
+          ...(options.validateGenerated ? {
+            priorExecutableAcceptance: 'Passed on the exact resulting source. This is evidence for the behaviors checked, not proof of any untested behavior.',
+            reviewerCaution: 'Do not assert failure of passing examples without a concrete counterexample and exact source evidence. JavaScript string.length counts UTF-16 code units; Array.from(input).length counts Unicode code points.'
+          } : {}),
           ...(options.stageContext ? { implementationStage: options.stageContext,
             reviewScope: 'Require every CURRENT requirement in the current stage. Later requirements are implemented by following stages and checked again against the final combined proposal.' } : {}),
           stage: "unapplied proposal awaiting user approval",
