@@ -1527,6 +1527,30 @@ export class PoipoiCodeAgent {
           };
           visit(parsed);
         }
+        // TypeScript transpilation does not type-check property calls. Reject
+        // nonstandard String methods on a prop explicitly typed as string
+        // before an expensive runtime attempt. This does not assume any
+        // particular expected answer: it validates the requested API type.
+        if (standaloneReactComponent && /input\s*:\s*string/i.test(modelIntent)) {
+          const ts = requireCompiler('typescript') as typeof import('typescript');
+          const unsupportedStringMethods = new Set(['codePointCount', 'codePoints', 'countCodePoints']);
+          for (const change of generated.filter(item => item.baseHash === null && item.path.endsWith('.tsx'))) {
+            const ast = ts.createSourceFile(change.path, change.content, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
+            const scan = (node: import('typescript').Node) => {
+              if (ts.isCallExpression(node) && ts.isPropertyAccessExpression(node.expression) &&
+                  ts.isIdentifier(node.expression.expression) &&
+                  node.expression.expression.text === 'input' &&
+                  unsupportedStringMethods.has(node.expression.name.text)) {
+                sampleErrors.push(change.path + ': ' + node.expression.getText(ast) +
+                  ' is not a JavaScript String method. The input prop is string. ' +
+                  'Count Unicode code points using an actual JavaScript expression such as ' +
+                  'Array.from(input).length; keep the callable default export and real output element.');
+              }
+              ts.forEachChild(node, scan);
+            };
+            scan(ast);
+          }
+        }
         let syntaxErrors = [...sampleErrors, ...placementErrors, ...this.syntaxErrors(generated)];
         // Keep valid files in a multi-file draft intact. Repair only the
         // introduced span, never unrelated source in an existing file.
@@ -1611,7 +1635,7 @@ export class PoipoiCodeAgent {
             ? ' TypeScript catch variables are unknown: narrow caught values with error instanceof Error before accessing error.message; preserve the message for read/write/verify failures. '
             : '';
           syntaxFeedback = typeGuidance + (sampleErrors.length
-            ? "The generated component fails a static check of the CURRENT request. Correct the reported character counting issue using a general rule for arbitrary input; keep the component and its default export. No code was executed or applied. "
+            ? "The generated component fails a static check of the CURRENT request. Correct any nonexistent JavaScript String API and the reported character counting issue using a general rule for arbitrary input. Keep the callable default export and return an actual output element. No code was executed or applied. "
             : "The TypeScript compiler found syntax errors in the RECONSTRUCTED resulting files. No code was executed or applied. Discard malformed replacements and regenerate the COMPLETE change set from the ORIGINAL source. Preserve existing bodies and closing braces/tags. Prefer minimal insertions after complete elements, leaving existing JSX intact. The previous candidate broke JSX syntax. Do not reproduce its broken placement. Use a different valid anchor or request additional source. Never place hooks at module scope or JSX between import declarations. Preserve every existing JSX closing tag and the complete surrounding component. ") +
             JSON.stringify({ errors: syntaxErrors.slice(0, 10), previousChanges: proposals, affectedSource });
           proposals = [];
