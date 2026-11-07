@@ -52,6 +52,6 @@ jobs:
           cache: 'npm'
           cache-dependency-path: mobile/package-lock.json
       - name: Install mobile dependencies without native builds
-        run: npm ci --ignore-scripts --no-audit --no-fund
+        run: npm install --ignore-scripts --no-audit --no-fund
       - name: Type-check Android/Expo source only
         run: npm run type-check
