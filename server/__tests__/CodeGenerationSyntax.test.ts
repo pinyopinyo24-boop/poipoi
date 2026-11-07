@@ -61,6 +61,9 @@ describe('syntax validation before saving an AI proposal', () => {
     expect(validateGenerated).toHaveBeenCalledTimes(5);
     expect(model.requests).toHaveLength(6);
     expect(model.requests[4].messages.at(-1).content).toContain('weighted time/quantity mean');
+    const reviewContext=JSON.parse(model.requests[5].messages.at(-1).content);
+    expect(reviewContext.priorExecutableAcceptance).toContain('Passed on the exact resulting source');
+    expect(reviewContext.reviewerCaution).toContain('Unicode code points');
     expect(existsSync(model.root+'/'+file)).toBe(false);
   });
 
