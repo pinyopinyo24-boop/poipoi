@@ -1666,7 +1666,7 @@ export class PoipoiCodeAgent {
                       this.syntaxErrors([{ ...target, content: corrected }]).length)
                     throw Error('Corrective patch failed TypeScript syntax checks');
                   const patched = Object.freeze([{ ...target, content: corrected }]);
-                  const checks = await options.validateGenerated(patched);
+                  const checks = await options.validateGenerated?.(patched);
                   if (!Array.isArray(checks) || checks.length ||
                       checks.some(issue => typeof issue !== 'string'))
                     throw Error('Corrective patch failed executable acceptance');
