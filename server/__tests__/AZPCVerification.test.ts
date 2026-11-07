@@ -155,7 +155,7 @@ describe('AZ PC integration with controlled model responses', () => {
   it('generates and persists a new-source preview without creating or applying the source file', async () => {
     const tools = unifiedToolsRouter.createCaller(ctx(user));
     const sourcePath = 'server/core/AZVerificationFeature.ts';
-    model.replies.push('新規関数を追加する変更案', JSON.stringify({ changes: [{ path: sourcePath, content: 'export const verificationFeature = 1;\n' }] }));
+    model.replies.push('新規関数を追加する変更案', JSON.stringify({ changes: [{ path: sourcePath, content: 'export const verificationFeature = 1;\n' }] }), JSON.stringify({ accepted: true, issues: [] }));
     const preview = await tools.codePreview({ request: 'プログラムの機能として検証用関数を新規作成して' });
     expect(preview.applied).toBe(false); expect(preview.tested).toBe(false);
     expect(preview.changes[0]).toMatchObject({ operation: 'create', baseHash: null, path: sourcePath });
@@ -169,7 +169,7 @@ describe('AZ PC integration with controlled model responses', () => {
   it('keeps an explicit one-file reference small and gives coder requests their own bounded timeout', async () => {
     const tools = unifiedToolsRouter.createCaller(ctx(user));
     const target = 'server/core/CompactPreview.ts';
-    model.replies.push('Create only the requested standalone module.', JSON.stringify({ changes: [{ path: target, content: 'export const compact = 1;\n' }] }));
+    model.replies.push('Create only the requested standalone module.', JSON.stringify({ changes: [{ path: target, content: 'export const compact = 1;\n' }] }), JSON.stringify({ accepted: true, issues: [] }));
     const preview = await tools.codePreview({ request: 'Using server/core/PoipoiEvolutionTestTarget.ts as reference, create only ' + target + '. Do not modify existing files.' });
     expect(preview.changes[0].path).toBe(target);
     expect(model.requests[0]).toMatchObject({ timeoutMs: 300000, contextWindow: 8192, max_tokens: 256 });
@@ -187,7 +187,7 @@ describe('AZ PC integration with controlled model responses', () => {
     const target = 'server/core/LargePreview.ts';
     const source = 'export const large = 1;\n' + '// source context line\n'.repeat(1000);
     await writeFile(model.fixture + '/' + target, source);
-    model.replies.push('Preserve the source and add one comment.', JSON.stringify({ changes: [{ path: target, content: source + '\n// proposed only\n' }] }));
+    model.replies.push('Preserve the source and add one comment.', JSON.stringify({ changes: [{ path: target, content: source + '\n// proposed only\n' }] }), JSON.stringify({ accepted: true, issues: [] }));
     const preview = await tools.codePreview({ request: 'Modify ' + target + ' by adding a comment, preserving its complete existing content.' });
     expect(model.requests[1].contextWindow).toBe(32768);
     expect(preview.changes[0].previousContent).toBe(source);
@@ -197,7 +197,7 @@ describe('AZ PC integration with controlled model responses', () => {
   it('returns actual before/after text and a matching source hash for an existing-file preview', async () => {
     const tools = unifiedToolsRouter.createCaller(ctx(user)); const sourcePath = 'server/core/PoipoiEvolutionTestTarget.ts';
     const source = await readFile(model.fixture + '/' + sourcePath, 'utf8');
-    model.replies.push('最小変更案', JSON.stringify({ changes: [{ path: sourcePath, content: source + '\n// verification proposal only\n' }] }));
+    model.replies.push('最小変更案', JSON.stringify({ changes: [{ path: sourcePath, content: source + '\n// verification proposal only\n' }] }), JSON.stringify({ accepted: true, issues: [] }));
     const preview = await tools.codePreview({ request: sourcePath + ' のプログラムにコメントを追加する変更案' });
     expect(preview.changes[0].baseHash).toBe(createHash('sha256').update(source).digest('hex'));
     expect(preview.changes[0].previousContent).toBe(source);
