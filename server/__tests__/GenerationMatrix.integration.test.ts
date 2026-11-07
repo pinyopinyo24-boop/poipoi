@@ -54,7 +54,7 @@ for(const mode of ['recover-behavior','persistent','recover-types'])it(`runs rea
     const report=output.match(/^REPORT: (.+)$/m)?.[1];expect(report,output).toBeTruthy();
     const summary=JSON.parse(readFileSync(join(report!,'summary.json'),'utf8'));
     expect(summary.results[0].status).toBe(persistent?'failed':'passed');
-    const responses=readFileSync(join(report!,'unicode.responses.jsonl'),'utf8').trim().split('\n');expect(responses).toHaveLength(4);
+    const responses=readFileSync(join(report!,'unicode.responses.jsonl'),'utf8').trim().split('\n');expect(responses).toHaveLength(persistent ? 2 : 3); // acceptance precedes AI review; no review on rejected candidates
     const acceptance=JSON.parse(readFileSync(join(report!,'unicode.acceptance.json'),'utf8'));
     expect(acceptance.errors.length===0).toBe(!persistent);
     const first=JSON.parse(readFileSync(join(report!,'unicode.acceptance-1.json'),'utf8'));
