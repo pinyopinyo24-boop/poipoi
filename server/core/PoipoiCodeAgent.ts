@@ -1759,6 +1759,17 @@ export class PoipoiCodeAgent {
               ...(issues.some(error => /TS18046|is of type 'unknown'/.test(error)) ? [
                 'TypeScript compiler TS18046: catch(error) has type unknown. Narrow it via error instanceof Error before reading error.message; for non-Error caught values use String(error). Retain the original error message and sequential failure handling.'
               ] : []),
+              ...(issues.some(error => /weighted average/i.test(error)) &&
+                  /minutes/i.test(modelIntent) && /quantity/i.test(modelIntent) ? [
+                'The request specifies per-unit production time: sum the minutes of ALL rows and divide by the sum of quantities of ALL rows. Do not average per-batch times, and do not divide by the number of rows. Preserve validation of individual inputs.'
+              ] : []),
+              ...(issues.some(error => /preserve existing records|do not mutate inputs/i.test(error)) ? [
+                'Immutability failure: normalize only the NEW record that is appended. Leave every existing record value byte-for-byte unchanged, and never alter existing array or input object. Use normalized existing SKU only for duplicate comparison.'
+              ] : []),
+              ...(issues.some(error => /is not a function|output element/i.test(error)) &&
+                  /React|tsx/i.test(modelIntent) ? [
+                'React component failure: the module default export must be a callable React component function, not a JSX value, object, or named-only export. The function must RETURN the requested element for each current prop value.'
+              ] : []),
               'Use the required original API names, edge cases and public exports exactly. Never edit or bypass checks.',
               'Regenerate the COMPLETE proposal; the host will independently rerun its checks.',
               JSON.stringify({ originalRequest: modelIntent, failures: issues.slice(0, 20), previousChanges: proposals }),
