@@ -104,6 +104,7 @@ describe('AZ PC integration with controlled model responses', () => {
     );
     const response = await stream.chat({ message: '製造記録を登録して、一覧を確認し、原価差異も計算して', conversationId: 'verify-' + randomUUID() });
     const task = (response as any).metadata.task;
+    expect(model.requests.filter((request: any) => request.response_format?.json_schema?.name === 'az_intent')).toHaveLength(1);
     expect(task).toBeDefined();
     expect(task.status).toBe('completed');
     expect(task.steps.map((s: any) => s.status)).toEqual(['completed', 'completed', 'completed']);
