@@ -1,7 +1,9 @@
 # Real Qwen/Ollama matrix verification in a disposable Git worktree.
 # Does not merge, checkout, build an APK, or apply generated changes.
 $ErrorActionPreference = 'Stop'
-$repo = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
+param([string]$Repo = (Get-Location).Path)
+$repo = (Resolve-Path -LiteralPath $Repo).Path
+if (!(Test-Path -LiteralPath (Join-Path $repo '.git'))) { throw "Not a PoiPoi git repository: $repo" }
 $branch = 'fix/generation-diagnostics-20261107'
 $work = Join-Path $env:TEMP ('poipoi-real-generation-' + [guid]::NewGuid().ToString('N'))
 $save = Join-Path $env:TEMP ('PoiPoiRealGenerationResult-' + [guid]::NewGuid().ToString('N'))
