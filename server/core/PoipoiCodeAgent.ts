@@ -751,10 +751,12 @@ export class PoipoiCodeAgent {
         unit.source.split('\n').filter(line => /setInput\(/.test(line)).join('\n')];
       return [];
     }) : [];
-    // A detached code-generation worker may need multiple model calls. Keep
-    // working until it finishes or the user stops it; zero disables only this
-    // worker's local-model timer, not ordinary chat request deadlines.
-    const timeoutMs = 0;
+    // Keep each model request bounded independently so a stalled local Qwen
+    // completion does not monopolize a detached generation job for an hour.
+    // The multi-stage job can still make multiple calls under its own budget.
+    const configuredTimeout = Number(process.env.LOCAL_CODER_REQUEST_TIMEOUT_MS);
+    const timeoutMs = Number.isFinite(configuredTimeout) && configuredTimeout >= 30000
+      ? Math.min(configuredTimeout, 900000) : 300000;
     const configuredContext = Number(process.env.LOCAL_CODER_CONTEXT_SIZE);
     const contextFor = (characters: number) => {
       if (Number.isFinite(configuredContext) && configuredContext >= 4096) return Math.min(32768, configuredContext);
