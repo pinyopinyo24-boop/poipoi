@@ -85,6 +85,9 @@ describe('syntax validation before saving an AI proposal', () => {
     expect(existsSync(model.root + '/' + file)).toBe(false);
     expect(validateGenerated).toHaveBeenCalledTimes(2);
     expect(model.requests).toHaveLength(4);
+    expect(model.requests[0].temperature).toBe(0.1);
+    expect(model.requests[1].temperature).toBeGreaterThan(model.requests[0].temperature);
+    expect(model.requests[2].temperature).toBeGreaterThan(model.requests[1].temperature);
     expect(JSON.stringify(model.requests[2].messages)).toContain('BYTE-FOR-BYTE IDENTICAL');
     expect(JSON.stringify(model.requests[2].messages)).toContain('Unicode code points');
   });
