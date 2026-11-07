@@ -42,6 +42,26 @@ beforeEach(() => { model.replies.length = 0; model.requests.length = 0; });
 afterAll(() => { vi.restoreAllMocks(); rmSync(model.root, { recursive: true, force: true }); });
 
 describe('syntax validation before saving an AI proposal', () => {
+  it('rejects nonexistent input.codePointCount before runtime and generates an actual string-codepoint implementation', async () => {
+    const file='client/src/components/CharacterCount.tsx';
+    const wrong='export default function CharacterCount({input}: {input:string}) { return <output>{input.codePointCount()}文字</output>; }';
+    const right='export default function CharacterCount({input}: {input:string}) { return <output>{Array.from(input).length}文字</output>; }';
+    model.replies.push(
+      JSON.stringify({changes:[{path:file,content:wrong}]}),
+      JSON.stringify({changes:[{path:file,content:right}]}),
+      accepted,
+    );
+    const check=vi.fn(()=>[]);
+    const changes=await PoipoiCodeAgent.getInstance().generate(
+      'Using server/core/ApprovalUiVerification.ts as reference, create client/src/components/CharacterCount.tsx as a NEW standalone React display component with default export CharacterCount({input}:{input:string}). Render an output element with Unicode code point count.',
+      'system',{validateGenerated:check});
+    expect(changes[0].content).toBe(right);
+    expect(check).toHaveBeenCalledTimes(1);
+    expect(JSON.stringify(model.requests[1].messages)).toContain('codePointCount');
+    expect(JSON.stringify(model.requests[1].messages)).toContain('not a JavaScript String method');
+    expect(existsSync(model.root+'/'+file)).toBe(false);
+  });
+
   it('rejects a non-callable default React export even when a permissive runtime callback says passed', async () => {
     const file='client/src/components/CharacterCount.tsx';
     const bad='const view = { type: "output" }; export default view;';
