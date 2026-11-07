@@ -42,6 +42,25 @@ beforeEach(() => { model.replies.length = 0; model.requests.length = 0; });
 afterAll(() => { vi.restoreAllMocks(); rmSync(model.root, { recursive: true, force: true }); });
 
 describe('syntax validation before saving an AI proposal', () => {
+  it('gives part-registry corrective patches preservation guidance and retains executable acceptance', async () => {
+    const file='server/core/PartRegistry.ts';
+    const bad='export function registerPart(parts: {sku:string,name:string}[], part: {sku:string,name:string}) { return [...parts.map(row=>({...row,sku:row.sku.trim().toUpperCase()})),part]; }';
+    const good=bad.replace('parts.map(row=>({...row,sku:row.sku.trim().toUpperCase()}))','parts');
+    model.replies.push(
+      ...Array(4).fill(JSON.stringify({changes:[{path:file,content:bad}]})),
+      JSON.stringify({edits:[{oldText:'parts.map(row=>({...row,sku:row.sku.trim().toUpperCase()}))',newText:'parts'}]}),
+      accepted
+    );
+    const check=vi.fn(changes=>changes[0].content===good ? [] : ['Runtime acceptance failed: Error: preserve existing records']);
+    const result=await PoipoiCodeAgent.getInstance().generate(
+      'Create new server/core/PartRegistry.ts exporting registerPart(parts,part) while preserving existing records unchanged.',
+      'system',{validateGenerated:check});
+    expect(result[0].content).toBe(good);
+    expect(check).toHaveBeenCalledTimes(3);
+    expect(JSON.stringify(model.requests[4].messages)).toContain('Normalize existing SKU temporarily only for comparison');
+    expect(existsSync(model.root+'/'+file)).toBe(false);
+  });
+
   it('does not discard a runtime-passing Unicode codepoint implementation because a reviewer mistakes Array.from length for String.length', async () => {
     const file='server/core/CharacterCount.ts';
     const source='export function countCharacters(input: string): number { return Array.from(input).length; }';
