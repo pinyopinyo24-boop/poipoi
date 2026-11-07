@@ -104,7 +104,7 @@ describe('AZ PC integration with controlled model responses', () => {
     );
     const response = await stream.chat({ message: '製造記録を登録して、一覧を確認し、原価差異も計算して', conversationId: 'verify-' + randomUUID() });
     const task = (response as any).metadata.task;
-    if (!task) throw new Error('AZ task routing failed: ' + JSON.stringify({ response, modelStages: model.requests.map(request => ({ purpose: request.purpose, format: request.response_format?.json_schema?.name, lastInput: request.messages?.at(-1)?.content?.slice(0, 250) })) }).slice(0, 3000));
+    expect(task).toBeDefined();
     expect(task.status).toBe('completed');
     expect(task.steps.map((s: any) => s.status)).toEqual(['completed', 'completed', 'completed']);
     expect(task.steps[2].result.totalVariance).toBe(200);
