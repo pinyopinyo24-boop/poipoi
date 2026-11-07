@@ -42,6 +42,26 @@ beforeEach(() => { model.replies.length = 0; model.requests.length = 0; });
 afterAll(() => { vi.restoreAllMocks(); rmSync(model.root, { recursive: true, force: true }); });
 
 describe('syntax validation before saving an AI proposal', () => {
+  it('passes actionable weighted-average failure information without changing acceptance contracts', async () => {
+    const path='server/core/WeightedMinutes.ts';
+    const bad='export function weightedMinutes(rows: {quantity:number,minutes:number}[]) { return rows.reduce((n,r)=>n+r.minutes,0)/rows.length; }';
+    const good='export function weightedMinutes(rows: {quantity:number,minutes:number}[]) { return rows.reduce((n,r)=>n+r.minutes,0)/rows.reduce((n,r)=>n+r.quantity,0); }';
+    model.replies.push(
+      JSON.stringify({changes:[{path,content:bad}]}),
+      JSON.stringify({changes:[{path,content:good}]}), accepted,
+    );
+    const check=vi.fn(changes=>changes[0].content===good ? [] : ['Runtime acceptance failed: Error: weighted average']);
+    const result=await PoipoiCodeAgent.getInstance().generate(
+      'Create NEW server/core/WeightedMinutes.ts: sum minutes divided by sum quantity for production.',
+      'system',{validateGenerated:check});
+    expect(result[0].content).toBe(good);
+    expect(check).toHaveBeenCalledTimes(2);
+    const retry=JSON.stringify(model.requests[1].messages);
+    expect(retry).toContain('sum the minutes');
+    expect(retry).toContain('sum of quantities');
+    expect(existsSync(model.root+'/'+path)).toBe(false);
+  });
+
   it('repairs a last-attempt distinct failed proposal using verified exact edits', async () => {
     const file='server/core/StrictMean.ts';
     const candidates=[
