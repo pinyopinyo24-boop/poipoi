@@ -36,7 +36,7 @@ describe('LocalAIProvider', () => {
     expect(result.usage?.totalTokens).toBe(30);
 
     expect(fetchMock).toHaveBeenCalledWith(
-      'http://localhost:11434/api/chat',
+      'http://localhost:8000/api/chat',
       expect.objectContaining({ method: 'POST' })
     );
   });
@@ -56,7 +56,7 @@ describe('LocalAIProvider', () => {
 
   it('should validate local runtime status', async () => {
     vi.spyOn(globalThis, 'fetch').mockResolvedValue(
-      new Response('{}', { status: 200 })
+      new Response(JSON.stringify({models:[{name:'qwen2.5-coder:7b'}]}), { status: 200 })
     );
 
     const provider = new LocalAIProvider('http://localhost:8000');
