@@ -1125,15 +1125,17 @@ export class PoipoiCodeAgent {
     let formatRetryUsed = false;
     let requirementRetryUsed = false;
     let requirementFeedback = '';
-    let validationRetryUsed = false;
-    const failedValidationSignatures = new Set<string>();
+    let validationRetries = 0;
+    const maxValidationRetries = 3;
+    const failedValidationSignatures = new Map<string, string[]>();
     let validationFeedback = '';
     let materializeRetryUsed = false;
-    let syntaxRetryUsed = false;
+    let syntaxRetries = 0;
+    const maxSyntaxRetries = 2;
     let syntaxFeedback = '';
     let expandedOutput = false;
     // Each correction category is bounded to one retry under the same deadline.
-    for (let attempt = 0; attempt < 6; attempt++) {
+    for (let attempt = 0; attempt < 10; attempt++) {
       const prompt = buildPrompt([followUp, syntaxFeedback, requirementFeedback, validationFeedback].filter(Boolean).join("\n")) +
         (isolatedDisplay ? '' : '\nAllowed NEW file paths (complete content only; use these exact paths for new modules and imports):\n' + JSON.stringify(newFilePaths));
       const visibleSource = promptSources().shown;
@@ -1575,8 +1577,8 @@ export class PoipoiCodeAgent {
         }
         await options.onCandidate?.(generated, syntaxErrors);
         if (syntaxErrors.length) {
-          if (syntaxRetryUsed) throw new Error((sampleErrors.length ? '生成コードが依頼された文字数の数え方を満たしていません。' : '生成コードの構文エラーが残っています。') + "変更は適用していません: " + syntaxErrors.slice(0, 10).join("; ").slice(0, 2000));
-          syntaxRetryUsed = true;
+          if (syntaxRetries >= maxSyntaxRetries) throw new Error((sampleErrors.length ? '生成コードが依頼された文字数の数え方を満たしていません。' : '生成コードの構文・型エラーが残っています。') + "変更は適用していません: " + syntaxErrors.slice(0, 10).join("; ").slice(0, 2000));
+          syntaxRetries++;
           const affectedSource = generated.map(change => {
             const before = change.previousContent ?? '';
             const after = change.content;
@@ -1594,7 +1596,10 @@ export class PoipoiCodeAgent {
               original: [excerpt(before, first), excerpt(before, before.length - tail)],
               reconstructed: [excerpt(after, first), excerpt(after, after.length - tail)] };
           });
-          syntaxFeedback = (sampleErrors.length
+          const typeGuidance = syntaxErrors.some(error => /TS18046|is of type 'unknown'/.test(error))
+            ? ' TypeScript catch variables are unknown: narrow caught values with error instanceof Error before accessing error.message; preserve the message for read/write/verify failures. '
+            : '';
+          syntaxFeedback = typeGuidance + (sampleErrors.length
             ? "The generated component fails a static check of the CURRENT request. Correct the reported character counting issue using a general rule for arbitrary input; keep the component and its default export. No code was executed or applied. "
             : "The TypeScript compiler found syntax errors in the RECONSTRUCTED resulting files. No code was executed or applied. Discard malformed replacements and regenerate the COMPLETE change set from the ORIGINAL source. Preserve existing bodies and closing braces/tags. Prefer minimal insertions after complete elements, leaving existing JSX intact. The previous candidate broke JSX syntax. Do not reproduce its broken placement. Use a different valid anchor or request additional source. Never place hooks at module scope or JSX between import declarations. Preserve every existing JSX closing tag and the complete surrounding component. ") +
             JSON.stringify({ errors: syntaxErrors.slice(0, 10), previousChanges: proposals, affectedSource });
@@ -1615,8 +1620,19 @@ export class PoipoiCodeAgent {
         // feedback instead of consuming another review call.
         if (options.validateGenerated) {
           const signature = JSON.stringify(generated.map(change => [change.path, change.content]));
-          if (failedValidationSignatures.has(signature))
-            throw new Error('AI repeated a previously rejected code proposal. No change was applied.');
+          const repeatedIssues = failedValidationSignatures.get(signature);
+          if (repeatedIssues) {
+            if (validationRetries >= maxValidationRetries)
+              throw new Error('AI repeated a previously rejected code proposal. No change was applied: ' + repeatedIssues.join('; ').slice(0, 1200));
+            validationRetries++;
+            validationFeedback = [
+              'REJECTED: the source is BYTE-FOR-BYTE IDENTICAL to a previously failing proposal. You MUST make an actual source-code change, not only repeat the prior answer.',
+              'Re-evaluate each failed behavior condition and generate a different implementation. No tests or source files may be weakened.',
+              JSON.stringify({ originalRequest: modelIntent, previousFailures: repeatedIssues, repeatedSource: generated.map(change => ({path: change.path, content: change.content})).slice(0, 4) }),
+            ].join('\n');
+            proposals = [];
+            continue;
+          }
           const validationInput = Object.freeze(generated.map(change => Object.freeze({ ...change })));
           const result = await options.validateGenerated(validationInput);
           const issues = Array.isArray(result) ? [...result] : [];
@@ -1651,9 +1667,9 @@ export class PoipoiCodeAgent {
           if (!Array.isArray(result) || result.some((item: unknown) => typeof item !== "string" || !item.trim()))
             throw new Error("生成コードの検証結果が不正です。変更は適用していません。");
           if (issues.length) {
-            failedValidationSignatures.add(signature);
-            if (validationRetryUsed) throw new Error("生成コードの検証に失敗しました。変更は適用していません: " + issues.join("; ").slice(0, 1800));
-            validationRetryUsed = true;
+            failedValidationSignatures.set(signature, issues);
+            if (validationRetries >= maxValidationRetries) throw new Error("生成コードの検証に失敗しました。変更は適用していません: " + issues.join("; ").slice(0, 1800));
+            validationRetries++;
             validationFeedback = [
               'Executable acceptance FAILED for the previous proposal. Preserve all already-correct behavior.',
               'Correct the specific failing condition, with its input units and required output, not just superficial formatting.',
