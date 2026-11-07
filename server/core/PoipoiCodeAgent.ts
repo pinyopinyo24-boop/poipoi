@@ -1152,7 +1152,9 @@ export class PoipoiCodeAgent {
       contextWindow: contextFor(prompt.length + (anchorEdits ? 0 : 8192)),
       max_tokens: expandedOutput ? 8192 : anchorEdits ? 2048 : 4096,
       model: process.env.LOCAL_CODER_MODEL || "qwen2.5-coder:7b",
-      temperature: 0.1,
+      // Low-temperature retries can reproduce the identical rejected source.
+      // Increase exploration only after a concrete executable rejection.
+      temperature: failedValidationSignatures.size ? Math.min(0.45, 0.15 + validationRetries * 0.1) : 0.1,
       response_format: {
         type: "json_schema",
         json_schema: {
