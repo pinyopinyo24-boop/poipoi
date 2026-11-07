@@ -59,7 +59,7 @@ export const scenarios = [
     required: ['client/src/components/CharacterCount.tsx'],
     tests: `const C=load('client/src/components/CharacterCount.tsx').default;
       for(const [input,text] of [['','0文字'],['あいう','3文字'],['😀','1文字'],['a😀い','3文字']]) {
-        const view=C({input}); assert(view && view.type==='output','output element'); assert(renderText(view)===text,'render updated input '+input);
+        const view=C({input}); assert(isReactElement(view),'real React element'); assert(view && view.type==='output','output element'); assert(renderText(view)===text,'render updated input '+input);
       }`,
   },
   {
@@ -95,8 +95,10 @@ export const scenarios = [
     tests: `const core=load('shared/NormalizeSku.ts'), f=core.normalizeSku; assert(f(' a-1 ')==='A-1','core normalization');
       let calls=0;core.normalizeSku=(...args)=>{calls++;return f(...args);};
       const C=load('client/src/pages/PartPreview.tsx').default;
-      assert(renderText(C({sku:' a-1 '}))==='A-1','UI connected to generated core');
-      assert(renderText(C({sku:' b2 '}))==='B2','UI updates for different props');
+      const first=C({sku:' a-1 '}),second=C({sku:' b2 '});
+      assert(isReactElement(first) && isReactElement(second),'real React elements');
+      assert(renderText(first)==='A-1','UI connected to generated core');
+      assert(renderText(second)==='B2','UI updates for different props');
       assert(calls===2,'UI must actually call the generated core');`,
     imports: { 'client/src/pages/PartPreview.tsx': 'NormalizeSku' },
   },

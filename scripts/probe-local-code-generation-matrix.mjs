@@ -3,18 +3,23 @@ import 'dotenv/config';
 import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, existsSync, rmSync, symlinkSync, appendFileSync } from 'node:fs';
 import path from 'node:path';
 import { tmpdir } from 'node:os';
+import { createHash } from 'node:crypto';
 import { PoipoiCodeAgent } from '../server/core/PoipoiCodeAgent.ts';
 import { checkCodeProposalTypes } from '../server/core/CodeProposalTypeCheck.ts';
 import { scenarios, initialFiles } from './lib/generation-scenarios.mjs';
+import { qualityScenarios } from './lib/generation-quality-scenarios.mjs';
 import { verifyScenario } from './lib/verify-generation-scenario.mjs';
 
 const selection = process.argv.find(arg => arg.startsWith('--case='))?.slice(7).split(',');
+const suite = process.argv.find(arg => arg.startsWith('--suite='))?.slice(8) || 'core';
+if (!['core','quality','all'].includes(suite)) throw Error('Unknown --suite value');
+const available = suite==='quality' ? qualityScenarios : suite==='all' ? [...scenarios,...qualityScenarios] : scenarios;
 if (process.argv.includes('--list')) {
-  for (const scenario of scenarios) console.log(scenario.id + ': ' + scenario.title);
+  for (const scenario of available) console.log(scenario.id + ': ' + scenario.title);
   process.exit(0);
 }
-if (selection?.some(id => !scenarios.some(scenario => scenario.id === id))) throw Error('Unknown --case value');
-const selected = scenarios.filter(scenario => !selection || selection.includes(scenario.id));
+if (selection?.some(id => !available.some(scenario => scenario.id === id))) throw Error('Unknown --case value');
+const selected = available.filter(scenario => !selection || selection.includes(scenario.id));
 const project = process.cwd();
 const report = path.join(project, 'data', 'code-generation-verification', new Date().toISOString().replace(/[:.]/g, '-') + '-' + process.pid);
 mkdirSync(report, { recursive: true });
@@ -22,13 +27,19 @@ const results = [];
 console.log('REAL LOCAL GENERATION MATRIX: ' + selected.length + ' cases; disposable fixtures; NOT APPLIED');
 console.log('REPORT:', report);
 const coder = process.env.LOCAL_CODER_MODEL?.trim() || 'qwen2.5-coder:7b';
-writeFileSync(path.join(report,'manifest.json'),JSON.stringify({model:coder,cases:selected.map(s=>({id:s.id,title:s.title,request:s.request})),startedAt:new Date().toISOString()},null,2),{mode:0o600});
+const sourceHashes=Object.fromEntries(['../server/core/PoipoiCodeAgent.ts','./probe-local-code-generation-matrix.mjs','./lib/generation-scenarios.mjs','./lib/generation-quality-scenarios.mjs','./lib/verify-generation-scenario.mjs','./lib/generation-runtime-worker.mjs'].map(file=>[file,createHash('sha256').update(readFileSync(new URL(file,import.meta.url))).digest('hex')]));
+const manifest={model:coder,suite,sourceHashes,cases:selected.map(s=>({id:s.id,title:s.title,request:s.request})),startedAt:new Date().toISOString()};
+writeFileSync(path.join(report,'manifest.json'),JSON.stringify(manifest,null,2),{mode:0o600});
 try {
   const endpoint=(process.env.LOCAL_AI_URL || 'http://localhost:11434').replace(/\/+$/,'');
   const response=await fetch(endpoint+'/api/tags',{signal:AbortSignal.timeout(5000)});
   if(!response.ok)throw Error('Ollama HTTP '+response.status);
   const models=(await response.json()).models??[];
-  if(!models.some(model=>model.name===coder))throw Error('Required local model not installed: '+coder);
+  const installed=models.find(model=>model.name===coder);
+  if(!installed)throw Error('Required local model not installed: '+coder);
+  manifest.modelMetadata={digest:installed.digest,details:installed.details};
+  manifest.endpointOrigin=new URL(endpoint).origin;
+  writeFileSync(path.join(report,'manifest.json'),JSON.stringify(manifest,null,2),{mode:0o600});
 } catch(error) {
   writeFileSync(path.join(report,'preflight-error.json'),JSON.stringify({error:String(error)},null,2),{mode:0o600});
   console.error('MATRIX NOT STARTED:',error instanceof Error?error.message:String(error));
@@ -39,7 +50,7 @@ for (const scenario of selected) {
   const fixture = mkdtempSync(path.join(tmpdir(), 'poipoi-matrix-' + scenario.id + '-'));
   const files = initialFiles(scenario);
   let candidates = 0, validated = '', modelResponses = 0, acceptanceChecks = 0;
-  const result = { id: scenario.id, title: scenario.title, status: 'failed', modelResponses: 0, seconds: 0, warnings };
+  const result = { id: scenario.id, title: scenario.title, status: 'failed', reviewStatus:'not-completed', modelResponses: 0, seconds: 0, warnings };
   const save = (name, data) => writeFileSync(path.join(report, scenario.id + name), JSON.stringify(data, null, 2), { mode: 0o600 });
   try {
     for (const [file, content] of Object.entries(files)) {
@@ -85,6 +96,7 @@ for (const scenario of selected) {
       throw Error('Generation applied a new file: ' + file);
     save('.proposal.json', { changes });
     result.status = 'passed';
+    result.reviewStatus = warnings.length ? 'inconclusive' : 'accepted';
     console.log('CASE PASS:', scenario.id, 'behavior, types, original source preserved; NOT APPLIED');
   } catch (error) {
     result.error = error instanceof Error ? error.message : String(error);
@@ -97,11 +109,13 @@ for (const scenario of selected) {
     save('.result.json', result);
     rmSync(fixture, { recursive: true, force: true });
     writeFileSync(path.join(report, 'summary.json'), JSON.stringify({
-      model: coder, selectedCases:selected.map(s=>s.id), results,
+      model: coder, suite, selectedCases:selected.map(s=>s.id), results,
+      reviewComplete: results.every(result=>result.status==='passed' && result.reviewStatus==='accepted'),
       limitations: ['Pure fixture behavior only; React element output uses a test renderer, not a browser.', 'No actual CD hardware operations or production code were executed or applied.'],
     }, null, 2), { mode: 0o600 });
   }
 }
 const passed = results.filter(result => result.status === 'passed').length;
 console.log('MATRIX RESULT:', passed + '/' + results.length, 'REPORT:', report);
+console.log('REVIEW COMPLETE:', results.filter(result=>result.reviewStatus==='accepted').length + '/' + results.length);
 if (passed !== results.length) process.exitCode = 1;

@@ -17,6 +17,14 @@ export function verifyScenario(scenario, changes) {
   if (sources['server/core/Reference.ts'] !== baseline['server/core/Reference.ts']) errors.push('Reference file changed');
   if (scenario.preserveExact && sources['server/core/LargeExisting.ts'] !== baseline['server/core/LargeExisting.ts'].replace('price + quantity', 'price * quantity'))
     errors.push('Existing file differs outside the requested expression');
+  if (scenario.editableRegion) {
+    const {file, oldText} = scenario.editableRegion;
+    const original = baseline[file], next = sources[file], start = original.indexOf(oldText);
+    if (start < 0 || start !== original.lastIndexOf(oldText)) throw Error('Invalid editable-region contract');
+    const prefix = original.slice(0, start), suffix = original.slice(start + oldText.length);
+    if (!next.startsWith(prefix) || !next.endsWith(suffix) || next.length < prefix.length + suffix.length)
+      errors.push('Existing file differs outside the requested function: ' + file);
+  }
   const modules = {}, dependencies = {};
   for (const [file, source] of Object.entries(sources)) {
     const parsed = ts.createSourceFile(file, source, ts.ScriptTarget.Latest, true);

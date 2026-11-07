@@ -8,7 +8,9 @@ try {
     `${JSON.stringify(id)}:function(module,exports,require){${code}\n}`).join(',\n');
   const source = `"use strict";
     const factories={${factories}}, dependencies=${JSON.stringify(dependencies)}, cache=Object.create(null);
-    const React={createElement(type,props,...children){return {type,props:{...props,children:children.length?children:props?.children}};},Fragment:'fragment'};
+    const reactElements=new WeakSet();
+    const React={createElement(type,props,...children){const element={type,props:{...props,children:children.length?children:props?.children}};reactElements.add(element);return element;},Fragment:'fragment'};
+    function isReactElement(value){return value!==null && typeof value==='object' && reactElements.has(value);}
     function load(id){
       if(id==='react') return {__esModule:true,default:React,...React};
       if(cache[id])return cache[id].exports;

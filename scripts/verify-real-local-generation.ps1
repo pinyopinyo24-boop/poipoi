@@ -2,7 +2,8 @@
 # Does not merge, checkout, build an APK, or apply generated changes.
 param(
     [string]$Repo = (Get-Location).Path,
-    [string[]]$Case = @()
+    [string[]]$Case = @(),
+    [ValidateSet('core','quality','all')][string]$Suite = 'core'
 )
 $ErrorActionPreference = 'Stop'
 $repo = (Resolve-Path -LiteralPath $Repo).Path
@@ -27,6 +28,7 @@ try {
     Push-Location $work
     try {
         $argsForProbe = @('--import', 'tsx', 'scripts/probe-local-code-generation-matrix.mjs')
+        $argsForProbe += '--suite=' + $Suite
         if ($Case.Count -gt 0) {
             $argsForProbe += '--case=' + ($Case -join ',')
         }
@@ -42,7 +44,7 @@ try {
             $summaryFile = Join-Path $save 'summary.json'
             if (Test-Path -LiteralPath $summaryFile) {
                 $summary = Get-Content -LiteralPath $summaryFile -Raw -Encoding UTF8 | ConvertFrom-Json
-                $summary.results | Format-Table id,status,modelResponses,seconds,error -Wrap
+                $summary.results | Format-Table id,status,reviewStatus,modelResponses,seconds,error -Wrap
                 $count = @($summary.results | Where-Object { $_.status -eq 'passed' }).Count
                 Write-Host ("ACTUAL LOCAL GENERATION: {0}/{1}" -f $count, @($summary.results).Count)
             }

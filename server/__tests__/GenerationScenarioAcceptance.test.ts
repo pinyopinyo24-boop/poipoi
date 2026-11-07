@@ -45,6 +45,12 @@ it('rejects an unused integration import even when copied logic returns the corr
   expect(verifyScenario(scenario,changes).join(' ')).toContain('must call the imported helper');
 });
 
+it('rejects a fabricated element-shaped object instead of accepting it as React output', () => {
+  const scenario=scenarios.find(s=>s.id==='react-display')!;
+  const changes=[{path:scenario.required[0],content:'export default function CharacterCount({input}:{input:string}){return {type:"output",props:{children:Array.from(input).length+"文字"}};}'}];
+  expect(verifyScenario(scenario,changes).join(' ')).toContain('real React element');
+});
+
 it('stops infinite generated loops and does not expose Node process or filesystem APIs', () => {
   const scenario=scenarios.find(s=>s.id==='unicode')!;
   for(const content of ['export function countCharacters(){while(true){}}',

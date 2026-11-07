@@ -42,6 +42,33 @@ beforeEach(() => { model.replies.length = 0; model.requests.length = 0; });
 afterAll(() => { vi.restoreAllMocks(); rmSync(model.root, { recursive: true, force: true }); });
 
 describe('syntax validation before saving an AI proposal', () => {
+  it('enforces callable React exports even without a test-only runtime validator', async () => {
+    const file='client/src/components/Status.tsx';
+    const wrong='export default {type:"output"};';
+    const right='export default function Status({value}:{value:string}) { return <output>{value}</output>; }';
+    model.replies.push(JSON.stringify({changes:[{path:file,content:wrong}]}),JSON.stringify({changes:[{path:file,content:right}]}),accepted);
+    const result=await PoipoiCodeAgent.getInstance().generate(
+      'Using server/core/ApprovalUiVerification.ts as reference, create client/src/components/Status.tsx as a NEW standalone React component with default export Status({value}:{value:string}). Return an output element showing the value.', 'system');
+    expect(result[0].content).toBe(right);
+    expect(model.requests[1].messages.at(-1).content).toContain('directly callable');
+    expect(existsSync(model.root+'/'+file)).toBe(false);
+  });
+
+  it('keeps standalone React generation tied to the requested props and element', async () => {
+    const file = 'client/src/components/Gauge.tsx';
+    const source = 'export default function Gauge({value}:{value:number}) { return <meter min={0} max={100} value={Math.max(0,Math.min(100,value))} />; }';
+    model.replies.push(JSON.stringify({changes:[{path:file,content:source}]}), accepted);
+    const result = await PoipoiCodeAgent.getInstance().generate(
+      'Using server/core/ApprovalUiVerification.ts as reference, create client/src/components/Gauge.tsx as a NEW standalone React component with default export Gauge({value}:{value:number}). Return a meter element with min 0, max 100 and value clamped to that range.',
+      'system', {validateGenerated: () => []});
+    expect(result[0].content).toBe(source);
+    const prompt = model.requests[0].messages.at(-1).content;
+    expect(prompt).toContain('exact component name, props and rendered element requested');
+    expect(prompt).not.toContain('Render a real output element from current props');
+    expect(prompt).not.toContain('calculate text from input');
+    expect(existsSync(model.root+'/'+file)).toBe(false);
+  });
+
   it('rejects nonexistent input.codePointCount before runtime and generates an actual string-codepoint implementation', async () => {
     const file='client/src/components/CharacterCount.tsx';
     const wrong='export default function CharacterCount({input}: {input:string}) { return <output>{input.codePointCount()}文字</output>; }';
@@ -75,7 +102,7 @@ describe('syntax validation before saving an AI proposal', () => {
       'Using server/core/ApprovalUiVerification.ts as reference, create client/src/components/CharacterCount.tsx as a NEW standalone React display component with default export CharacterCount({input}:{input:string}). Render an output element showing Unicode code point count.',
       'system',{validateGenerated:check});
     expect(result[0].content).toBe(good);
-    expect(check).toHaveBeenCalledTimes(2);
+    expect(check).toHaveBeenCalledTimes(1);
     const retry=JSON.stringify(model.requests[1].messages);
     expect(retry).toContain('directly callable React component function');
     expect(retry).toContain('Do not export JSX');
@@ -88,7 +115,7 @@ describe('syntax validation before saving an AI proposal', () => {
     const bad='export function registerPart(parts: {sku:string,name:string}[], part: {sku:string,name:string}) { return [...parts.map(row=>({...row,sku:row.sku.trim().toUpperCase()})),part]; }';
     const good=bad.replace('parts.map(row=>({...row,sku:row.sku.trim().toUpperCase()}))','parts');
     model.replies.push(
-      ...Array(4).fill(JSON.stringify({changes:[{path:file,content:bad}]})),
+      ...Array(2).fill(JSON.stringify({changes:[{path:file,content:bad}]})),
       JSON.stringify({edits:[{oldText:'parts.map(row=>({...row,sku:row.sku.trim().toUpperCase()}))',newText:'parts'}]}),
       accepted
     );
@@ -98,7 +125,7 @@ describe('syntax validation before saving an AI proposal', () => {
       'system',{validateGenerated:check});
     expect(result[0].content).toBe(good);
     expect(check).toHaveBeenCalledTimes(3);
-    expect(JSON.stringify(model.requests[4].messages)).toContain('Normalize existing SKU temporarily only for comparison');
+    expect(JSON.stringify(model.requests[2].messages)).toContain('Normalize existing SKU temporarily only for comparison');
     expect(existsSync(model.root+'/'+file)).toBe(false);
   });
 
@@ -176,7 +203,7 @@ describe('syntax validation before saving an AI proposal', () => {
     const right = 'export function codepoints(input: string) { return Array.from(input).length; }';
     const bad = JSON.stringify({ changes: [{ path: file, content: wrong }] });
     const patch = JSON.stringify({ edits: [{ oldText: 'input.length', newText: 'Array.from(input).length' }] });
-    model.replies.push(bad, bad, bad, bad, patch, accepted);
+    model.replies.push(bad, bad, patch, accepted);
     const validateGenerated = vi.fn(changes => changes[0].content === right ? [] : ['Unicode emoji count is wrong: expected 1, got 2']);
     const changes = await PoipoiCodeAgent.getInstance().generate(
       'Create NEW server/core/CountCodepoints.ts exporting codepoints(input: string) as Unicode code point length.',
@@ -184,8 +211,8 @@ describe('syntax validation before saving an AI proposal', () => {
     );
     expect(changes[0].content).toBe(right);
     expect(validateGenerated).toHaveBeenCalledTimes(3);
-    expect(model.requests).toHaveLength(6);
-    const fixRequest = model.requests[4];
+    expect(model.requests).toHaveLength(4);
+    const fixRequest = model.requests[2];
     expect(fixRequest.messages.at(-1).content).toContain('expected 1, got 2');
     expect(fixRequest.messages.at(-1).content).toContain('input.length');
     expect(fixRequest.messages.at(-1).content).toContain('Replace only the offending implementation');
@@ -223,7 +250,7 @@ describe('syntax validation before saving an AI proposal', () => {
     model.replies.push(
       JSON.stringify({ changes: [{ path: file, content: bad }] }),
       JSON.stringify({ changes: [{ path: file, content: bad }] }),
-      JSON.stringify({ changes: [{ path: file, content: good }] }),
+      JSON.stringify({ edits: [{ oldText: 'input.length', newText: 'Array.from(input).length' }] }),
       accepted,
     );
     const validateGenerated = vi.fn(changes =>
@@ -234,12 +261,11 @@ describe('syntax validation before saving an AI proposal', () => {
     );
     expect(changes[0].content).toBe(good);
     expect(existsSync(model.root + '/' + file)).toBe(false);
-    expect(validateGenerated).toHaveBeenCalledTimes(2);
+    expect(validateGenerated).toHaveBeenCalledTimes(3);
     expect(model.requests).toHaveLength(4);
     expect(model.requests[0].temperature).toBe(0.1);
     expect(model.requests[1].temperature).toBeGreaterThan(model.requests[0].temperature);
-    expect(model.requests[2].temperature).toBeGreaterThan(model.requests[1].temperature);
-    expect(JSON.stringify(model.requests[2].messages)).toContain('BYTE-FOR-BYTE IDENTICAL');
+    expect(model.requests[2].response_format.json_schema.name).toBe('poipoi_failed_acceptance_patch');
     expect(JSON.stringify(model.requests[2].messages)).toContain('Unicode code points');
   });
   it('supplies the current stage scope to the actual requirement-review request', async () => {

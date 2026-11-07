@@ -1144,9 +1144,12 @@ export class PoipoiCodeAgent {
       // A plain default-exported function is callable by any parent/test renderer.
       const standaloneReactComponent = /standalone React.*component|React.*standalone.*component/i.test(modelIntent) &&
         /default export|default-export/i.test(modelIntent);
-      const coderPrompt = standaloneReactComponent
-        ? prompt + '\nFor a standalone React component, export a directly callable function by default. Example declaration shape: export default function ComponentName(props: Props) { return <output>{computedText}</output>; }. A React.memo(...) wrapper, React.forwardRef(...), an object, a JSX value, a named-only export, or module.exports is NOT a callable default-exported function. Render a real output element from current props; calculate text from input, not fixed samples.'
+      const reactPrompt = standaloneReactComponent
+        ? prompt + '\nFor a standalone React component, export a directly callable function by default. Use the exact component name, props and rendered element requested by the user. A React.memo(...) wrapper, React.forwardRef(...), an object, a JSX value, a named-only export, or module.exports is NOT a callable default-exported function. Derive the rendered values from current declared props, not fixed samples. Do not invent an input prop or replace the requested element with output unless the request specifies output.'
         : prompt;
+      const coderPrompt = /コードポイント|Unicode\s+code\s*point/i.test(modelIntent)
+        ? reactPrompt + '\nJavaScript semantic constraint: String.length counts UTF-16 code units, not Unicode code points. For a code-point count, iterate the string by code point (for example Array.from(value) or for...of), without special-casing examples. Do not invent String methods such as codePointCount().'
+        : reactPrompt;
       const visibleSource = promptSources().shown;
       // Constrain the model's JSON grammar too: small, fully reviewed files do
       // not need fragile edit anchors. Larger/excerpted files still use edits.
@@ -1551,10 +1554,49 @@ export class PoipoiCodeAgent {
             scan(ast);
           }
         }
-        let syntaxErrors = [...sampleErrors, ...placementErrors, ...this.syntaxErrors(generated)];
+        const componentErrors: string[] = [];
+        if (standaloneReactComponent) {
+          const ts = requireCompiler('typescript') as typeof import('typescript');
+          for (const change of generated.filter(c => c.path.endsWith('.tsx') && c.baseHash === null)) {
+            const ast = ts.createSourceFile(change.path, change.content, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
+            const declarations = new Map<string, boolean>();
+            for (const node of ast.statements) {
+              if (ts.isFunctionDeclaration(node) && node.name) declarations.set(node.name.text, true);
+              if (ts.isVariableStatement(node)) for (const decl of node.declarationList.declarations) {
+                if (!ts.isIdentifier(decl.name)) continue;
+                const expr = decl.initializer;
+                declarations.set(decl.name.text, !!expr && (ts.isArrowFunction(expr) || ts.isFunctionExpression(expr)));
+              }
+            }
+            const directFunction = (expr: import('typescript').Expression): boolean => {
+              while (ts.isParenthesizedExpression(expr) || ts.isAsExpression(expr) ||
+                  ts.isSatisfiesExpression(expr) || ts.isTypeAssertionExpression(expr))
+                expr = expr.expression;
+              return ts.isArrowFunction(expr) || ts.isFunctionExpression(expr) ||
+                (ts.isIdentifier(expr) && declarations.get(expr.text) === true);
+            };
+            const callable = ast.statements.some(node => {
+              if (ts.isFunctionDeclaration(node))
+                return ts.getModifiers(node)?.some(m => m.kind === ts.SyntaxKind.DefaultKeyword) ?? false;
+              if (ts.isExportAssignment(node) && !node.isExportEquals)
+                return directFunction(node.expression);
+              if (ts.isExportDeclaration(node) && !node.moduleSpecifier &&
+                  node.exportClause && ts.isNamedExports(node.exportClause))
+                return node.exportClause.elements.some(el => el.name.text === 'default' &&
+                  declarations.get((el.propertyName ?? el.name).text) === true);
+              return false;
+            });
+            if (!callable) componentErrors.push(
+              change.path + ': The default export must resolve to a directly callable React component function. ' +
+              'Use a default function declaration matching the requested component name, props and element, ' +
+              'or export default a local arrow/function declaration. Do not export JSX, an object, memo/forwardRef wrapper, or only a named component.'
+            );
+          }
+        }
+        let syntaxErrors = [...sampleErrors, ...componentErrors, ...placementErrors, ...this.syntaxErrors(generated)];
         // Keep valid files in a multi-file draft intact. Repair only the
         // introduced span, never unrelated source in an existing file.
-        if (!isolatedDisplay && !sampleErrors.length && !placementErrors.length) {
+        if (!isolatedDisplay && !sampleErrors.length && !componentErrors.length && !placementErrors.length) {
           for (const change of generated) {
             const errors = this.syntaxErrors([change]);
             if (!errors.length) continue;
@@ -1634,7 +1676,9 @@ export class PoipoiCodeAgent {
           const typeGuidance = syntaxErrors.some(error => /TS18046|is of type 'unknown'/.test(error))
             ? ' TypeScript catch variables are unknown: narrow caught values with error instanceof Error before accessing error.message; preserve the message for read/write/verify failures. '
             : '';
-          syntaxFeedback = typeGuidance + (sampleErrors.length
+          syntaxFeedback = typeGuidance + (componentErrors.length
+            ? "The standalone React module fails its requested default-export contract. Return a directly callable function with the requested component name, props and element. No code was executed or applied. "
+            : sampleErrors.length
             ? "The generated component fails a static check of the CURRENT request. Correct any nonexistent JavaScript String API and the reported character counting issue using a general rule for arbitrary input. Keep the callable default export and return an actual output element. No code was executed or applied. "
             : "The TypeScript compiler found syntax errors in the RECONSTRUCTED resulting files. No code was executed or applied. Discard malformed replacements and regenerate the COMPLETE change set from the ORIGINAL source. Preserve existing bodies and closing braces/tags. Prefer minimal insertions after complete elements, leaving existing JSX intact. The previous candidate broke JSX syntax. Do not reproduce its broken placement. Use a different valid anchor or request additional source. Never place hooks at module scope or JSX between import declarations. Preserve every existing JSX closing tag and the complete surrounding component. ") +
             JSON.stringify({ errors: syntaxErrors.slice(0, 10), previousChanges: proposals, affectedSource });
@@ -1685,7 +1729,7 @@ export class PoipoiCodeAgent {
                             ? ['Existing objects must be retained without rewriting their sku/name values. Normalize existing SKU temporarily only for comparison; normalize only the newly appended record. Return a new array while keeping original inputs unchanged.']
                             : []),
                           ...(failures.some(issue => /output element|is not a function|render updated input/i.test(issue))
-                            ? ['The default export must be a callable component function. Calling it with {input} must return an output element whose text reflects that input. Keep the output element type and default export.']
+                            ? ['The default export must be a callable component function. Calling it with the props declared in the current request must return the requested element with values derived from those current props. Preserve the requested prop names, element type and default export.']
                             : []),
                           ...(failures.some(issue => /weighted average/i.test(issue))
                             ? ['Calculate sum of all minutes divided by sum of all quantities, not an average of rows. Preserve validation.']
@@ -1731,10 +1775,13 @@ export class PoipoiCodeAgent {
           const signature = JSON.stringify(generated.map(change => [change.path, change.content]));
           const repeatedIssues = failedValidationSignatures.get(signature);
           if (repeatedIssues) {
-            if (validationRetries >= maxValidationRetries) {
+            if ((generated.length === 1 && generated[0].baseHash === null && generated[0].content.length <= 12000) ||
+                validationRetries >= maxValidationRetries) {
               // A small local model can repeat the same rejected whole-file JSON
-              // even with feedback. At the retry limit, request a constrained
-              // source-level patch instead of another identical full rewrite.
+              // even with feedback. For a patchable new module, switch on the
+              // FIRST exact repetition rather than spending more calls on the
+              // same rejected whole-file answer. The existing retry limit still
+              // bounds proposals that cannot be patched safely.
               // The patch must match exactly once in a NEW file, and must pass
               // the same caller-owned acceptance before any review or approval.
               const repaired = await repairRejectedCandidate(repeatedIssues);
@@ -1756,44 +1803,6 @@ export class PoipoiCodeAgent {
           const validationInput = Object.freeze(generated.map(change => Object.freeze({ ...change })));
           const result = await options.validateGenerated(validationInput);
           const issues = Array.isArray(result) ? [...result] : [];
-          if (standaloneReactComponent) {
-            const ts = requireCompiler('typescript') as typeof import('typescript');
-            for (const change of generated.filter(c => c.path.endsWith('.tsx') && c.baseHash === null)) {
-              const ast = ts.createSourceFile(change.path, change.content, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
-              const declarations = new Map<string, boolean>();
-              for (const node of ast.statements) {
-                if (ts.isFunctionDeclaration(node) && node.name) declarations.set(node.name.text, true);
-                if (ts.isVariableStatement(node)) for (const decl of node.declarationList.declarations) {
-                  if (!ts.isIdentifier(decl.name)) continue;
-                  const expr = decl.initializer;
-                  declarations.set(decl.name.text, !!expr && (ts.isArrowFunction(expr) || ts.isFunctionExpression(expr)));
-                }
-              }
-              const directFunction = (expr: import('typescript').Expression): boolean => {
-                while (ts.isParenthesizedExpression(expr) || ts.isAsExpression(expr) ||
-                    ts.isSatisfiesExpression(expr) || ts.isTypeAssertionExpression(expr))
-                  expr = expr.expression;
-                return ts.isArrowFunction(expr) || ts.isFunctionExpression(expr) ||
-                  (ts.isIdentifier(expr) && declarations.get(expr.text) === true);
-              };
-              const callable = ast.statements.some(node => {
-                if (ts.isFunctionDeclaration(node))
-                  return ts.getModifiers(node)?.some(m => m.kind === ts.SyntaxKind.DefaultKeyword) ?? false;
-                if (ts.isExportAssignment(node) && !node.isExportEquals)
-                  return directFunction(node.expression);
-                if (ts.isExportDeclaration(node) && !node.moduleSpecifier &&
-                    node.exportClause && ts.isNamedExports(node.exportClause))
-                  return node.exportClause.elements.some(el => el.name.text === 'default' &&
-                    declarations.get((el.propertyName ?? el.name).text) === true);
-                return false;
-              });
-              if (!callable) issues.push(
-                change.path + ': The default export must resolve to a directly callable React component function. ' +
-                'Use export default function ComponentName({input}: {input:string}) { return <output>...</output>; } ' +
-                'or export default a local arrow/function declaration. Do not export JSX, an object, memo/forwardRef wrapper, or only a named component.'
-              );
-            }
-          }
           // Enforce explicitly requested named exports with the TypeScript AST.
           // This is independent of the model review and never rewrites source.
           const namedContracts = [...intent.matchAll(

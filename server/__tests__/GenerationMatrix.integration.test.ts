@@ -50,11 +50,11 @@ for(const mode of ['recover-behavior','persistent','recover-types'])it(`runs rea
     });
     let output='';child.stdout.on('data',x=>output+=x);child.stderr.on('data',x=>output+=x);
     const status=await new Promise<number|null>((r,j)=>{child.once('exit',r);child.once('error',j);});
-    expect(status,output).toBe(persistent?1:0);expect(calls).toBe(persistent ? 5 : 2);
+    expect(status,output).toBe(persistent?1:0);expect(calls).toBe(persistent ? 3 : 2);
     const report=output.match(/^REPORT: (.+)$/m)?.[1];expect(report,output).toBeTruthy();
     const summary=JSON.parse(readFileSync(join(report!,'summary.json'),'utf8'));
     expect(summary.results[0].status).toBe(persistent?'failed':'passed');
-    const responses=readFileSync(join(report!,'unicode.responses.jsonl'),'utf8').trim().split('\n');expect(responses).toHaveLength(persistent ? 5 : 3); // acceptance precedes AI review; no review on rejected candidates
+    const responses=readFileSync(join(report!,'unicode.responses.jsonl'),'utf8').trim().split('\n');expect(responses).toHaveLength(3); // a repeated failed new module gets one exact-patch attempt, never a subjective review
     const acceptance=JSON.parse(readFileSync(join(report!,'unicode.acceptance.json'),'utf8'));
     expect(acceptance.errors.length===0).toBe(!persistent);
     const first=JSON.parse(readFileSync(join(report!,'unicode.acceptance-1.json'),'utf8'));
