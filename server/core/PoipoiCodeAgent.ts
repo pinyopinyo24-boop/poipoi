@@ -1624,8 +1624,74 @@ export class PoipoiCodeAgent {
           const signature = JSON.stringify(generated.map(change => [change.path, change.content]));
           const repeatedIssues = failedValidationSignatures.get(signature);
           if (repeatedIssues) {
-            if (validationRetries >= maxValidationRetries)
-              throw new Error('AI repeated a previously rejected code proposal. No change was applied: ' + repeatedIssues.join('; ').slice(0, 1200));
+            if (validationRetries >= maxValidationRetries) {
+              // A small local model can repeat the same rejected whole-file JSON
+              // even with feedback. At the retry limit, request a constrained
+              // source-level patch instead of another identical full rewrite.
+              // The patch must match exactly once in a NEW file, and must pass
+              // the same caller-owned acceptance before any review or approval.
+              let repaired = false;
+              if (generated.length === 1 && generated[0].baseHash === null &&
+                  generated[0].content.length <= 12000) {
+                const target = generated[0];
+                try {
+                  const repair = await callCoder('不合格コードの限定修復', {
+                    userId, timeoutMs: 180000,
+                    model: process.env.LOCAL_CODER_MODEL || 'qwen2.5-coder:7b',
+                    temperature: 0.25,
+                    contextWindow: contextFor(target.content.length + 4500),
+                    max_tokens: 1400,
+                    response_format: { type: 'json_schema', json_schema: {
+                      name: 'poipoi_failed_acceptance_patch',
+                      schema: { type: 'object', properties: {
+                        edits: { type: 'array', minItems: 1, maxItems: 3,
+                          items: { type: 'object', properties: {
+                            oldText: { type: 'string', minLength: 1, maxLength: 500 },
+                            newText: { type: 'string', maxLength: 1000 },
+                          }, required: ['oldText', 'newText'], additionalProperties: false } },
+                      }, required: ['edits'], additionalProperties: false },
+                    } },
+                    messages: [
+                      { role: 'system', content: 'You are repairing a newly generated TypeScript/TSX module rejected by executable tests. Return ONLY JSON edits. Each oldText must be an EXACT UNIQUE substring of source; newText replaces it. Fix the actual failure, retaining original API, types, unrelated behavior, and every prior correct requirement. Never rewrite tests. Do not repeat unchanged code or include markdown.' },
+                      { role: 'user', content: JSON.stringify({
+                        request: modelIntent, path: target.path, source: target.content,
+                        failingChecks: repeatedIssues,
+                      }) },
+                    ],
+                  });
+                  const parsedRepair = JSON.parse(repair.choices?.[0]?.message?.content ?? '');
+                  if (!Array.isArray(parsedRepair.edits) || parsedRepair.edits.length < 1 ||
+                      parsedRepair.edits.length > 3) throw Error('Invalid corrective patch');
+                  let corrected = target.content;
+                  for (const edit of parsedRepair.edits) {
+                    if (typeof edit.oldText !== 'string' || !edit.oldText ||
+                        edit.oldText.length > 500 || typeof edit.newText !== 'string' ||
+                        edit.newText.length > 1000 ||
+                        corrected.indexOf(edit.oldText) < 0 ||
+                        corrected.indexOf(edit.oldText) !== corrected.lastIndexOf(edit.oldText))
+                      throw Error('Unsafe corrective patch');
+                    corrected = corrected.replace(edit.oldText, edit.newText);
+                  }
+                  if (corrected === target.content ||
+                      this.syntaxErrors([{ ...target, content: corrected }]).length)
+                    throw Error('Corrective patch failed TypeScript syntax checks');
+                  const patched = Object.freeze([{ ...target, content: corrected }]);
+                  const checks = await options.validateGenerated(patched);
+                  if (!Array.isArray(checks) || checks.length ||
+                      checks.some(issue => typeof issue !== 'string'))
+                    throw Error('Corrective patch failed executable acceptance');
+                  target.content = corrected;
+                  repaired = true;
+                } catch {
+                  // Preserve the original actionable failure; never apply or
+                  // approve an unverified patch.
+                }
+              }
+              if (!repaired)
+                throw new Error('AI repeated a previously rejected code proposal. No change was applied: ' + repeatedIssues.join('; ').slice(0, 1200));
+              // The repaired proposal proceeds through the original full
+              // acceptance, named-export and review gates below.
+            } else {
             validationRetries++;
             validationFeedback = [
               'REJECTED: the source is BYTE-FOR-BYTE IDENTICAL to a previously failing proposal. You MUST make an actual source-code change, not only repeat the prior answer.',
@@ -1634,6 +1700,7 @@ export class PoipoiCodeAgent {
             ].join('\n');
             proposals = [];
             continue;
+            }
           }
           const validationInput = Object.freeze(generated.map(change => Object.freeze({ ...change })));
           const result = await options.validateGenerated(validationInput);
