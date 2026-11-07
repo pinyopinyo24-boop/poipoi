@@ -137,6 +137,29 @@ describe('syntax validation before saving an AI proposal', () => {
     expect(existsSync(model.root + '/' + file)).toBe(false);
   });
 
+
+  it('retries an incorrect named export before model review and preserves the original source', async () => {
+    const file = 'server/core/RequestedExport.ts';
+    const wrong = 'export function wrongName():number { return 1; }';
+    const right = 'export function requiredName():number { return 1; }';
+    model.replies.push(
+      JSON.stringify({changes:[{path:file,content:wrong}]}),
+      JSON.stringify({changes:[{path:file,content:right}]}),
+      accepted,
+    );
+    const validateGenerated = vi.fn(() => []);
+    const result = await PoipoiCodeAgent.getInstance().generate(
+      'server/core/RequestedExport.tsを新規作成して。requiredName():numberをexportする。参考はserver/core/ApprovalUiVerification.tsだけ。',
+      'system', {validateGenerated}
+    );
+    expect(result[0].content).toBe(right);
+    expect(existsSync(model.root + '/' + file)).toBe(false);
+    expect(validateGenerated).toHaveBeenCalledTimes(2);
+    expect(model.requests).toHaveLength(3);
+    expect(model.requests[1].messages.at(-1).content).toContain('Required named export missing');
+  });
+
+
   it('supplies a complete large-page composer and send handler, then repairs malformed JSX from original source', async () => {
     const file = 'client/src/pages/StreamingChat.tsx';
     mkdirSync(model.root + '/client/src/pages', { recursive: true });
