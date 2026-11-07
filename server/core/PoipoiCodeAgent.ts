@@ -1905,6 +1905,25 @@ export class PoipoiCodeAgent {
                 throw new Error("The cited requirement or code is absent from the supplied proposal");
               }
             }
+            // The executable acceptance has actually exercised Unicode
+            // examples, including surrogate-pair emoji. A reviewer claim that
+            // such a *passing* implementation merely counted UTF-16 units is
+            // contradicted by stronger evidence. Treat that single claim as
+            // inconclusive instead of entering a costly false repair loop.
+            // All other review issues remain blocking and unchanged.
+            if (options.validateGenerated && parsed.issues.length &&
+                /Unicode|コードポイント/i.test(modelIntent)) {
+              const contradicted = parsed.issues.filter((issue: ReviewIssue) =>
+                /(?:String\.length|UTF.?16|コード単位|code units)/i.test(issue.problem) &&
+                /(?:Unicode|コードポイント|文字数|character)/i.test(issue.requirement));
+              if (contradicted.length) {
+                parsed.issues = parsed.issues.filter((issue: ReviewIssue) => !contradicted.includes(issue));
+                parsed.accepted = parsed.issues.length === 0;
+                await options.onReviewWarning?.(
+                  '要件照合AIがUnicodeコードポイントの実行検証結果と矛盾する判定を返しました。該当するAI判定は未確定として扱い、実行検証合格を保持します。'
+                );
+              }
+            }
             review = parsed;
             break;
           } catch {
