@@ -55,10 +55,29 @@ export function verifyScenario(scenario, changes) {
       // Surface the original failing assertion, rather than only its label.
       // This gives the code generator the required calculation or edge case,
       // without changing or weakening the acceptance checks.
-      const assertion = scenario.tests.split(/\r?\n/).find(line =>
-        line.includes("'" + failure + "'") || line.includes('"' + failure + '"'));
+      // Find the actual assert(...) expression, including labels composed
+      // dynamically (for example "character count " + input).
+      const script = ts.createSourceFile('fixture-check.js', scenario.tests,
+        ts.ScriptTarget.Latest, true, ts.ScriptKind.JS);
+      let matched = '';
+      let longestLabel = 0;
+      function visit(node) {
+        if (ts.isCallExpression(node) && ts.isIdentifier(node.expression) &&
+            node.expression.text === 'assert' && node.arguments.length >= 2) {
+          const labelCode = node.arguments[1].getText(script);
+          const literals = [...labelCode.matchAll(/(['"])(.*?)\1/g)]
+            .map(match => match[2]).filter(Boolean);
+          const weight = Math.max(0, ...literals.filter(lit => failure.includes(lit)).map(lit => lit.length));
+          if (weight > longestLabel) {
+            longestLabel = weight;
+            matched = node.getText(script).slice(0, 1800);
+          }
+        }
+        ts.forEachChild(node, visit);
+      }
+      visit(script);
       errors.push('Runtime acceptance failed: ' + failure +
-        (assertion ? '\nFailed assertion source: ' + assertion.trim().slice(0, 1800) : ''));
+        (matched ? '\nFailed assertion source: ' + matched : ''));
     } catch {
       errors.push('Runtime verification failed or timed out: ' + error.message);
     }
