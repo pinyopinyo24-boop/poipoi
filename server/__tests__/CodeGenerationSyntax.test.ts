@@ -42,6 +42,15 @@ beforeEach(() => { model.replies.length = 0; model.requests.length = 0; });
 afterAll(() => { vi.restoreAllMocks(); rmSync(model.root, { recursive: true, force: true }); });
 
 describe('syntax validation before saving an AI proposal', () => {
+  it('supplies the current stage scope to the actual requirement-review request', async () => {
+    model.replies.push(JSON.stringify({changes:[{path:target,content:original+addition}]}),accepted);
+    const stageContext={focus:'Implement one-drive exchange and verification',deferredRequirements:['Create the visible CD button in the following stage.']};
+    await PoipoiCodeAgent.getInstance().generate(task,'system',{stageContext});
+    const review=JSON.parse(model.requests.at(-1).messages.at(-1).content);
+    expect(review.implementationStage).toEqual(stageContext);
+    expect(review.reviewScope).toContain('Require every CURRENT requirement');
+    expect(review.request).not.toContain(stageContext.deferredRequirements[0]);
+  });
   it('permits a complete small-file proposal while retaining the original source hash', async () => {
     model.replies.push(JSON.stringify({ changes: [{ path: target, content: original + addition }] }), accepted);
     const result = await PoipoiCodeAgent.getInstance().generate(task);

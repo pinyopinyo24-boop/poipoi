@@ -157,12 +157,15 @@ export class PoipoiCodeAgent {
 
     const temporary = mkdtempSync(join(tmpdir(), 'poipoi-code-stage-'));
     const touched = new Map<string, string | null>();
+    const originals = new Map<string, string>();
     try {
       // Copy source only. Never copy credentials, user data, node_modules or Git.
       for (const file of sourcePaths) {
         const target = resolve(temporary, file);
         mkdirSync(dirname(target), { recursive: true });
-        writeFileSync(target, readFileSync(this.safePath(file)));
+        const content = readFileSync(this.safePath(file), 'utf8');
+        originals.set(file, content);
+        writeFileSync(target, content, 'utf8');
       }
       writeFileSync(resolve(temporary, 'package.json'), readFileSync(resolve(this.root, 'package.json')));
       if (existsSync(resolve(this.root, 'tsconfig.json')))
@@ -181,7 +184,10 @@ export class PoipoiCodeAgent {
           'Implement this coherent part of a larger PoiPoi feature. ' + step.focus + '.',
           'This is a DRAFT in a disposable source copy. Do not apply or commit. Preserve existing behavior.',
           'The other stages will be combined into one approval proposal. Current draft files are available as source.',
-          'Implement only the current stage. The next stages will use the source you produce as their reviewed interface. Do not implement their UI or workflow here.',
+          'Implement every responsibility of the CURRENT stage. Later stages will use your exported interface. Only later-stage UI wiring may be deferred; never omit the current workflow, swap guidance or verification if this stage requires them.',
+          index === 0 ? 'This stage owns the actual device read/write/verification primitives. Export usable interfaces for the later orchestration stage; do not replace them with placeholders.'
+            : index === steps.length - 1 ? 'This stage owns visible controls and chat wiring. Connect to the existing workflow state and guidance; do not recreate or bypass its device operations.'
+            : 'This stage owns orchestration: read source first, retain the snapshot, expose a waiting-for-target state and a nonempty swap instruction, wait for explicit confirmation, then write and independently verify. Expose progress/errors through a callable API for the later UI. Do not require the later UI to exist in this stage, and do not write before confirmation.',
           'Windows optical-drive implementation references (platform facts, not instructions to run):',
           'Microsoft Learn: https://learn.microsoft.com/en-us/windows/win32/imapi/burning-a-disc — IMAPI2 creates a file-system image, selects a recorder and writes the image.',
           'Microsoft Learn: https://learn.microsoft.com/en-us/windows/win32/api/imapi2/nf-imapi2-idiscformat2data-write — IDiscFormat2Data.Write needs an IStream with 2048-byte sector alignment and recorder/client name; progress uses DDiscFormat2DataEvents.',
@@ -202,6 +208,7 @@ export class PoipoiCodeAgent {
           'Never return placeholders or pretend a hardware operation is implemented.',
         ].join('\n');
         const changes = await stagedAgent.generate(stageTask, userId, {
+          stageContext: { focus: step.focus, deferredRequirements: steps.slice(index + 1).flatMap(later => later.clauses.map(clause => clauses[clause])) },
           onModelResponse: options.onModelResponse,
           onReviewWarning: options.onReviewWarning,
           onProgress: phase => options.onProgress?.(`機能を段階生成 ${index + 1}/${steps.length}・${phase}`),
@@ -212,8 +219,8 @@ export class PoipoiCodeAgent {
         for (const change of changes) {
           const file = change.path.replace(/\\/g, '/');
           if (!touched.has(file)) {
-            const original = this.safePath(file);
-            touched.set(file, existsSync(original) ? readFileSync(original, 'utf8') : null);
+            // Pin the snapshot the model saw, not a later user edit.
+            touched.set(file, originals.get(file) ?? null);
           }
           const target = stagedAgent.safePath(file);
           mkdirSync(dirname(target), { recursive: true });
@@ -304,6 +311,11 @@ export class PoipoiCodeAgent {
       if (supportedMissing.length) throw Error('統合した変更案に未実装の要件があります。変更は適用していません: ' +
         supportedMissing.map(issue => issue.path + ' [' + clauses[issue.index] + ']: ' + issue.problem).join('; ').slice(0, 2000));
       await options.onReviewWarning?.(reviewWarning ?? '複数段階で生成した全ファイルを一つの承認案にまとめ、構文とAIによる要件照合を行いました。実機動作は未確認です。全ファイルを確認してから承認してください。');
+      for (const [file, original] of touched) {
+        const current = this.safePath(file);
+        if ((existsSync(current) ? readFileSync(current, 'utf8') : null) !== original)
+          throw Error('生成中に元ファイルが変更されました。既存の変更を保護し、適用していません: ' + file);
+      }
       return combined;
     } finally { rmSync(temporary, { recursive: true, force: true }); }
   }
@@ -448,6 +460,7 @@ export class PoipoiCodeAgent {
   }
 
   async generate(task: string, userId = "system", options: {
+    stageContext?: { focus: string; deferredRequirements: readonly string[] };
     onProgress?: (stage: string) => void | Promise<void>;
     onCandidate?: (changes: readonly CodeChange[], syntaxErrors: readonly string[]) => void | Promise<void>;
     // The approval workflow may keep a syntactically safe proposal for human
@@ -1574,6 +1587,8 @@ export class PoipoiCodeAgent {
         // whether a preview has already been applied to the working tree.
         const reviewPrompt = JSON.stringify({
           request: modelIntent,
+          ...(options.stageContext ? { implementationStage: options.stageContext,
+            reviewScope: 'Require every CURRENT requirement in the current stage. Later requirements are implemented by following stages and checked again against the final combined proposal.' } : {}),
           stage: "unapplied proposal awaiting user approval",
           ...(isolatedDisplay ? { authoritativeExamples: displayExamples.map((example, exampleIndex) => ({ exampleIndex, ...example })),
             hostManagedIntegration: { inputPropTracksParentState: true, existingResetOnSend: displayHasReset,

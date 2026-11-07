@@ -16,6 +16,28 @@ import { needsStagedGeneration } from '../core/CodeGenerationWorker';
 
 afterEach(() => { responses.length = 0; vi.restoreAllMocks(); });
 
+it.each(['edit-existing','create-new'])('protects user changes made during staged generation: %s', async kind => {
+  const root=mkdtempSync(join(tmpdir(),'stage-user-change-'));
+  const file='server/core/Feature.ts', original='export const value = 0;\n';
+  mkdirSync(join(root,'server/core'),{recursive:true});
+  if(kind==='edit-existing')writeFileSync(join(root,file),original);
+  writeFileSync(join(root,'package.json'),'{"dependencies":{}}');
+  responses.push(JSON.stringify({complete:true,missing:[]}));
+  const userContent='export const userChange = true;\n';
+  vi.spyOn(PoipoiCodeAgent.prototype,'generate').mockImplementation(async()=>{
+    writeFileSync(join(root,file),userContent);
+    return [{path:file,content:'export const value = 1;\n'}];
+  });
+  const onCandidate=vi.fn();
+  try {
+    const agent=new (PoipoiCodeAgent as any)(root) as PoipoiCodeAgent;
+    await expect(agent.generateStaged('処理を追加する。画面につなぐ。','1',{onCandidate})).rejects.toThrow('生成中に元ファイルが変更');
+    expect(readFileSync(join(root,file),'utf8')).toBe(userContent);
+    const combined=onCandidate.mock.calls.at(-1)![0][0];
+    expect(combined.baseHash).toBe(kind==='edit-existing'?createHash('sha256').update(original).digest('hex'):null);
+  } finally {rmSync(root,{recursive:true,force:true});}
+});
+
 it.each(['unsupported', 'supported', 'invalid-result'])('handles a %s combined review without weakening source checks', async kind => {
   const root = mkdtempSync(join(tmpdir(), 'poipoi-stage-review-'));
   const file = 'server/core/Feature.ts';
@@ -125,9 +147,11 @@ it('assigns every CD copy requirement once without asking the model to plan', as
     'まだ適用しないで。',
   ];
   const stageTasks: string[] = [];
+  const stageContexts: any[] = [];
   responses.push(JSON.stringify({ complete: true, missing: [] }));
-  vi.spyOn(PoipoiCodeAgent.prototype, 'generate').mockImplementation(async function (task) {
+  vi.spyOn(PoipoiCodeAgent.prototype, 'generate').mockImplementation(async function (task, _user, options) {
     stageTasks.push(task);
+    stageContexts.push(options.stageContext);
     return [{ path: file, content: `export const value = ${stageTasks.length};\n` }];
   });
   try {
@@ -138,6 +162,12 @@ it('assigns every CD copy requirement once without asking the model to plan', as
     expect(stageTasks[2]).toContain(clauses[2]);
     expect(stageTasks[0]).not.toContain(clauses[2]);
     expect(stageTasks[1]).not.toContain(clauses[2]);
+    expect(stageTasks[1]).not.toContain('Do not implement their UI or workflow here');
+    expect(stageTasks[1]).toContain('waiting-for-target');
+    expect(stageTasks[1]).toContain('wait for explicit confirmation');
+    expect(stageContexts[1].focus).toContain('one-drive media exchange');
+    expect(stageContexts[1].deferredRequirements).toContain(clauses[2]);
+    expect(stageContexts[1].deferredRequirements).not.toContain(clauses[1]);
     expect(stageTasks[0]).toContain('learn.microsoft.com/en-us/windows/win32/imapi/burning-a-disc');
     expect(stageTasks[0]).toContain('Use no Unix dd, cdrecord, /dev/null or dummy');
     expect(stageTasks[0].split('\n直前の参考会話')[0]).toContain('server/routers.streaming.ts');
