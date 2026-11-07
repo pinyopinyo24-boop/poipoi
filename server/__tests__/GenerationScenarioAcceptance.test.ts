@@ -53,3 +53,22 @@ it('stops infinite generated loops and does not expose Node process or filesyste
     expect(verifyScenario(scenario,[{path:scenario.required[0],content}]).length).toBeGreaterThan(0);
   }
 },10000);
+
+it('returns actionable failed assertion source for generated calculations', () => {
+  const scenario = scenarios.find(s => s.id === 'weighted-average')!;
+  const changes = [{path: scenario.required[0], content:
+    'export function averageMinutes(rows:{quantity:number,minutes:number}[]){return rows.reduce((s,r)=>s+r.quantity*r.minutes,0)/rows.reduce((s,r)=>s+r.quantity,0);}' }];
+  const failures = verifyScenario(scenario, changes);
+  expect(failures.join(' ')).toContain('Runtime acceptance failed');
+  expect(failures.join(' ')).toContain('Failed assertion source:');
+  expect(failures.join(' ')).toContain('612/145');
+});
+
+it('returns the matching assertion for dynamically constructed Unicode labels', () => {
+  const scenario = scenarios.find(s => s.id === 'unicode')!;
+  const changes = [{path: scenario.required[0], content:
+    'export function countCharacters(input:string){return input.length;}' }];
+  const failures = verifyScenario(scenario, changes);
+  expect(failures.join(' ')).toContain('Failed assertion source:');
+  expect(failures.join(' ')).toContain('character count');
+});
