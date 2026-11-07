@@ -31,6 +31,8 @@ jobs:
         run: |
           node --check scripts/lib/verify-generation-scenario.mjs
           node --check scripts/lib/generation-runtime-worker.mjs
+      - name: Check real-model evidence aggregation
+        run: node --test scripts/tests/real-generation-report.test.mjs
       - name: Run local fixture and source-generation tests
         run: pnpm exec vitest run server/__tests__/GenerationScenarioAcceptance.test.ts server/__tests__/GenerationMatrix.integration.test.ts server/__tests__/CodeGenerationSyntax.test.ts server/__tests__/CodeGenerationStages.test.ts --reporter=verbose
       - name: Check TypeScript compatibility
