@@ -1592,7 +1592,8 @@ export class PoipoiCodeAgent {
           if (failedValidationSignatures.has(signature))
             throw new Error('AI repeated a previously rejected code proposal. No change was applied.');
           const validationInput = Object.freeze(generated.map(change => Object.freeze({ ...change })));
-          const issues = await options.validateGenerated(validationInput);
+          const result = await options.validateGenerated(validationInput);
+          const issues = Array.isArray(result) ? [...result] : [];
           // Enforce explicitly requested named exports with the TypeScript AST.
           // This is independent of the model review and never rewrites source.
           const namedContracts = [...intent.matchAll(
@@ -1621,7 +1622,7 @@ export class PoipoiCodeAgent {
               if (!names.has(name)) issues.push('Required named export missing: ' + name);
           }
 
-          if (!Array.isArray(issues) || issues.some((item: unknown) => typeof item !== "string" || !item.trim()))
+          if (!Array.isArray(result) || result.some((item: unknown) => typeof item !== "string" || !item.trim()))
             throw new Error("生成コードの検証結果が不正です。変更は適用していません。");
           if (issues.length) {
             failedValidationSignatures.add(signature);
