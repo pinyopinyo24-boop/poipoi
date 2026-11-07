@@ -42,6 +42,28 @@ beforeEach(() => { model.replies.length = 0; model.requests.length = 0; });
 afterAll(() => { vi.restoreAllMocks(); rmSync(model.root, { recursive: true, force: true }); });
 
 describe('syntax validation before saving an AI proposal', () => {
+  it('repairs a last-attempt distinct failed proposal using verified exact edits', async () => {
+    const file='server/core/StrictMean.ts';
+    const candidates=[
+      'export function mean(rows: {quantity:number,minutes:number}[]) { return rows.length; }',
+      'export function mean(rows: {quantity:number,minutes:number}[]) { return rows.reduce((s,r)=>s+r.minutes,0); }',
+      'export function mean(rows: {quantity:number,minutes:number}[]) { return rows.reduce((s,r)=>s+r.minutes,0)/rows.length; }',
+      'export function mean(rows: {quantity:number,minutes:number}[]) { return rows.reduce((s,r)=>s+r.minutes,0)/rows.reduce((s,r)=>s+r.quantity,0)+1; }',
+    ];
+    const good=candidates[3].replace(')+1;', ');');
+    model.replies.push(...candidates.map(content=>JSON.stringify({changes:[{path:file,content}]})),
+      JSON.stringify({edits:[{oldText:')+1;',newText:');'}]}), accepted);
+    const validateGenerated=vi.fn(changes=>changes[0].content===good?[]:['Expected the weighted time/quantity mean for all rows']);
+    const changes=await PoipoiCodeAgent.getInstance().generate(
+      'Create new server/core/StrictMean.ts exporting mean(rows) computing sum(minutes)/sum(quantity), not average batches.',
+      'system',{validateGenerated});
+    expect(changes[0].content).toBe(good);
+    expect(validateGenerated).toHaveBeenCalledTimes(5);
+    expect(model.requests).toHaveLength(6);
+    expect(model.requests[4].messages.at(-1).content).toContain('weighted time/quantity mean');
+    expect(existsSync(model.root+'/'+file)).toBe(false);
+  });
+
   it('repairs a repeated rejected new module with exact edits and independently reruns acceptance', async () => {
     const file = 'server/core/CountCodepoints.ts';
     const wrong = 'export function codepoints(input: string) { return input.length; }';
