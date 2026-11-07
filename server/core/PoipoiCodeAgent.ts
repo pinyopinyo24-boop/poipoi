@@ -1058,6 +1058,32 @@ export class PoipoiCodeAgent {
           }
           nextContent = proposal.content;
         }
+        // A local code model may emit "shared/Module" as a bare import.
+        // Rewrite it to a relative path only when its target is an approved
+        // existing source file or a module in this exact proposal.
+        {
+          const ts = requireCompiler('typescript') as typeof import('typescript');
+          const parsed = ts.createSourceFile(normalizedPath, nextContent, ts.ScriptTarget.Latest, true);
+          const fixes: Array<{ from: number; to: number; value: string }> = [];
+          for (const node of parsed.statements) {
+            if (!ts.isImportDeclaration(node) && !ts.isExportDeclaration(node)) continue;
+            const spec = node.moduleSpecifier;
+            if (!spec || !ts.isStringLiteral(spec) || !spec.text.startsWith('shared/')) continue;
+            const suffixes = ['.ts', '.tsx', '.js', '.jsx', '/index.ts', '/index.tsx'];
+            const validTarget = suffixes.some(ext => {
+              const targetPath = spec.text + ext;
+              return proposals.some(item => item.path.replace(/\\/g, '/') === targetPath) ||
+                existsSync(this.safePath(targetPath));
+            });
+            if (!validTarget)
+              throw new Error('Generated import targets an unknown shared source: ' + spec.text);
+            let newSpecifier = relative(dirname(normalizedPath), spec.text).replace(/\\/g, '/');
+            if (!newSpecifier.startsWith('.')) newSpecifier = './' + newSpecifier;
+            fixes.push({ from: spec.getStart(parsed) + 1, to: spec.end - 1, value: newSpecifier });
+          }
+          for (const fix of fixes.reverse())
+            nextContent = nextContent.slice(0, fix.from) + fix.value + nextContent.slice(fix.to);
+        }
         if (normalizedPath === 'server/routers.streaming.ts' && sourceContents.has(normalizedPath))
           nextContent = relocateStreamingRouterImports(sourceContents.get(normalizedPath)!, nextContent);
         {
