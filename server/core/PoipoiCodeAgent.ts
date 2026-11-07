@@ -1140,6 +1140,13 @@ export class PoipoiCodeAgent {
     for (let attempt = 0; attempt < 10; attempt++) {
       const prompt = buildPrompt([followUp, syntaxFeedback, requirementFeedback, validationFeedback].filter(Boolean).join("\n")) +
         (isolatedDisplay ? '' : '\nAllowed NEW file paths (complete content only; use these exact paths for new modules and imports):\n' + JSON.stringify(newFilePaths));
+      // Generic React component contracts are structural, not canned answers.
+      // A plain default-exported function is callable by any parent/test renderer.
+      const standaloneReactComponent = /standalone React.*component|React.*standalone.*component/i.test(modelIntent) &&
+        /default export|default-export/i.test(modelIntent);
+      const coderPrompt = standaloneReactComponent
+        ? prompt + '\nFor a standalone React component, export a directly callable function by default. Example declaration shape: export default function ComponentName(props: Props) { return <output>{computedText}</output>; }. A React.memo(...) wrapper, React.forwardRef(...), an object, a JSX value, a named-only export, or module.exports is NOT a callable default-exported function. Render a real output element from current props; calculate text from input, not fixed samples.'
+        : prompt;
       const visibleSource = promptSources().shown;
       // Constrain the model's JSON grammar too: small, fully reviewed files do
       // not need fragile edit anchors. Larger/excerpted files still use edits.
@@ -1229,7 +1236,7 @@ export class PoipoiCodeAgent {
         },
         {
           role: "user",
-          content: prompt,
+          content: coderPrompt,
         },
       ],
     });
@@ -1725,6 +1732,44 @@ export class PoipoiCodeAgent {
           const validationInput = Object.freeze(generated.map(change => Object.freeze({ ...change })));
           const result = await options.validateGenerated(validationInput);
           const issues = Array.isArray(result) ? [...result] : [];
+          if (standaloneReactComponent) {
+            const ts = requireCompiler('typescript') as typeof import('typescript');
+            for (const change of generated.filter(c => c.path.endsWith('.tsx') && c.baseHash === null)) {
+              const ast = ts.createSourceFile(change.path, change.content, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
+              const declarations = new Map<string, boolean>();
+              for (const node of ast.statements) {
+                if (ts.isFunctionDeclaration(node) && node.name) declarations.set(node.name.text, true);
+                if (ts.isVariableStatement(node)) for (const decl of node.declarationList.declarations) {
+                  if (!ts.isIdentifier(decl.name)) continue;
+                  const expr = decl.initializer;
+                  declarations.set(decl.name.text, !!expr && (ts.isArrowFunction(expr) || ts.isFunctionExpression(expr)));
+                }
+              }
+              const directFunction = (expr: import('typescript').Expression): boolean => {
+                while (ts.isParenthesizedExpression(expr) || ts.isAsExpression(expr) ||
+                    ts.isSatisfiesExpression(expr) || ts.isTypeAssertionExpression(expr))
+                  expr = expr.expression;
+                return ts.isArrowFunction(expr) || ts.isFunctionExpression(expr) ||
+                  (ts.isIdentifier(expr) && declarations.get(expr.text) === true);
+              };
+              const callable = ast.statements.some(node => {
+                if (ts.isFunctionDeclaration(node))
+                  return ts.getModifiers(node)?.some(m => m.kind === ts.SyntaxKind.DefaultKeyword) ?? false;
+                if (ts.isExportAssignment(node) && !node.isExportEquals)
+                  return directFunction(node.expression);
+                if (ts.isExportDeclaration(node) && !node.moduleSpecifier &&
+                    node.exportClause && ts.isNamedExports(node.exportClause))
+                  return node.exportClause.elements.some(el => el.name.text === 'default' &&
+                    declarations.get((el.propertyName ?? el.name).text) === true);
+                return false;
+              });
+              if (!callable) issues.push(
+                change.path + ': The default export must resolve to a directly callable React component function. ' +
+                'Use export default function ComponentName({input}: {input:string}) { return <output>...</output>; } ' +
+                'or export default a local arrow/function declaration. Do not export JSX, an object, memo/forwardRef wrapper, or only a named component.'
+              );
+            }
+          }
           // Enforce explicitly requested named exports with the TypeScript AST.
           // This is independent of the model review and never rewrites source.
           const namedContracts = [...intent.matchAll(
