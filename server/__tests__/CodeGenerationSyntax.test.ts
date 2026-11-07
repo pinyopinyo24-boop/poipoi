@@ -52,7 +52,7 @@ describe('syntax validation before saving an AI proposal', () => {
     );
     const check=vi.fn(()=>[]);
     const result=await PoipoiCodeAgent.getInstance().generate(
-      'Create client/src/components/CharacterCount.tsx as a NEW standalone React display component with default export CharacterCount({input}:{input:string}). Render an output element showing Unicode code point count.',
+      'Using server/core/ApprovalUiVerification.ts as reference, create client/src/components/CharacterCount.tsx as a NEW standalone React display component with default export CharacterCount({input}:{input:string}). Render an output element showing Unicode code point count.',
       'system',{validateGenerated:check});
     expect(result[0].content).toBe(good);
     expect(check).toHaveBeenCalledTimes(2);
