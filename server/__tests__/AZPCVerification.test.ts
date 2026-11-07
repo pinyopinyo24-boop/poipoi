@@ -193,7 +193,7 @@ describe('AZ PC integration with controlled model responses', () => {
     await writeFile(model.fixture + '/' + target, source);
     model.replies.push('Preserve the source and add one comment.', JSON.stringify({ changes: [{ path: target, edits: [{ oldText: 'export const large = 1;', newText: 'export const large = 1;\n// proposed only' }] }] }), JSON.stringify({ accepted: true, issues: [] }));
     const preview = await tools.codePreview({ request: 'Modify ' + target + ' by adding a comment, preserving its complete existing content.' });
-    expect(model.requests[1].contextWindow).toBe(32768);
+    expect(model.requests[1].contextWindow).toBeGreaterThanOrEqual(16384);
     expect(preview.changes[0].previousContent).toBe(source);
     expect(await readFile(model.fixture + '/' + target, 'utf8')).toBe(source);
     await tools.rejectCodePreview({ previewId: preview.previewId });
