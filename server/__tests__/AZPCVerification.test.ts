@@ -176,8 +176,8 @@ describe('AZ PC integration with controlled model responses', () => {
     model.replies.push('Create only the requested standalone module.', JSON.stringify({ changes: [{ path: target, content: 'export const compact = 1;\n' }] }), JSON.stringify({ accepted: true, issues: [] }));
     const preview = await tools.codePreview({ request: 'Using server/core/PoipoiEvolutionTestTarget.ts as reference, create only ' + target + '. Do not modify existing files.' });
     expect(preview.changes[0].path).toBe(target);
-    expect(model.requests[0]).toMatchObject({ timeoutMs: 300000, contextWindow: 8192, max_tokens: 256 });
-    expect(model.requests[1]).toMatchObject({ timeoutMs: 300000, contextWindow: 8192 });
+    expect(model.requests[0]).toMatchObject({ timeoutMs: 0, contextWindow: 8192, max_tokens: 4096 });
+    expect(model.requests[1]).toMatchObject({ timeoutMs: 0, contextWindow: 8192 });
     const prompt = model.requests[1].messages.find((message: any) => message.role === 'user').content;
     expect(prompt.length).toBeLessThan(6000);
     expect(prompt).toContain('Existing source: server/core/PoipoiEvolutionTestTarget.ts');
@@ -191,7 +191,7 @@ describe('AZ PC integration with controlled model responses', () => {
     const target = 'server/core/LargePreview.ts';
     const source = 'export const large = 1;\n' + '// source context line\n'.repeat(1000);
     await writeFile(model.fixture + '/' + target, source);
-    model.replies.push('Preserve the source and add one comment.', JSON.stringify({ changes: [{ path: target, content: source + '\n// proposed only\n' }] }), JSON.stringify({ accepted: true, issues: [] }));
+    model.replies.push('Preserve the source and add one comment.', JSON.stringify({ changes: [{ path: target, edits: [{ oldText: 'export const large = 1;', newText: 'export const large = 1;\n// proposed only' }] }] }), JSON.stringify({ accepted: true, issues: [] }));
     const preview = await tools.codePreview({ request: 'Modify ' + target + ' by adding a comment, preserving its complete existing content.' });
     expect(model.requests[1].contextWindow).toBe(32768);
     expect(preview.changes[0].previousContent).toBe(source);
