@@ -42,6 +42,27 @@ beforeEach(() => { model.replies.length = 0; model.requests.length = 0; });
 afterAll(() => { vi.restoreAllMocks(); rmSync(model.root, { recursive: true, force: true }); });
 
 describe('syntax validation before saving an AI proposal', () => {
+  it('rejects a non-callable default React export even when a permissive runtime callback says passed', async () => {
+    const file='client/src/components/CharacterCount.tsx';
+    const bad='const view = { type: "output" }; export default view;';
+    const good='export default function CharacterCount({input}: {input:string}) { return {type:"output",props:{children:Array.from(input).length+"文字"}}; }';
+    model.replies.push(
+      JSON.stringify({changes:[{path:file,content:bad}]}),
+      JSON.stringify({changes:[{path:file,content:good}]}),accepted,
+    );
+    const check=vi.fn(()=>[]);
+    const result=await PoipoiCodeAgent.getInstance().generate(
+      'Create client/src/components/CharacterCount.tsx as a NEW standalone React display component with default export CharacterCount({input}:{input:string}). Render an output element showing Unicode code point count.',
+      'system',{validateGenerated:check});
+    expect(result[0].content).toBe(good);
+    expect(check).toHaveBeenCalledTimes(2);
+    const retry=JSON.stringify(model.requests[1].messages);
+    expect(retry).toContain('directly callable React component function');
+    expect(retry).toContain('Do not export JSX');
+    expect(model.requests[0].messages.at(-1).content).toContain('export a directly callable function');
+    expect(existsSync(model.root+'/'+file)).toBe(false);
+  });
+
   it('gives part-registry corrective patches preservation guidance and retains executable acceptance', async () => {
     const file='server/core/PartRegistry.ts';
     const bad='export function registerPart(parts: {sku:string,name:string}[], part: {sku:string,name:string}) { return [...parts.map(row=>({...row,sku:row.sku.trim().toUpperCase()})),part]; }';
