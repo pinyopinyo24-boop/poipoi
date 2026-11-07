@@ -1593,6 +1593,34 @@ export class PoipoiCodeAgent {
             throw new Error('AI repeated a previously rejected code proposal. No change was applied.');
           const validationInput = Object.freeze(generated.map(change => Object.freeze({ ...change })));
           const issues = await options.validateGenerated(validationInput);
+          // Enforce explicitly requested named exports with the TypeScript AST.
+          // This is independent of the model review and never rewrites source.
+          const namedContracts = [...intent.matchAll(
+            /\b([A-Za-z_$][\w$]*)\s*\([^)\r\n]*\)\s*(?::\s*[A-Za-z_$][\w$<>, \[\]|]*)?\s*を\s*export(?:する|して)?/gi
+          )].map(match => match[1]);
+          if (namedContracts.length) {
+            const ts = requireCompiler('typescript') as typeof import('typescript');
+            const names = new Set<string>();
+            for (const change of generated) {
+              const ast = ts.createSourceFile(change.path, change.content, ts.ScriptTarget.Latest, true);
+              for (const node of ast.statements) {
+                if (ts.isExportDeclaration(node) && node.exportClause && ts.isNamedExports(node.exportClause)) {
+                  for (const item of node.exportClause.elements) names.add(item.name.text);
+                  continue;
+                }
+                const mods = ts.canHaveModifiers(node) ? ts.getModifiers(node) ?? [] : [];
+                if (!mods.some(mod => mod.kind === ts.SyntaxKind.ExportKeyword)) continue;
+                if (ts.isFunctionDeclaration(node) && node.name) names.add(node.name.text);
+                if (ts.isVariableStatement(node)) {
+                  for (const decl of node.declarationList.declarations)
+                    if (ts.isIdentifier(decl.name)) names.add(decl.name.text);
+                }
+              }
+            }
+            for (const name of namedContracts)
+              if (!names.has(name)) issues.push('Required named export missing: ' + name);
+          }
+
           if (!Array.isArray(issues) || issues.some((item: unknown) => typeof item !== "string" || !item.trim()))
             throw new Error("生成コードの検証結果が不正です。変更は適用していません。");
           if (issues.length) {
@@ -1605,7 +1633,7 @@ export class PoipoiCodeAgent {
               'Use the required original API names, edge cases and public exports exactly. Never edit or bypass checks.',
               'Regenerate the COMPLETE proposal; the host will independently rerun its checks.',
               JSON.stringify({ originalRequest: modelIntent, failures: issues.slice(0, 20), previousChanges: proposals }),
-            ].join('\\n');
+            ].join('\n');
             proposals = [];
             continue;
           }
