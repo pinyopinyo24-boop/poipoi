@@ -58,7 +58,7 @@ export function verifyScenario(scenario, changes) {
       const assertion = scenario.tests.split(/\r?\n/).find(line =>
         line.includes("'" + failure + "'") || line.includes('"' + failure + '"'));
       errors.push('Runtime acceptance failed: ' + failure +
-        (assertion ? '\\nFailed assertion source: ' + assertion.trim().slice(0, 1800) : ''));
+        (assertion ? '\nFailed assertion source: ' + assertion.trim().slice(0, 1800) : ''));
     } catch {
       errors.push('Runtime verification failed or timed out: ' + error.message);
     }
