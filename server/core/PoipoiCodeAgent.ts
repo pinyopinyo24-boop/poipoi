@@ -1673,6 +1673,9 @@ export class PoipoiCodeAgent {
             validationFeedback = [
               'Executable acceptance FAILED for the previous proposal. Preserve all already-correct behavior.',
               'Correct the specific failing condition, with its input units and required output, not just superficial formatting.',
+              ...(issues.some(error => /TS18046|is of type 'unknown'/.test(error)) ? [
+                'TypeScript compiler TS18046: catch(error) has type unknown. Narrow it via error instanceof Error before reading error.message; for non-Error caught values use String(error). Retain the original error message and sequential failure handling.'
+              ] : []),
               'Use the required original API names, edge cases and public exports exactly. Never edit or bypass checks.',
               'Regenerate the COMPLETE proposal; the host will independently rerun its checks.',
               JSON.stringify({ originalRequest: modelIntent, failures: issues.slice(0, 20), previousChanges: proposals }),
