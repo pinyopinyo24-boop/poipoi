@@ -26,7 +26,11 @@ describe('ChatCoreManager', () => {
   let mockApprovalManager: any;
 
   beforeEach(async () => {
-    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: true, text: async () => JSON.stringify({ model: 'qwen2.5-coder:7b', message: { role: 'assistant', content: 'テスト応答' }, prompt_eval_count: 10, eval_count: 5 }) }));
+    vi.stubGlobal('fetch', vi.fn(async (url: string) => new Response(JSON.stringify(
+      String(url).includes('/api/tags')
+        ? { models: [{ name: 'qwen2.5-coder:7b' }] }
+        : { model: 'qwen2.5-coder:7b', message: { role: 'assistant', content: 'テスト応答' }, prompt_eval_count: 10, eval_count: 5 }
+    ), { status: 200 })));
     await getSharedChatRepository().saveSession({
       id: 'session123', userId: 'user123', title: 'Test session',
       createdAt: Date.now(), updatedAt: Date.now(), messageCount: 0,

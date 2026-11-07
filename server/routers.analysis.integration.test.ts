@@ -208,7 +208,9 @@ describe('Analysis + Presentation Integration', () => {
         elements: [],
       });
 
-      expect(() => presentationManager.exportPDF(presentation.id)).toThrow('PDFエクスポートエンジンが構成されていません');
+      const pdf = presentationManager.exportPDF(presentation.id);
+      expect(pdf).toBeInstanceOf(Buffer);
+      expect(pdf?.subarray(0, 5).toString('ascii')).toBe('%PDF-');
     });
   });
 

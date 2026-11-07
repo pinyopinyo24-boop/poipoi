@@ -125,7 +125,9 @@ describe('PoiPoiChatUI Presentation Integration', () => {
 
       manager.generateWithAI(presentation.id, 2);
 
-      expect(() => manager.exportPDF(presentation.id)).toThrow('PDFエクスポートエンジンが構成されていません');
+      const pdf = manager.exportPDF(presentation.id);
+      expect(pdf).toBeInstanceOf(Buffer);
+      expect(pdf?.subarray(0, 5).toString('ascii')).toBe('%PDF-');
     });
 
     it('JSON形式でエクスポート', () => {
@@ -172,7 +174,9 @@ describe('PoiPoiChatUI Presentation Integration', () => {
 
       // 5. Export確認
       const pptx = manager.exportPowerPoint(presentation.id);
-      expect(() => manager.exportPDF(presentation.id)).toThrow('PDFエクスポートエンジンが構成されていません');
+      const pdf = manager.exportPDF(presentation.id);
+      expect(pdf).toBeInstanceOf(Buffer);
+      expect(pdf?.subarray(0, 5).toString('ascii')).toBe('%PDF-');
       const json = manager.exportJSON(presentation.id);
 
       expect(pptx).toBeDefined();

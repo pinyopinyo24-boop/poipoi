@@ -13,7 +13,7 @@ const git=(...args:string[])=>execFileSync('git',args,{cwd:fixture.root,encoding
 const ctx=(id=910001,role='admin')=>({user:{id,role,name:'Fixture'},req:{headers:{}},res:{}} as any);
 const tools=()=>unifiedToolsRouter.createCaller(ctx());
 const base='server/core/EvolutionReference.ts';
-async function preview(path:string,content:string){fixture.replies.push('Create a bounded source-only change. Preserve all existing exports.',JSON.stringify({changes:[{path,content}]}));return tools().codePreview({request:'Using '+base+' as reference, '+(path===base?'modify ':'create only ')+path+'. Keep all existing features.'});}
+async function preview(path:string,content:string){fixture.replies.push('Create a bounded source-only change. Preserve all existing exports.',JSON.stringify({changes:[{path,content}]}),JSON.stringify({accepted:true,issues:[]}));return tools().codePreview({request:'Using '+base+' as reference, '+(path===base?'modify ':'create only ')+path+'. Keep all existing features.'});}
 beforeAll(async()=>{
  await mkdir(fixture.root+'/server/core',{recursive:true});await writeFile(fixture.root+'/'+base,'export const value: number = 1;\n');
  await writeFile(fixture.root+'/package.json',JSON.stringify({name:'isolated-poipoi-evolution-verification',version:'1.0.0',type:'module',private:true}));

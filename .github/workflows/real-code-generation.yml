@@ -1,0 +1,136 @@
+name: Real Qwen Generation Verification
+
+on:
+  workflow_dispatch:
+    inputs:
+      cases:
+        description: 'all, core, quality, or comma-separated case IDs'
+        required: true
+        default: all
+  push:
+    branches: [fix/generation-diagnostics-20261107]
+
+permissions:
+  contents: read
+
+jobs:
+  prepare:
+    if: github.event_name == 'workflow_dispatch' || contains(github.event.head_commit.message, '[real-qwen-verify')
+    runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.select.outputs.matrix }}
+      selection: ${{ steps.select.outputs.selection }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - id: select
+        name: Select bounded real-model cases
+        run: |
+          node --input-type=module <<'NODE'
+          import {readFileSync,appendFileSync} from 'node:fs';
+          import {selectRealCases} from './scripts/lib/real-generation-report.mjs';
+          const event=JSON.parse(readFileSync(process.env.GITHUB_EVENT_PATH,'utf8'));
+          const match=event.head_commit?.message?.match(/\[real-qwen-verify(?::([a-z0-9,-]+))?\]/);
+          const selection=event.inputs?.cases || match?.[1] || 'all';
+          const cases=selectRealCases(selection);
+          appendFileSync(process.env.GITHUB_OUTPUT,'matrix='+JSON.stringify({case:cases})+'\nselection='+cases.join(',')+'\n');
+          NODE
+  inference:
+    needs: prepare
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      max-parallel: 6
+      matrix: ${{ fromJSON(needs.prepare.outputs.matrix) }}
+    env:
+      OLLAMA_HOST: 127.0.0.1:11434
+      OLLAMA_NUM_PARALLEL: '1'
+      LOCAL_CODER_MODEL: qwen2.5-coder:7b
+      LOCAL_AI_URL: http://127.0.0.1:11434
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: pnpm/action-setup@v4
+        with:
+          run_install: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: pnpm
+      - name: Install existing dependencies without lifecycle builds
+        run: pnpm install --frozen-lockfile --ignore-scripts
+      - name: Start pinned CPU Ollama and pull pinned model weights
+        run: |
+          set -euo pipefail
+          tool="$RUNNER_TEMP/ollama-cpu"
+          mkdir -p "$tool"
+          curl --fail --location --retry 3 https://github.com/ollama/ollama/releases/download/v0.40.15/ollama-linux-amd64.tar.zst -o "$tool/archive.tar.zst"
+          tar --zstd -xf "$tool/archive.tar.zst" -C "$tool" --exclude='lib/ollama/cuda*' --exclude='lib/ollama/rocm*'
+          rm "$tool/archive.tar.zst"
+          export OLLAMA_MODELS="$RUNNER_TEMP/ollama-models"
+          nohup "$tool/bin/ollama" serve > "$RUNNER_TEMP/ollama.log" 2>&1 &
+          for attempt in $(seq 1 60); do
+            if curl -fsS "$LOCAL_AI_URL/api/tags" >/dev/null; then break; fi
+            sleep 1
+          done
+          curl --fail --max-time 600 "$LOCAL_AI_URL/api/pull" -d '{"model":"qwen2.5-coder:7b","stream":false}'
+          node --input-type=module <<'NODE'
+          import {expectedModelDigest} from './scripts/lib/real-generation-report.mjs';
+          const tags=await (await fetch(process.env.LOCAL_AI_URL+'/api/tags')).json();
+          const model=tags.models?.find(m=>m.name===process.env.LOCAL_CODER_MODEL);
+          if(model?.digest!==expectedModelDigest)throw Error('Unexpected model weights');
+          console.log('PINNED REAL MODEL:',model.name,model.digest);
+          console.log('OLLAMA VERSION:',await (await fetch(process.env.LOCAL_AI_URL+'/api/version')).text());
+          NODE
+          git rev-parse HEAD
+          free -m
+      - name: Run one real model case without applying source
+        env:
+          CASE_ID: ${{ matrix.case }}
+        run: node --import tsx scripts/probe-local-code-generation-matrix.mjs --suite=all "--case=$CASE_ID"
+      - name: Save actual model outputs and acceptance failures
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: real-generation-${{ matrix.case }}
+          overwrite: true
+          path: |
+            data/code-generation-verification/
+            ${{ runner.temp }}/ollama.log
+          retention-days: 7
+          if-no-files-found: error
+  summarize:
+    if: always() && needs.prepare.result == 'success'
+    needs: [prepare, inference]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: real-generation-*
+          path: real-evidence
+      - name: Verify all case evidence against this exact source revision
+        env:
+          CASE_SELECTION: ${{ needs.prepare.outputs.selection }}
+        run: node scripts/summarize-real-generation.mjs real-evidence "$CASE_SELECTION" "$RUNNER_TEMP/real-summary"
+      - name: Publish separate behavior and automatic review counts
+        if: always()
+        run: cat "$RUNNER_TEMP/real-summary/summary.md" >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: real-generation-summary
+          overwrite: true
+          path: ${{ runner.temp }}/real-summary/
+          retention-days: 7

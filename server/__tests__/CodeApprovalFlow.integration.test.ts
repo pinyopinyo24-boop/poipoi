@@ -25,6 +25,7 @@ const git = (...args: string[]) => execFileSync('git', args, {
 const absolute = (name: string) => path.join(fixture.directory, name);
 const hash = (source: string) => createHash('sha256').update(source).digest('hex');
 const originalGlobal = process.env.GIT_CONFIG_GLOBAL;
+const originalNoSystem = process.env.GIT_CONFIG_NOSYSTEM;
 
 beforeAll(() => {
   mkdirSync(absolute('server/core'), { recursive: true });
@@ -34,6 +35,7 @@ beforeAll(() => {
   symlinkSync(fixture.original + '/scripts', absolute('scripts'), 'junction');
   writeFileSync(absolute('tsconfig.json'), JSON.stringify({ compilerOptions: { target: 'ES2022', strict: true, skipLibCheck: true, types: [] }, include: ['server/core/*.ts'] }));
   process.env.GIT_CONFIG_GLOBAL = devNull;
+  process.env.GIT_CONFIG_NOSYSTEM = '1';
   git('init', '-q');
   git('config', 'user.name', 'Approval integration');
   git('config', 'user.email', 'approval@example.invalid');
@@ -44,6 +46,8 @@ beforeAll(() => {
 afterAll(() => {
   if (originalGlobal === undefined) delete process.env.GIT_CONFIG_GLOBAL;
   else process.env.GIT_CONFIG_GLOBAL = originalGlobal;
+  if (originalNoSystem === undefined) delete process.env.GIT_CONFIG_NOSYSTEM;
+  else process.env.GIT_CONFIG_NOSYSTEM = originalNoSystem;
   vi.restoreAllMocks();
   rmSync(fixture.directory, { recursive: true, force: true });
 });

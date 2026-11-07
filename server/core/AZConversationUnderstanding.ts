@@ -64,6 +64,9 @@ async function interpret(userId: string, original: string, turns: ChatMessage[],
   const suppliedName = original.match(/^(?:私の名前は|わたしの名前は|僕の名前は|俺の名前は|私の名前を|私を)[「『"]?([^？?。！!\n]{1,40}?)[」』"]?(?:です|だよ|にして|と呼んで|にしてください)[。！!]*$/u)?.[1]
     ?? nameAnswerToPreviousQuestion(original, turns);
   if (suppliedName) return simple('memory', 'request', '私の名前は' + suppliedName.trim() + 'です', true);
+  const suppliedAIName = original.match(/^(?:あなたの名前|AIの名前|AZの呼び名)(?:を|は)[ \\t]*[「『"]?(.{1,40}?)[」』"]?[ \\t]*(?:にして|に変更して|に変えて|です|だよ|と呼んで|にしてください)[。！!]*$/u)?.[1];
+  if (suppliedAIName) return simple('memory', 'request', 'あなたの名前を' + suppliedAIName.trim() + 'にして', true);
+
   if (/^(?:こんにちは|こんばんは|おはよう|ありがとう|おやすみ)[。！!\s]*$/u.test(original)) return simple('conversation', 'chat');
   const imagine = original.match(/^\/imagine\s+([\s\S]+)$/i);
   if (imagine) return simple('image', 'request', imagine[1], true);

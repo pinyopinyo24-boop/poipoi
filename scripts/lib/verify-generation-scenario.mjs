@@ -17,6 +17,14 @@ export function verifyScenario(scenario, changes) {
   if (sources['server/core/Reference.ts'] !== baseline['server/core/Reference.ts']) errors.push('Reference file changed');
   if (scenario.preserveExact && sources['server/core/LargeExisting.ts'] !== baseline['server/core/LargeExisting.ts'].replace('price + quantity', 'price * quantity'))
     errors.push('Existing file differs outside the requested expression');
+  if (scenario.editableRegion) {
+    const {file, oldText} = scenario.editableRegion;
+    const original = baseline[file], next = sources[file], start = original.indexOf(oldText);
+    if (start < 0 || start !== original.lastIndexOf(oldText)) throw Error('Invalid editable-region contract');
+    const prefix = original.slice(0, start), suffix = original.slice(start + oldText.length);
+    if (!next.startsWith(prefix) || !next.endsWith(suffix) || next.length < prefix.length + suffix.length)
+      errors.push('Existing file differs outside the requested function: ' + file);
+  }
   const modules = {}, dependencies = {};
   for (const [file, source] of Object.entries(sources)) {
     const parsed = ts.createSourceFile(file, source, ts.ScriptTarget.Latest, true);
@@ -50,8 +58,37 @@ export function verifyScenario(scenario, changes) {
     });
     if (JSON.parse(output).ok !== true) errors.push('Runtime verification did not pass');
   } catch (error) {
-    try { errors.push('Runtime acceptance failed: ' + JSON.parse(String(error.stdout)).error); }
-    catch { errors.push('Runtime verification failed or timed out: ' + error.message); }
+    try {
+      const failure = String(JSON.parse(String(error.stdout)).error);
+      // Surface the original failing assertion, rather than only its label.
+      // This gives the code generator the required calculation or edge case,
+      // without changing or weakening the acceptance checks.
+      // Find the actual assert(...) expression, including labels composed
+      // dynamically (for example "character count " + input).
+      const script = ts.createSourceFile('fixture-check.js', scenario.tests,
+        ts.ScriptTarget.Latest, true, ts.ScriptKind.JS);
+      let matched = '';
+      let longestLabel = 0;
+      function visit(node) {
+        if (ts.isCallExpression(node) && ts.isIdentifier(node.expression) &&
+            (node.expression.text === 'assert' || node.expression.text === 'throws') && node.arguments.length >= 2) {
+          const labelCode = node.arguments[1].getText(script);
+          const literals = [...labelCode.matchAll(/(['"])(.*?)\1/g)]
+            .map(match => match[2]).filter(Boolean);
+          const weight = Math.max(0, ...literals.filter(lit => failure.includes(lit)).map(lit => lit.length));
+          if (weight > longestLabel) {
+            longestLabel = weight;
+            matched = node.getText(script).slice(0, 1800);
+          }
+        }
+        ts.forEachChild(node, visit);
+      }
+      visit(script);
+      errors.push('Runtime acceptance failed: ' + failure +
+        (matched ? '\nFailed assertion source: ' + matched : ''));
+    } catch {
+      errors.push('Runtime verification failed or timed out: ' + error.message);
+    }
   }
   return errors;
 }

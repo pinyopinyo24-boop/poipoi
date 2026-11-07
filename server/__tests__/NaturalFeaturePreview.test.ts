@@ -688,11 +688,11 @@ describe('new feature requests without source paths through the actual PC chat r
       content: 'export default function View({input}:{input:string}) { const charCount = input.length; return <div>{charCount}文字</div>; }',
     }] });
     try {
-      model.replies.push(wrong, wrong);
+      model.replies.push(wrong, wrong, wrong);
       await expect(PoipoiCodeAgent.getInstance().generate(
         'AIチャットの入力欄の近くに文字数表示を追加して。空欄は0文字、「あいう」は3文字、「😀」は1文字。送信後は0文字に戻す。',
       )).rejects.toThrow('input.length counts UTF-16 code units');
-      expect(model.requests).toHaveLength(2);
+      expect(model.requests).toHaveLength(3);
       expect(readFileSync(model.root + '/' + page, 'utf8')).toBe(actual);
     } finally { writeFileSync(model.root + '/' + page, original); }
   });

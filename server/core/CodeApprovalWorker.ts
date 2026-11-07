@@ -2,6 +2,7 @@ import { spawn } from 'node:child_process';
 import { createHash, randomUUID } from 'node:crypto';
 import { closeSync, mkdirSync, openSync, readFileSync, renameSync, unlinkSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { PoipoiCodeAgent, type CodeTaskResult } from './PoipoiCodeAgent';
 import { readCodePreview, saveCodePreview, type CodePreview } from './CodePreviewStore';
 
@@ -85,7 +86,7 @@ export async function applyCodePreviewInWorker(preview: CodePreview, typeCheck: 
   const handle = openSync(log, 'a', 0o600);
   let child: ReturnType<typeof spawn>;
   try {
-    child = spawn(process.execPath, ['--import', 'tsx', path.join(root, 'scripts', 'code-approval-worker.mjs'),
+    child = spawn(process.execPath, ['--import', 'tsx', fileURLToPath(new URL('../../scripts/code-approval-worker.mjs', import.meta.url)),
       preview.userId, preview.id, jobId], { cwd: root, env, detached: true,
       windowsHide: true, stdio: ['ignore', handle, handle] });
     await new Promise<void>((resolve, reject) => {

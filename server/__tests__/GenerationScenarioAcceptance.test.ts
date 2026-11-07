@@ -45,6 +45,25 @@ it('rejects an unused integration import even when copied logic returns the corr
   expect(verifyScenario(scenario,changes).join(' ')).toContain('must call the imported helper');
 });
 
+it('rejects a fabricated element-shaped object instead of accepting it as React output', () => {
+  const scenario=scenarios.find(s=>s.id==='react-display')!;
+  const changes=[{path:scenario.required[0],content:'export default function CharacterCount({input}:{input:string}){return {type:"output",props:{children:Array.from(input).length+"文字"}};}'}];
+  expect(verifyScenario(scenario,changes).join(' ')).toContain('real React element');
+});
+
+it('reports the requested public API name when the model exports a different function', () => {
+  const scenario=scenarios.find(s=>s.id==='weighted-average')!;
+  const changes=[{path:scenario.required[0],content:'export function calculateProductionAverage(){ return 0; }'}];
+  expect(verifyScenario(scenario,changes).join(' ')).toContain('required named export averageMinutes must be callable');
+});
+
+it('rejects staged UI wiring that returns the right text in the wrong requested element', () => {
+  const scenario=scenarios.find(s=>s.id==='staged-ui-core')!;
+  const contents=[...valid['staged-ui-core']];contents[1]=contents[1].replaceAll('output','div');
+  const changes=scenario.required.map((path:string,index:number)=>({path,content:contents[index]}));
+  expect(verifyScenario(scenario,changes).join(' ')).toContain('staged output element');
+});
+
 it('stops infinite generated loops and does not expose Node process or filesystem APIs', () => {
   const scenario=scenarios.find(s=>s.id==='unicode')!;
   for(const content of ['export function countCharacters(){while(true){}}',
@@ -53,3 +72,22 @@ it('stops infinite generated loops and does not expose Node process or filesyste
     expect(verifyScenario(scenario,[{path:scenario.required[0],content}]).length).toBeGreaterThan(0);
   }
 },10000);
+
+it('returns actionable failed assertion source for generated calculations', () => {
+  const scenario = scenarios.find(s => s.id === 'weighted-average')!;
+  const changes = [{path: scenario.required[0], content:
+    'export function averageMinutes(rows:{quantity:number,minutes:number}[]){return rows.reduce((s,r)=>s+r.quantity*r.minutes,0)/rows.reduce((s,r)=>s+r.quantity,0);}' }];
+  const failures = verifyScenario(scenario, changes);
+  expect(failures.join(' ')).toContain('Runtime acceptance failed');
+  expect(failures.join(' ')).toContain('Failed assertion source:');
+  expect(failures.join(' ')).toContain('612/145');
+});
+
+it('returns the matching assertion for dynamically constructed Unicode labels', () => {
+  const scenario = scenarios.find(s => s.id === 'unicode')!;
+  const changes = [{path: scenario.required[0], content:
+    'export function countCharacters(input:string){return input.length;}' }];
+  const failures = verifyScenario(scenario, changes);
+  expect(failures.join(' ')).toContain('Failed assertion source:');
+  expect(failures.join(' ')).toContain('character count');
+});

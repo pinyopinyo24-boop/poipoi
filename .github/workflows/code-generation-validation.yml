@@ -1,0 +1,65 @@
+name: PoiPoi Code Generation Verification
+
+on:
+  push:
+    branches:
+      - fix/generation-diagnostics-20261107
+  pull_request:
+    paths:
+      - 'server/core/PoipoiCodeAgent.ts'
+      - 'scripts/lib/**'
+      - 'server/__tests__/CodeGeneration*.test.ts'
+      - 'server/__tests__/Generation*.test.ts'
+      - '.github/workflows/code-generation-validation.yml'
+
+jobs:
+  generation-tests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          run_install: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: 'pnpm'
+      - name: Install dependencies without lifecycle builds
+        run: pnpm install --frozen-lockfile --ignore-scripts
+      - name: Check verification runner syntax
+        run: |
+          node --check scripts/lib/verify-generation-scenario.mjs
+          node --check scripts/lib/generation-runtime-worker.mjs
+      - name: Check real-model evidence aggregation
+        run: node --test scripts/tests/real-generation-report.test.mjs
+      - name: Run local fixture and source-generation tests
+        run: pnpm exec vitest run server/__tests__/GenerationScenarioAcceptance.test.ts server/__tests__/GenerationMatrix.integration.test.ts server/__tests__/CodeGenerationSyntax.test.ts server/__tests__/CodeGenerationStages.test.ts --reporter=verbose
+      - name: Check TypeScript compatibility
+        run: pnpm check
+      - name: Run full server test suite
+        run: pnpm test:ci
+
+  mobile-typecheck:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: mobile
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: mobile/package-lock.json
+      - name: Install mobile dependencies without native builds
+        run: npm ci --ignore-scripts --no-audit --no-fund
+      - name: Type-check Android/Expo source only
+        run: npm run type-check
+      - name: Preserve resolved mobile lockfile for review
+        uses: actions/upload-artifact@v4
+        with:
+          name: mobile-lockfile-verified
+          path: mobile/package-lock.json
+          retention-days: 7

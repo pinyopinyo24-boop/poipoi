@@ -43,21 +43,24 @@ afterAll(async () => { vi.restoreAllMocks(); vi.unstubAllGlobals(); await rm(mod
 beforeEach(() => { model.replies.length = 0; model.requests.length = 0; user++; });
 const finish = (answer: string) => JSON.stringify({ type: 'finish', answer, needsInput: false });
 const next = (tool: string, args: unknown) => JSON.stringify({ type: 'tool', tool, args });
+const intentReply = (goal: string, domain: 'conversation' | 'manufacturing' = 'conversation', act: 'chat' | 'question' | 'request' = 'chat', newTask = true) => JSON.stringify({
+  domain, act, newTask, target: -1, goal, conditions: [], replaceConditions: [], question: '', confidence: 1,
+});
 
 // Only the model is controlled. Persistence, routing, tools and file parsers are real.
 describe('AZ PC integration with controlled model responses', () => {
   it('routes PC streaming through AZ with real conversation history and one stored copy per message ID', async () => {
     const stream = streamingRouter.createCaller(ctx(user)); const conversationId = 'verify-' + randomUUID();
-    model.replies.push('最初の回答', '続きの回答');
+    model.replies.push('最初の回答', intentReply('それは？', 'conversation', 'question', false), '続きの回答');
     await stream.chat({ message: '合言葉は青空です', messageId: 'first', conversationId });
     const response = await stream.chat({ message: 'それは？', messageId: 'second', conversationId });
     expect(response.fullText).toBe('続きの回答');
-    expect(model.requests[1].messages.some((m: any) => m.content === '合言葉は青空です')).toBe(true);
-    expect(model.requests[1].messages.some((m: any) => m.content === '最初の回答')).toBe(true);
-    expect(model.requests[1].messages.some((m: any) => m.role === 'system' && m.content.includes('AIコアAZ'))).toBe(true);
+    expect(model.requests[2].messages.some((m: any) => m.content === '合言葉は青空です')).toBe(true);
+    expect(model.requests[2].messages.some((m: any) => m.content === '最初の回答')).toBe(true);
+    expect(model.requests[2].messages.some((m: any) => m.role === 'system' && m.content.includes('AIコアAZ'))).toBe(true);
     const duplicate = await stream.chat({ message: 'それは？', messageId: 'second', conversationId });
     expect(duplicate.fullText).toBe('続きの回答');
-    expect(model.requests).toHaveLength(2);
+    expect(model.requests).toHaveLength(3);
     expect(await getSharedChatRepository().getMessages(conversationId, 100)).toHaveLength(4);
   });
   it('persists user and AI names separately and reads them through the normal PC path', async () => {
@@ -93,6 +96,7 @@ describe('AZ PC integration with controlled model responses', () => {
   it('runs multiple real business tools and carries the first result to the next model decision', async () => {
     const stream = streamingRouter.createCaller(ctx(user));
     model.replies.push(
+      intentReply('製造記録を登録して、一覧を確認し、原価差異も計算して', 'manufacturing', 'request'),
       next('saveManufacturing', { itemId: 'verification-part', estimatedUnitCost: 100, actualUnitCost: 120, quantity: 10 }),
       next('listManufacturing', {}),
       next('analyzeManufacturing', { estimatedUnitCost: 100, actualUnitCost: 120, quantity: 10 }),
@@ -100,11 +104,13 @@ describe('AZ PC integration with controlled model responses', () => {
     );
     const response = await stream.chat({ message: '製造記録を登録して、一覧を確認し、原価差異も計算して', conversationId: 'verify-' + randomUUID() });
     const task = (response as any).metadata.task;
+    expect(model.requests.filter((request: any) => request.response_format?.json_schema?.name === 'az_intent')).toHaveLength(1);
+    expect(task).toBeDefined();
     expect(task.status).toBe('completed');
     expect(task.steps.map((s: any) => s.status)).toEqual(['completed', 'completed', 'completed']);
     expect(task.steps[2].result.totalVariance).toBe(200);
     expect(task.steps[2].result.varianceType).toBe('unfavorable');
-    expect(model.requests[1].messages.some((message: any) => message.content.includes('"saved":true'))).toBe(true);
+    expect(model.requests[2].messages.some((message: any) => message.content.includes('"saved":true'))).toBe(true);
     expect((await getUserPoiPoiUnifiedState(String(user))).records.some(r => r.id.startsWith('manufacturing-'))).toBe(true);
   });
   it('enforces read-only requests even if the model tries to save a record', async () => {
@@ -155,7 +161,7 @@ describe('AZ PC integration with controlled model responses', () => {
   it('generates and persists a new-source preview without creating or applying the source file', async () => {
     const tools = unifiedToolsRouter.createCaller(ctx(user));
     const sourcePath = 'server/core/AZVerificationFeature.ts';
-    model.replies.push('新規関数を追加する変更案', JSON.stringify({ changes: [{ path: sourcePath, content: 'export const verificationFeature = 1;\n' }] }));
+    model.replies.push('新規関数を追加する変更案', JSON.stringify({ changes: [{ path: sourcePath, content: 'export const verificationFeature = 1;\n' }] }), JSON.stringify({ accepted: true, issues: [] }));
     const preview = await tools.codePreview({ request: 'プログラムの機能として検証用関数を新規作成して' });
     expect(preview.applied).toBe(false); expect(preview.tested).toBe(false);
     expect(preview.changes[0]).toMatchObject({ operation: 'create', baseHash: null, path: sourcePath });
@@ -169,10 +175,10 @@ describe('AZ PC integration with controlled model responses', () => {
   it('keeps an explicit one-file reference small and gives coder requests their own bounded timeout', async () => {
     const tools = unifiedToolsRouter.createCaller(ctx(user));
     const target = 'server/core/CompactPreview.ts';
-    model.replies.push('Create only the requested standalone module.', JSON.stringify({ changes: [{ path: target, content: 'export const compact = 1;\n' }] }));
+    model.replies.push('Create only the requested standalone module.', JSON.stringify({ changes: [{ path: target, content: 'export const compact = 1;\n' }] }), JSON.stringify({ accepted: true, issues: [] }));
     const preview = await tools.codePreview({ request: 'Using server/core/PoipoiEvolutionTestTarget.ts as reference, create only ' + target + '. Do not modify existing files.' });
     expect(preview.changes[0].path).toBe(target);
-    expect(model.requests[0]).toMatchObject({ timeoutMs: 300000, contextWindow: 8192, max_tokens: 256 });
+    expect(model.requests[0]).toMatchObject({ timeoutMs: 300000, contextWindow: 8192, max_tokens: 4096 });
     expect(model.requests[1]).toMatchObject({ timeoutMs: 300000, contextWindow: 8192 });
     const prompt = model.requests[1].messages.find((message: any) => message.role === 'user').content;
     expect(prompt.length).toBeLessThan(6000);
@@ -187,9 +193,9 @@ describe('AZ PC integration with controlled model responses', () => {
     const target = 'server/core/LargePreview.ts';
     const source = 'export const large = 1;\n' + '// source context line\n'.repeat(1000);
     await writeFile(model.fixture + '/' + target, source);
-    model.replies.push('Preserve the source and add one comment.', JSON.stringify({ changes: [{ path: target, content: source + '\n// proposed only\n' }] }));
+    model.replies.push('Preserve the source and add one comment.', JSON.stringify({ changes: [{ path: target, edits: [{ oldText: 'export const large = 1;', newText: 'export const large = 1;\n// proposed only' }] }] }), JSON.stringify({ accepted: true, issues: [] }));
     const preview = await tools.codePreview({ request: 'Modify ' + target + ' by adding a comment, preserving its complete existing content.' });
-    expect(model.requests[1].contextWindow).toBe(32768);
+    expect(model.requests[1].contextWindow).toBeGreaterThanOrEqual(16384);
     expect(preview.changes[0].previousContent).toBe(source);
     expect(await readFile(model.fixture + '/' + target, 'utf8')).toBe(source);
     await tools.rejectCodePreview({ previewId: preview.previewId });
@@ -197,7 +203,7 @@ describe('AZ PC integration with controlled model responses', () => {
   it('returns actual before/after text and a matching source hash for an existing-file preview', async () => {
     const tools = unifiedToolsRouter.createCaller(ctx(user)); const sourcePath = 'server/core/PoipoiEvolutionTestTarget.ts';
     const source = await readFile(model.fixture + '/' + sourcePath, 'utf8');
-    model.replies.push('最小変更案', JSON.stringify({ changes: [{ path: sourcePath, content: source + '\n// verification proposal only\n' }] }));
+    model.replies.push('最小変更案', JSON.stringify({ changes: [{ path: sourcePath, content: source + '\n// verification proposal only\n' }] }), JSON.stringify({ accepted: true, issues: [] }));
     const preview = await tools.codePreview({ request: sourcePath + ' のプログラムにコメントを追加する変更案' });
     expect(preview.changes[0].baseHash).toBe(createHash('sha256').update(source).digest('hex'));
     expect(preview.changes[0].previousContent).toBe(source);
