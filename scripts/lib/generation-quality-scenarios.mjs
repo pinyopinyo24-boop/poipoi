@@ -6,6 +6,7 @@ export const qualityScenarios = [
     request: 'Create client/src/components/Gauge.tsx as a NEW standalone React component with default export Gauge({value}:{value:number}). Return a meter element with min={0}, max={100}, and value clamped to [0,100]. Nonfinite values must render value 0. Derive the meter value from current value props every call. No input prop, output element, hooks or parent mounting. Reference server/core/Reference.ts only. Preserve existing files.',
     required: ['client/src/components/Gauge.tsx'],
     tests: `const C=load('client/src/components/Gauge.tsx').default;
+      assert(typeof C==='function','required default export Gauge must be callable');
       for(const [value,expected] of [[-12,0],[0,0],[37.5,37.5],[100,100],[143,100],[NaN,0],[Infinity,0],[-Infinity,0],[0.25,0.25]]) {
         const view=C({value}); assert(isReactElement(view),'real React element'); assert(view && view.type==='meter','requested meter element');
         assert(view.props.min===0 && view.props.max===100,'meter bounds');
@@ -17,6 +18,7 @@ export const qualityScenarios = [
     request: 'Create NEW server/core/InventoryAdjustment.ts exporting adjustStock(stock:{sku:string,quantity:number},delta:number):{sku:string,quantity:number}. Return a NEW object preserving sku exactly and adding delta to quantity, leaving input unchanged. Require finite nonnegative original quantity, finite delta and finite nonnegative result. Throw for invalid inputs or underflow/overflow. Quantity 0, delta 0 and fractional quantities are valid. No filesystem or network. Reference server/core/Reference.ts only.',
     required: ['server/core/InventoryAdjustment.ts'],
     tests: `const {adjustStock:f}=load('server/core/InventoryAdjustment.ts');
+      assert(typeof f==='function','required named export adjustStock must be callable');
       for(const [quantity,delta,expected] of [[0,0,0],[10,-3,7],[2.5,-0.5,2],[0,4,4],[8,-8,0]]) {
         const stock=Object.freeze({sku:' a-1 ',quantity}), next=f(stock,delta);
         assert(next!==stock && next.sku===' a-1 ' && next.quantity===expected,'new stock result');
@@ -30,6 +32,7 @@ export const qualityScenarios = [
     request: 'Create NEW server/core/QuantityResult.ts exporting parseQuantity(input:string): {ok:true,quantity:number}|{ok:false,error:string}. Trim surrounding whitespace; accept only one or more ASCII decimal digits and return their nonnegative safe integer value. Leading zeroes are valid. Reject empty text, signs, fractions, scientific notation, hex and unsafe integers with ok:false and a nonempty error. Invalid input must not throw. Reference server/core/Reference.ts only. Preserve existing files.',
     required: ['server/core/QuantityResult.ts'],
     tests: `const {parseQuantity:f}=load('server/core/QuantityResult.ts');
+      assert(typeof f==='function','required named export parseQuantity must be callable');
       for(const [input,expected] of [['0',0],[' 17 ',17],['007',7],['9007199254740991',Number.MAX_SAFE_INTEGER]]) {
         const result=f(input); assert(result.ok===true && result.quantity===expected,'valid quantity '+input);
       }
@@ -44,6 +47,7 @@ export const qualityScenarios = [
     required: ['server/core/BatchCost.ts'],
     editableRegion: {file:'server/core/BatchCost.ts',oldText:existingFunction},
     tests: `const {batchCost:f,label,currency}=load('server/core/BatchCost.ts');
+      assert(typeof f==='function','required named export batchCost must be callable');
       assert(f(7,3)===21 && f(0,2)===0 && f(2.5,0.5)===1.25,'batch cost calculation');
       assert(currency==='JPY' && label()==='JPY','preserve other exports');
       for(const [price,quantity] of [[-1,2],[2,0],[2,-1],[NaN,2],[Infinity,2],[2,NaN],[2,Infinity],[Number.MAX_VALUE,2]])

@@ -51,6 +51,12 @@ it('rejects a fabricated element-shaped object instead of accepting it as React 
   expect(verifyScenario(scenario,changes).join(' ')).toContain('real React element');
 });
 
+it('reports the requested public API name when the model exports a different function', () => {
+  const scenario=scenarios.find(s=>s.id==='weighted-average')!;
+  const changes=[{path:scenario.required[0],content:'export function calculateProductionAverage(){ return 0; }'}];
+  expect(verifyScenario(scenario,changes).join(' ')).toContain('required named export averageMinutes must be callable');
+});
+
 it('stops infinite generated loops and does not expose Node process or filesystem APIs', () => {
   const scenario=scenarios.find(s=>s.id==='unicode')!;
   for(const content of ['export function countCharacters(){while(true){}}',

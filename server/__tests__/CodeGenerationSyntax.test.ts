@@ -42,6 +42,28 @@ beforeEach(() => { model.replies.length = 0; model.requests.length = 0; });
 afterAll(() => { vi.restoreAllMocks(); rmSync(model.root, { recursive: true, force: true }); });
 
 describe('syntax validation before saving an AI proposal', () => {
+  it('does not prescribe a React default export when repairing a missing ordinary function export', async () => {
+    const file='server/core/ProductionAverage.ts';
+    const wrong='export function calculateProductionAverage(rows:{quantity:number,minutes:number}[]) { return rows.reduce((s,r)=>s+r.minutes*r.quantity,0)/rows.reduce((s,r)=>s+r.quantity,0); }';
+    const right=wrong.replace('calculateProductionAverage','averageMinutes').replace('r.minutes*r.quantity','r.minutes');
+    const proposal=JSON.stringify({changes:[{path:file,content:wrong}]});
+    model.replies.push(proposal,proposal,JSON.stringify({edits:[
+      {oldText:'calculateProductionAverage',newText:'averageMinutes'},
+      {oldText:'r.minutes*r.quantity',newText:'r.minutes'},
+    ]}),accepted);
+    const check=vi.fn(changes=>changes[0].content===right?[]:['Runtime acceptance failed: TypeError: f is not a function']);
+    const result=await PoipoiCodeAgent.getInstance().generate(
+      'Create NEW server/core/ProductionAverage.ts exporting averageMinutes(rows:{quantity:number,minutes:number}[]):number. Divide total minutes by total quantity.',
+      'system',{validateGenerated:check});
+    expect(result[0].content).toBe(right);
+    const repair=JSON.parse(model.requests[2].messages.at(-1).content);
+    expect(repair.request).toContain('averageMinutes');
+    expect(repair.repairGuidance.join(' ')).not.toContain('component');
+    expect(repair.repairGuidance.join(' ')).not.toContain('default export');
+    expect(check).toHaveBeenCalledTimes(3);
+    expect(existsSync(model.root+'/'+file)).toBe(false);
+  });
+
   it('enforces callable React exports even without a test-only runtime validator', async () => {
     const file='client/src/components/Status.tsx';
     const wrong='export default {type:"output"};';
