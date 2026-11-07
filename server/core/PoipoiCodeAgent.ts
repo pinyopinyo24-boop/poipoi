@@ -1617,19 +1617,9 @@ export class PoipoiCodeAgent {
           proposals = [];
           continue;
         }
-        // Runtime acceptance is authoritative. Check it before asking a second
-        // model for a subjective review, so bad implementations receive actionable
-        // feedback instead of consuming another review call.
-        if (options.validateGenerated) {
-          const signature = JSON.stringify(generated.map(change => [change.path, change.content]));
-          const repeatedIssues = failedValidationSignatures.get(signature);
-          if (repeatedIssues) {
-            if (validationRetries >= maxValidationRetries) {
-              // A small local model can repeat the same rejected whole-file JSON
-              // even with feedback. At the retry limit, request a constrained
-              // source-level patch instead of another identical full rewrite.
-              // The patch must match exactly once in a NEW file, and must pass
-              // the same caller-owned acceptance before any review or approval.
+        // At the retry limit, use verified, uniquely anchored edits instead of
+        // trusting another full-file rewrite. Both retry paths call this guard.
+        const repairRejectedCandidate = async (failures: string[]): Promise<boolean> => {
               let repaired = false;
               if (generated.length === 1 && generated[0].baseHash === null &&
                   generated[0].content.length <= 12000) {
@@ -1655,7 +1645,7 @@ export class PoipoiCodeAgent {
                       { role: 'system', content: 'You are repairing a newly generated TypeScript/TSX module rejected by executable tests. Return ONLY JSON edits. Each oldText must be an EXACT UNIQUE substring of source; newText replaces it. Fix the actual failure, retaining original API, types, unrelated behavior, and every prior correct requirement. Never rewrite tests. Do not repeat unchanged code or include markdown.' },
                       { role: 'user', content: JSON.stringify({
                         request: modelIntent, path: target.path, source: target.content,
-                        failingChecks: repeatedIssues,
+                        failingChecks: failures,
                       }) },
                     ],
                   });
@@ -1687,6 +1677,22 @@ export class PoipoiCodeAgent {
                   // approve an unverified patch.
                 }
               }
+              return repaired;
+        };
+        // Runtime acceptance is authoritative. Check it before asking a second
+        // model for a subjective review, so bad implementations receive actionable
+        // feedback instead of consuming another review call.
+        if (options.validateGenerated) {
+          const signature = JSON.stringify(generated.map(change => [change.path, change.content]));
+          const repeatedIssues = failedValidationSignatures.get(signature);
+          if (repeatedIssues) {
+            if (validationRetries >= maxValidationRetries) {
+              // A small local model can repeat the same rejected whole-file JSON
+              // even with feedback. At the retry limit, request a constrained
+              // source-level patch instead of another identical full rewrite.
+              // The patch must match exactly once in a NEW file, and must pass
+              // the same caller-owned acceptance before any review or approval.
+              const repaired = await repairRejectedCandidate(repeatedIssues);
               if (!repaired)
                 throw new Error('AI repeated a previously rejected code proposal. No change was applied: ' + repeatedIssues.join('; ').slice(0, 1200));
               // The repaired proposal proceeds through the original full
@@ -1737,7 +1743,13 @@ export class PoipoiCodeAgent {
             throw new Error("生成コードの検証結果が不正です。変更は適用していません。");
           if (issues.length) {
             failedValidationSignatures.set(signature, issues);
-            if (validationRetries >= maxValidationRetries) throw new Error("生成コードの検証に失敗しました。変更は適用していません: " + issues.join("; ").slice(0, 1800));
+            if (validationRetries >= maxValidationRetries) {
+              if (!await repairRejectedCandidate(issues))
+                throw new Error("生成コードの検証に失敗しました。変更は適用していません: " + issues.join("; ").slice(0, 1800));
+              // The repaired source passed fresh executable acceptance. Continue
+              // through the original model review rather than applying anything.
+              issues.length = 0;
+            } else {
             validationRetries++;
             validationFeedback = [
               'Executable acceptance FAILED for the previous proposal. Preserve all already-correct behavior.',
@@ -1751,6 +1763,7 @@ export class PoipoiCodeAgent {
             ].join('\n');
             proposals = [];
             continue;
+            }
           }
         }
         // Review the current request and the resulting code, not old dialogue or
