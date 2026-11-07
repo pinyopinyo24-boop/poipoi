@@ -32,4 +32,4 @@ jobs:
           node --check scripts/lib/verify-generation-scenario.mjs
           node --check scripts/lib/generation-runtime-worker.mjs
       - name: Run local fixture and source-generation tests
-        run: pnpm exec vitest run server/__tests__/GenerationScenarioAcceptance.test.ts server/__tests__/CodeGenerationSyntax.test.ts server/__tests__/CodeGenerationStages.test.ts --reporter=verbose
+        run: pnpm exec vitest run server/__tests__/GenerationScenarioAcceptance.test.ts server/__tests__/GenerationMatrix.integration.test.ts server/__tests__/CodeGenerationSyntax.test.ts server/__tests__/CodeGenerationStages.test.ts --reporter=verbose
