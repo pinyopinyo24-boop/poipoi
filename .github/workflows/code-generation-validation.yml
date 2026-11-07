@@ -1,0 +1,36 @@
+name: PoiPoi Code Generation Verification
+
+on:
+  push:
+    branches:
+      - fix/generation-diagnostics-20261107
+  pull_request:
+    paths:
+      - 'server/core/PoipoiCodeAgent.ts'
+      - 'scripts/lib/**'
+      - 'server/__tests__/CodeGeneration*.test.ts'
+      - 'server/__tests__/Generation*.test.ts'
+      - '.github/workflows/code-generation-validation.yml'
+
+jobs:
+  generation-tests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: '11.9.0'
+          run_install: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: 'pnpm'
+      - name: Install dependencies without lifecycle builds
+        run: pnpm install --frozen-lockfile --ignore-scripts
+      - name: Check verification runner syntax
+        run: |
+          node --check scripts/lib/verify-generation-scenario.mjs
+          node --check scripts/lib/generation-runtime-worker.mjs
+      - name: Run local fixture and source-generation tests
+        run: pnpm exec vitest run server/__tests__/GenerationScenarioAcceptance.test.ts server/__tests__/CodeGenerationSyntax.test.ts server/__tests__/CodeGenerationStages.test.ts --reporter=verbose
