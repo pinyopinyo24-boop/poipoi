@@ -50,8 +50,18 @@ export function verifyScenario(scenario, changes) {
     });
     if (JSON.parse(output).ok !== true) errors.push('Runtime verification did not pass');
   } catch (error) {
-    try { errors.push('Runtime acceptance failed: ' + JSON.parse(String(error.stdout)).error); }
-    catch { errors.push('Runtime verification failed or timed out: ' + error.message); }
+    try {
+      const failure = String(JSON.parse(String(error.stdout)).error);
+      // Surface the original failing assertion, rather than only its label.
+      // This gives the code generator the required calculation or edge case,
+      // without changing or weakening the acceptance checks.
+      const assertion = scenario.tests.split(/\r?\n/).find(line =>
+        line.includes("'" + failure + "'") || line.includes('"' + failure + '"'));
+      errors.push('Runtime acceptance failed: ' + failure +
+        (assertion ? '\\nFailed assertion source: ' + assertion.trim().slice(0, 1800) : ''));
+    } catch {
+      errors.push('Runtime verification failed or timed out: ' + error.message);
+    }
   }
   return errors;
 }
