@@ -42,6 +42,29 @@ beforeEach(() => { model.replies.length = 0; model.requests.length = 0; });
 afterAll(() => { vi.restoreAllMocks(); rmSync(model.root, { recursive: true, force: true }); });
 
 describe('syntax validation before saving an AI proposal', () => {
+  it('does not discard a runtime-passing Unicode codepoint implementation because a reviewer mistakes Array.from length for String.length', async () => {
+    const file='server/core/CharacterCount.ts';
+    const source='export function countCharacters(input: string): number { return Array.from(input).length; }';
+    const requirement='Unicodeコードポイントで数え、空欄は0文字、「あいう」は3文字、「😀」は1文字にする。';
+    const negativeReview=JSON.stringify({accepted:false,issues:[{
+      path:file,requirement,
+      problem:'JavaScriptのString.lengthはUTF-16コード単位を数えます。',
+      evidence:'Array.from(input).length',
+    }]});
+    model.replies.push(JSON.stringify({changes:[{path:file,content:source}]}),negativeReview);
+    const check=vi.fn(changes=>changes[0].content===source ? [] : ['emoji count mismatch']);
+    const warn=vi.fn();
+    const changes=await PoipoiCodeAgent.getInstance().generate(
+      '文字数を数える独立した関数をserver/core/CharacterCount.tsに新規作成して。countCharacters(input:string):numberをexportする。'+requirement,
+      'system',{validateGenerated:check,onReviewWarning:warn});
+    expect(changes[0].content).toBe(source);
+    expect(check).toHaveBeenCalledTimes(1);
+    expect(warn).toHaveBeenCalledTimes(1);
+    expect(JSON.stringify(warn.mock.calls)).toContain('Unicode');
+    expect(model.requests).toHaveLength(2);
+    expect(existsSync(model.root+'/'+file)).toBe(false);
+  });
+
   it('passes actionable weighted-average failure information without changing acceptance contracts', async () => {
     const path='server/core/WeightedMinutes.ts';
     const bad='export function weightedMinutes(rows: {quantity:number,minutes:number}[]) { return rows.reduce((n,r)=>n+r.minutes,0)/rows.length; }';
