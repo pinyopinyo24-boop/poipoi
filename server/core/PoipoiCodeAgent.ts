@@ -1648,6 +1648,18 @@ export class PoipoiCodeAgent {
                       { role: 'user', content: JSON.stringify({
                         request: modelIntent, path: target.path, source: target.content,
                         failingChecks: failures,
+                        repairGuidance: [
+                          'Replace only the offending implementation expression or statement, never a test, API name or public type.',
+                          ...(failures.some(issue => /preserve existing records|do not mutate inputs/i.test(issue))
+                            ? ['Existing objects must be retained without rewriting their sku/name values. Normalize existing SKU temporarily only for comparison; normalize only the newly appended record. Return a new array while keeping original inputs unchanged.']
+                            : []),
+                          ...(failures.some(issue => /output element|is not a function|render updated input/i.test(issue))
+                            ? ['The default export must be a callable component function. Calling it with {input} must return an output element whose text reflects that input. Keep the output element type and default export.']
+                            : []),
+                          ...(failures.some(issue => /weighted average/i.test(issue))
+                            ? ['Calculate sum of all minutes divided by sum of all quantities, not an average of rows. Preserve validation.']
+                            : []),
+                        ],
                       }) },
                     ],
                   });
