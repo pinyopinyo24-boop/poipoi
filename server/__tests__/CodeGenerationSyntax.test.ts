@@ -51,9 +51,14 @@ describe('syntax validation before saving an AI proposal', () => {
       JSON.stringify({ changes: [{ path: file, content: good }] }),
       accepted,
     );
+    const validateGenerated = vi.fn(changes => changes[0].content === good ? [] : [
+      "server/core/ReportError.ts:1:102 TS18046: 'error' is of type 'unknown'.",
+    ]);
     const changes = await PoipoiCodeAgent.getInstance().generate(
       'Create new server/core/ReportError.ts with reportError() preserving messages of caught read errors and compiling under TypeScript strict.',
+      'system', { validateGenerated },
     );
+    expect(validateGenerated).toHaveBeenCalledTimes(2);
     expect(changes[0].content).toBe(good);
     expect(model.requests).toHaveLength(3);
     expect(JSON.stringify(model.requests[1].messages)).toContain('TS18046');
