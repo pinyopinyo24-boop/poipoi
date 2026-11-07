@@ -231,15 +231,22 @@ describe('HeartbeatConnector', () => {
       true
     );
 
-    const { simSpy, execSpy } = mockSuccessfulRun(userId);
+    const { simSpy, execSpy, simResult } = mockSuccessfulRun(userId);
 
     const result = await connector.onHeartbeatCallback(userId);
+    // A scheduled simulation must never silently grant itself approval.
+    expect(result.runResult.outcome).toBe('simulation_only');
+    expect(execSpy).not.toHaveBeenCalled();
 
+    const historySpy = vi.spyOn(SelfEvolutionWorkflow.getInstance(), 'getHistory')
+      .mockReturnValue([simResult]);
+    const approved = await scheduler.applyApprovedSimulation(userId, simResult.workflowId);
+    expect(approved.outcome).toBe('executed');
+    expect(approved.executionResult).toBeDefined();
+    expect(execSpy).toHaveBeenCalledTimes(1);
+    historySpy.mockRestore();
     simSpy.mockRestore();
     execSpy.mockRestore();
-
-    expect(result.runResult.outcome).toBe('executed');
-    expect(result.runResult.executionResult).toBeDefined();
   });
 
   // ── 6. simulation 安全条件不成立 → execution しない ────────────────────
@@ -436,8 +443,21 @@ describe('HeartbeatConnector', () => {
         summary: 'mock with rollback_failed',
       });
 
-    await connector.onHeartbeatCallback(userId);
+    const initial = await connector.onHeartbeatCallback(userId);
+    expect(initial.runResult.outcome).toBe('simulation_only');
+    expect(execSpy).not.toHaveBeenCalled();
 
+    // Exercise the rollback guard through the explicitly approved execution path.
+    const historySpy = vi.spyOn(SelfEvolutionWorkflow.getInstance(), 'getHistory')
+      .mockReturnValue([{
+        workflowId: 'mock-sim-rbf', userId, mode: 'simulation',
+        cycle, approvedCandidates, rejectedCandidates: [],
+        completedAt: Date.now(), summary: '[Simulation] mock',
+      }]);
+    const approved = await scheduler.applyApprovedSimulation(userId, 'mock-sim-rbf');
+    expect(approved.outcome).toBe('executed');
+    expect(execSpy).toHaveBeenCalledTimes(1);
+    historySpy.mockRestore();
     simSpy.mockRestore();
     execSpy.mockRestore();
 
